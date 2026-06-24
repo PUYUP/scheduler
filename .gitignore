@@ -220,7 +220,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Local folders
-/output
+output
 
 # Ignore all .json files in the root directory only
 /*.json
