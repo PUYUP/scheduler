@@ -77,38 +77,98 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     log.info("parse_pdf.start", arxiv_id=arxiv_id)
 
+    # Ensure output directory exists
+    out_dir = Path(settings.pdf_download_dir) / "out"
+    out_dir.mkdir(exist_ok=True, parents=True)
+
+    # Run GROBID process (sync)
+    log.info("grobid.process.start", arxiv_id=arxiv_id, path=str(pdf_path))
+    client = GrobidClient(grobid_url="http://localhost:8070")
+
     try:
-        sections, page_count = _extract_sections(pdf_path)
-    except FileNotFoundError as exc:
-        log.error("parse_pdf.corrupt_pdf", arxiv_id=arxiv_id, error=str(exc))
-        metadata["skip_reason"] = "corrupt_pdf"
-        return metadata
-    except Exception as exc:
-        log.error("parse_pdf.failed", arxiv_id=arxiv_id, error=str(exc))
-        raise self.retry(exc=exc)
+        client.process(
+            service="processFulltextDocument",
+            input_path=str(pdf_path),
+            output=str(out_dir),
+            n=1,
+            json_output=True,
+            segment_sentences=True,
+        )
+    except Exception as e:
+        log.error("grobid.process.failed", arxiv_id=arxiv_id, error=str(e))
+        raise self.retry(exc=e)
 
-    # Prepend abstract as its own section so it's always embedded
-    abstract_section = {
-        "title": "Abstract",
-        "text": metadata.get("abstract", ""),
-        "page_start": 0,
-        "page_end": 0,
-    }
-    all_sections = [abstract_section] + sections
+    # Find the output JSON
+    fname = pdf_path.stem
+    json_path = out_dir / f"{fname}.json"
+    json_data = None
 
-    full_text = "\n\n".join(s["text"] for s in all_sections if s["text"])
+    if not json_path.exists():
+        log.error("grobid.json_not_found", arxiv_id=arxiv_id, expected=str(json_path))
+        raise self.retry(exc=FileNotFoundError(f"GROBID JSON missing: {json_path}"))
+
+    with open(json_path, "r", encoding="utf-8") as f:
+        json_data = json.load(f)
+
+    # parse metadata
+    title = json_data['biblio'].get('title')
+    authors = json_data['biblio'].get('authors')
+    publication_date = json_data['biblio'].get('publication_date')
+    abstract = " ".join([
+        item.get("text", "")
+        for a in json_data["biblio"].get("abstract", [])
+        for item in a
+        if item.get("text")
+    ])
+    body_text = json_data.get('body_text', [])
+
+    # grouping body text
+    grouped = {}
+    for item in body_text:
+        section = item.get('head_section', None)
+        grouped.setdefault(section, [])
+        grouped[section].append(item['text'])
+    
+    sections = {section: " ".join(texts) for section, texts in grouped.items()}
+    result = []
+
+    for section, text in sections.items():
+        text_splitter = RecursiveCharacterTextSplitter(
+            separators=["\n\n", "\n", ".", " "],
+            chunk_size=settings.chunk_size_tokens,
+            chunk_overlap=settings.chunk_overlap_tokens,
+            length_function=len,
+            is_separator_regex=False,
+        )
+
+        chunks = text_splitter.split_text(text)
+        result.append({
+            "heading": section if section is not None else settings.default_heading,
+            "chunks": chunks
+        })
+    
+    log.info(
+        "parse_pdf.done",
+        arxiv_id=arxiv_id,
+        sections=len(sections),
+        total_chunks=len(result),
+    )
+
+    metadata["sections"]   = result
+    metadata["full_text"]  = "\n\n".join(s["text"] for s in result if s["text"])
+    metadata["page_count"] = len(json_data["body_text"])
+    metadata["title"]      = title
+    metadata["authors"]    = authors
+    metadata["abstract"]   = abstract
+    metadata["publication_date"] = publication_date
 
     log.info(
         "parse_pdf.done",
         arxiv_id=arxiv_id,
-        page_count=page_count,
+        page_count=len(json_data["body_text"]),
         sections=len(sections),
-        chars=len(full_text),
+        chars=len(metadata["full_text"]),
     )
-
-    metadata["sections"]   = all_sections
-    metadata["full_text"]  = full_text
-    metadata["page_count"] = page_count
 
     # Chain to clean_text
     (
