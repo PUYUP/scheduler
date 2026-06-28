@@ -1,7 +1,0 @@
-README.md
-pyproject.toml
-scheduler.egg-info/PKG-INFO
-scheduler.egg-info/SOURCES.txt
-scheduler.egg-info/dependency_links.txt
-scheduler.egg-info/requires.txt
-scheduler.egg-info/top_level.txt

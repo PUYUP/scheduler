@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     pdf_max_size_mb: int    = 50
 
     # ── Chunking ───────────────────────────────────────────────
+    default_heading: str        = "Supplementary Information"
     chunk_size_tokens: int      = 512
     chunk_overlap_tokens: int   = 64
     min_chunk_chars: int        = 100   # discard tiny chunks
