@@ -1,6 +1,6 @@
 ########################################################################
 #  ArXiv RAG Pipeline — Docker Compose
-#  Services: Redis, Worker (3 tiers), Beat Scheduler, Flower
+#  Services: Redis, Grobid, Worker (3 tiers), Beat Scheduler, Flower
 ########################################################################
 
 x-celery-common: &celery-common
@@ -15,6 +15,8 @@ x-celery-common: &celery-common
   depends_on:
     redis:
       condition: service_healthy
+    grobid:
+      condition: service_started
   restart: unless-stopped
   networks:
     - arxiv-net
@@ -44,6 +46,31 @@ services:
     networks:
       - arxiv-net
     restart: unless-stopped
+
+
+  # ─── Grobid: PDF Structural Parsing ─────────────────────────
+  grobid:
+    image: lfoppiano/grobid:0.8.2
+    ports:
+      - "8070:8070"
+    environment:
+      - JAVA_OPTS=-Xms1g -Xmx2g
+    volumes:
+      - grobid-tmp:/tmp/grobid
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8070/api/isalive | grep -q true"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    networks:
+      - arxiv-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+          cpus: "2.0"
 
 
   # ─── Beat Scheduler (cron-style task dispatch) ───────────────
@@ -124,6 +151,7 @@ volumes:
   redis-data:
   downloads:
   logs:
+  grobid-tmp:
 
 
 networks:

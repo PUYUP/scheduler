@@ -1,10 +1,3 @@
-from docling.datamodel.pipeline_options import TesseractCliOcrOptions
-from docling.datamodel.pipeline_options import TesseractOcrOptions
-from docling.datamodel.pipeline_options import EasyOcrOptions
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
-from docling.document_converter import PdfFormatOption
-from docling.datamodel.base_models import InputFormat
 import json
 import os
 
@@ -12,7 +5,9 @@ from pathlib import Path
 from datetime import datetime
 from celery_app.tasks.scrape import scrape_paper_metadata, download_pdf
 from celery_app.tasks.process import parse_pdf, clean_text, chunk_document, _json_to_chunks
-from docling.document_converter import DocumentConverter
+from grobid_client.grobid_client import GrobidClient
+from langchain_text_splitters import RecursiveJsonSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 
 
 def save_chunks_to_json(chunks, arxiv_id: str, output_dir: str = "output"):
@@ -36,79 +31,52 @@ def save_chunks_to_json(chunks, arxiv_id: str, output_dir: str = "output"):
     return filename
 
 
-def main_x():
-    arxiv_id = "2606.20564"
-
-    result = scrape_paper_metadata(arxiv_id=arxiv_id)
-    download_result = download_pdf(result)
-    parsing = parse_pdf(download_result)
-    cleans = clean_text(parsing)
-    chunks = chunk_document(cleans)
-
-    print(chunks)
-
-    # Simpan ke JSON
-    saved_path = save_chunks_to_json(chunks, arxiv_id=arxiv_id)
-    print(f"File tersimpan di: {saved_path}")
-
-
-def buat_pipeline_options_cpu() -> PdfPipelineOptions:
-    """
-    Konfigurasi pipeline Docling khusus CPU (tanpa GPU).
-    Menonaktifkan model AI berat yang membutuhkan GPU.
-    """
-    pipeline_options = PdfPipelineOptions()
-
-    # --- Nonaktifkan model yang butuh GPU ---
-    pipeline_options.do_table_structure = False   # TableFormer (butuh GPU/berat)
-    pipeline_options.do_ocr = False               # OCR (aktifkan jika PDF hasil scan)
-
-    # Gunakan backend ringan berbasis PDF native
-    pipeline_options.generate_page_images = False
-    pipeline_options.generate_picture_images = False
-
-    return pipeline_options
-
-
 def main():
-    # path = '/Volumes/SSD1/Private/Curio/indexer/executor/s12929-026-01271-w/auto/s12929-026-01271-w_content_list_v2.json'
-    # chunks = _json_to_chunks(Path(path))
-    # print(chunks)
-    source = "/home/pointilis/Downloads/pmc13221923.pdf"  # file path or URL
+    # arxiv_id = "2606.20564"
 
-    # --- Konfigurasi pipeline ---
-    aktifkan_ocr: bool = True
-    engine_ocr: str = "easyocr"
-    pipeline_options = buat_pipeline_options_cpu()
+    # result = scrape_paper_metadata(arxiv_id=arxiv_id)
+    # download_result = download_pdf(result)
+    # parsing = parse_pdf(download_result)
+    # cleans = clean_text(parsing)
+    # chunks = chunk_document(cleans)
 
-    if aktifkan_ocr:
-        pipeline_options.do_ocr = True
-        if engine_ocr == "easyocr":
-            # EasyOCR: otomatis pakai CPU jika GPU tidak tersedia
-            pipeline_options.ocr_options = EasyOcrOptions(force_full_page_ocr=False)
-        elif engine_ocr == "tesseract":
-            pipeline_options.ocr_options = TesseractOcrOptions()
-        elif engine_ocr == "tesseract_cli":
-            pipeline_options.ocr_options = TesseractCliOcrOptions()
-        else:
-            raise ValueError(f"engine_ocr tidak dikenal: {engine_ocr}")
-        print(f"🔍 OCR    : Aktif ({engine_ocr})")
-    else:
-        print("🔍 OCR    : Nonaktif (PDF teks native)")
+    # # Simpan ke JSON
+    # saved_path = save_chunks_to_json(chunks, arxiv_id=arxiv_id)
+    # print(f"File tersimpan di: {saved_path}")
 
-    converter = DocumentConverter(
-        format_options={
-            InputFormat.PDF: PdfFormatOption(
-                pipeline_options=pipeline_options,
-                backend=PyPdfiumDocumentBackend,  # Backend ringan, tidak butuh GPU
-            )
-        }
+    client = GrobidClient()
+    client.process(
+        service="processFulltextDocument",
+        input_path="/Volumes/SSD1/Private/Curio/scheduler/input",
+        output="/Volumes/SSD1/Private/Curio/scheduler/output",
+        n=10,
+        json_output=True,
+        markdown_output=True,
+        segment_sentences=True,
     )
-    result = converter.convert(source=source)
-    doc = converter.convert(source).document
 
-    print(doc.export_to_markdown())
-
+    json_file = "output/2512.00565v1.json"
+    with open(json_file, "r", encoding="utf-8") as f:
+        json_data = json.load(f)
+    
+    markdown_file = "output/2512.00565v1.md"
+    with open(markdown_file, "r", encoding="utf-8") as f:
+        markdown_text = f.read()
+    
+    headers_to_split_on = [
+        ("#", "Header 1"),
+        ("##", "Header 2"),
+        ("###", "Header 3"),
+    ]
+    splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
+    markdown_chunks = splitter.split_text(markdown_text)
+    
+    # splitter = RecursiveJsonSplitter(max_chunk_size=512)
+    # json_chunks = splitter.split_json(json_data=json_data)
+    # saved_path = save_chunks_to_json(markdown_chunks, arxiv_id="2512.00565")
+    # print(f"File tersimpan di: {saved_path}")
+    for doc in markdown_chunks:
+        print(doc)
 
 if __name__ == "__main__":
     main()

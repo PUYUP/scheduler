@@ -14,7 +14,7 @@ WORKDIR /app
 # Copy project
 COPY . .
 
-# Install dependencies (INI YANG HILANG SEBELUMNYA)
+# Install dependencies
 RUN pip install --upgrade pip setuptools wheel \
     && pip install -e .
 
@@ -27,9 +27,9 @@ RUN mkdir -p /app/downloads /app/logs \
 USER celery
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD celery -A src.main inspect ping -d "celery@$$HOSTNAME" --timeout 5 || exit 1
+    CMD celery -A celery_app.main inspect ping -d "celery@$$HOSTNAME" --timeout 5 || exit 1
 
-CMD celery -A src.main worker \
+CMD celery -A celery_app.main worker \
     --loglevel=info \
     --concurrency=4 \
     --queues=default,scrape,process,embed

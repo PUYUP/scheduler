@@ -21,15 +21,10 @@ dependencies = [
     "requests==2.32.3",
 
     # ─── Text Processing & Chunking ───────────────────────────────
-    "langchain-text-splitters==0.3.11",
+    "langchain-text-splitters==1.1.2",
     "tiktoken==0.9.0",
-    "unstructured==0.18.31",
     "pymupdf==1.27.2.3",
-    "docling>=2.0.0",
-    "easyocr==1.7.2",
-    "torch==2.4.1",
-    "torchvision==0.19.1",
-    "numpy>=2.0.0,<3.0.0",
+    "grobid-client-python==0.1.4",
 
     # ─── Embeddings ───────────────────────────────────────────────
     # "openai==1.57.4",
