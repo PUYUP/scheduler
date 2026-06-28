@@ -74,7 +74,7 @@ def main():
     # path = '/Volumes/SSD1/Private/Curio/indexer/executor/s12929-026-01271-w/auto/s12929-026-01271-w_content_list_v2.json'
     # chunks = _json_to_chunks(Path(path))
     # print(chunks)
-    source = "/Volumes/Wgaming/Users/pointilis/Downloads/2512.00565v1.pdf"  # file path or URL
+    source = "/home/pointilis/Downloads/pmc13221923.pdf"  # file path or URL
 
     # --- Konfigurasi pipeline ---
     aktifkan_ocr: bool = True
@@ -105,10 +105,9 @@ def main():
         }
     )
     result = converter.convert(source=source)
-    print(result)
-    # doc = converter.convert(source).document
+    doc = converter.convert(source).document
 
-    # print(doc.export_to_markdown())
+    print(doc.export_to_markdown())
 
 
 if __name__ == "__main__":
