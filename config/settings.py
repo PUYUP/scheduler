@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     grobid_server: str      = "http://localhost:8070"
 
     # ── Chunking ───────────────────────────────────────────────
-    default_heading: str        = "Supplementary Information"
+    default_section: str        = "Supplementary Information"
     chunk_size_tokens: int      = 512
     chunk_overlap_tokens: int   = 64
     min_chunk_chars: int        = 100   # discard tiny chunks

@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from itertools import groupby
 from celery_app.tasks.scrape import scrape_paper_metadata, download_pdf
-from celery_app.tasks.process import parse_pdf, clean_text, chunk_document, _json_to_chunks
+from celery_app.tasks.process import parse_pdf, clean_text, chunk_document
 from celery_app.tasks.embed import generate_embeddings, store_chunks
 from grobid_client.grobid_client import GrobidClient
 from langchain_text_splitters import RecursiveJsonSplitter
@@ -46,7 +46,7 @@ def main():
     cleans = clean_text(parsing)
     chunk = chunk_document(cleans)
     embeddings = generate_embeddings(chunk)
-    store_chunks = store_chunks(embeddings)
+    store = store_chunks(embeddings)
 
     # print(embeddings)
     
@@ -102,7 +102,7 @@ def main():
 
     #     chunks = text_splitter.split_text(text)
     #     result.append({
-    #         "heading": section if section is not None else settings.default_heading,
+    #         "section": section if section is not None else settings.default_section,
     #         "chunks": chunks
     #     })
 

@@ -58,11 +58,10 @@ class ChunkSchema(BaseModel):
     """
     chunk_id:        str
     paper_id:        str
-    title:           str
-    section:         str
-    text:            str
-    page_start:      int               = 0
-    page_end:        int               = 0
+    repository:      str
+    title:           str # from paper title
+    section:         str # heading for the section
+    text:            str # chunk of text
     authors:         List[str]         = Field(default_factory=list)
     categories:      List[str]         = Field(default_factory=list)
     published:       str               = ""

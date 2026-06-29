@@ -142,7 +142,6 @@ with your writer. Each chunk arriving there is a plain dict with:
 | `embedding` | list[float] | Dense vector |
 | `embedding_model` | str | e.g. `text-embedding-3-small` |
 | `embedding_dim` | int | 1536 (OpenAI) / 384 (local) |
-| `page_start` | int | PDF page number |
 | `authors` | list[str] | Author names |
 | `categories` | list[str] | ArXiv category codes |
 | `published` | str | ISO 8601 date |
