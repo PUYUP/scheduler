@@ -30,7 +30,7 @@ from config.settings import settings
 def main():
     parser = argparse.ArgumentParser(description="Trigger ArXiv scrape tasks")
     parser.add_argument(
-        "--topics", nargs="*",
+        "--arxiv-topics", nargs="*",
         help="ArXiv category codes (default: settings.arxiv_topics)"
     )
     parser.add_argument(
@@ -38,19 +38,27 @@ def main():
         help="Max papers per topic"
     )
     parser.add_argument(
-        "--arxiv-id", type=str,
-        help="Re-ingest a single paper by ArXiv ID"
+        "--paper-id", type=str,
+        help="Re-ingest a single paper by paper ID such as arXiv:2401.12345"
+    )
+    parser.add_argument(
+        "--repository", type=str,
+        help="Repository name"
     )
     args = parser.parse_args()
 
-    if args.arxiv_id:
-        print(f"Resetting and re-queuing paper: {args.arxiv_id}")
-        reset_paper(args.arxiv_id)
-        result = scrape_paper_metadata.apply_async(args=[args.arxiv_id], queue="scrape")
+    if args.paper_id:
+        print(f"Resetting and re-queuing paper: {args.paper_id}")
+        reset_paper(args.paper_id, repository=args.repository)
+        result = scrape_paper_metadata.apply_async(
+            args=[args.paper_id],
+            kwargs={"repository": args.repository},
+            queue="scrape",
+        )
         print(f"Task ID: {result.id}")
         return
 
-    topics = args.topics or settings.arxiv_topics
+    topics = args.arxiv_topics or settings.arxiv_topics
     for topic in topics:
         print(f"Triggering scrape for topic: {topic} (max={args.max_results})")
         result = scrape_topic.apply_async(

@@ -16,7 +16,7 @@ from config.logging import configure_logging
 # ─── App Factory ──────────────────────────────────────────────────────────────
 
 def create_celery_app() -> Celery:
-    app = Celery("arxiv_rag")
+    app = Celery("curiosift_rag_scheduler")
     app.config_from_object("config.celery_config")
     # Explicit imports are more reliable than autodiscover across Docker
     # bind-mount layouts — every task module must be listed here.

@@ -73,10 +73,10 @@ def scrape_topic(
 
     for result in results:
         arxiv_id = result.entry_id.split("/")[-1]
-        if is_already_processed(arxiv_id):
+        if is_already_processed(arxiv_id, repository="arxiv"):
             skipped += 1
             continue
-        mark_as_queued(arxiv_id)
+        mark_as_queued(arxiv_id, repository="arxiv")
         new_ids.append(arxiv_id)
 
     log.info(

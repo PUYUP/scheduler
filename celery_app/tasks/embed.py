@@ -174,7 +174,7 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     # Mark this paper as fully processed so scrape_topic won't re-queue it
     from celery_app.utils.dedup import mark_as_processed
-    mark_as_processed(paper_id)
+    mark_as_processed(paper_id, repository=repository)
 
     # Clean up the local PDF to reclaim disk space
     _cleanup_pdf(metadata.get("local_pdf_path"))

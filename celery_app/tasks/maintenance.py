@@ -10,12 +10,9 @@ Housekeeping tasks (queue: default)
 """
 
 from __future__ import annotations
-
-import os
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, cast
 
 import redis
 import structlog
@@ -171,7 +168,7 @@ def pipeline_health(self) -> Dict[str, Any]:
 
     # Dedup key count
     try:
-        report["dedup_keys"] = cast(int, r.scard("arxiv:processed")) + cast(int, r.scard("arxiv:queued"))
+        report["dedup_keys"] = cast(int, r.scard("curiosift_rag:processed")) + cast(int, r.scard("curiosift_rag:queued"))
     except Exception:
         pass
 
