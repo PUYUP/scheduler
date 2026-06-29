@@ -21,6 +21,8 @@ Design notes:
 from __future__ import annotations
 
 import time
+import shutil
+from pathlib import Path
 from typing import Any, Dict, List
 
 import structlog
@@ -149,8 +151,8 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     Each chunk arriving here is guaranteed to have:
       chunk_id, paper_id, title, section, text, embedding,
-      embedding_model, embedding_dim, page_start, page_end,
-      authors, categories, published, doi, token_count
+      embedding_model, embedding_dim, authors, categories, 
+      published, doi, token_count
     """
     paper_id    = metadata["paper_id"]
     repository  = metadata["repository"]
@@ -176,6 +178,11 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     # Clean up the local PDF to reclaim disk space
     _cleanup_pdf(metadata.get("local_pdf_path"))
+
+    # Clean up the GROBID output
+    out_dir = Path(metadata.get("local_pdf_path")).parent / "out"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
 
     log.info("store_chunks.done", paper_id=paper_id, repository=repository, stored=stored_count)
 
@@ -208,8 +215,6 @@ def _write_chunks(chunks: List[Dict[str, Any]]) -> int:
         "embedding":       [0.012, -0.034, ...],   # list[float]
         "embedding_model": "text-embedding-3-small",
         "embedding_dim":   1536,
-        "page_start":      3,
-        "page_end":        5,
         "authors":         ["Vaswani, A.", ...],
         "categories":      ["cs.CL", "cs.LG"],
         "published":       "2017-06-12T00:00:00+00:00",
@@ -242,6 +247,7 @@ def _write_chunks(chunks: List[Dict[str, Any]]) -> int:
          for c in chunks]
     )
     """
+
     # ── Default: log-only (replace with real writer) ──────────────────
     log.info(
         "_write_chunks.stub",

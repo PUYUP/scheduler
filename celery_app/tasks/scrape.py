@@ -27,7 +27,6 @@ from tenacity import (
     wait_exponential,
 )
 
-from types import SimpleNamespace
 from celery_app.main import app
 from celery_app.utils.dedup import is_already_processed, mark_as_queued
 from celery_app.utils.paper_schema import PaperMetadata
@@ -123,21 +122,6 @@ def scrape_paper_metadata(self, paper_id: str, repository: str) -> Dict[str, Any
     except Exception as exc:
         log.warning("scrape_paper_metadata.fetch_failed", paper_id=paper_id, repository=repository, error=str(exc))
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
-
-    # paper = {
-    #     "title": "AAAAA",
-    #     "authors": [SimpleNamespace(name="AAAAA"), SimpleNamespace(name="BBBBB")],
-    #     "summary": "CCCCC",
-    #     "categories": "DDDDD",
-    #     "published": datetime(2022, 1, 1),
-    #     "updated": datetime(2022, 1, 1),
-    #     "pdf_url": "https://arxiv.org/pdf/2606.26184",
-    #     "doi": "HHHHH",
-    #     "journal_ref": "IIIII",
-    #     "primary_category": "JJJJJ",
-    # }
-
-    # paper = SimpleNamespace(**paper)
 
     metadata = PaperMetadata(
         paper_id=paper_id,

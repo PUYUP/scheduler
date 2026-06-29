@@ -20,7 +20,8 @@ class Settings(BaseSettings):
     )
 
     # ── Redis ──────────────────────────────────────────────────
-    redis_host: str     = "localhost"  # from container: redis
+    # redis_host: str     = "localhost"  #  mac local
+    redis_host: str     = "redis"  # docker
     redis_port: int     = 6379
     redis_db: int       = 0
     redis_password: str = ""
@@ -46,7 +47,8 @@ class Settings(BaseSettings):
     download_timeout_seconds: int  = 120
 
     # ── PDF Processing ─────────────────────────────────────────
-    pdf_download_dir: str   = "/Volumes/SSD1/Private/Curio"  # docker use: /app/downloads
+    # pdf_download_dir: str   = "/Volumes/SSD1/Private/Curio"  # mac local
+    pdf_download_dir: str   = "/app/downloads"  # docker
     pdf_max_size_mb: int    = 150
     grobid_server: str      = "http://localhost:8070"
 
