@@ -5,8 +5,8 @@ Tier-1 tasks (queue: scrape)
 ─────────────────────────────────────────────────────────────────────────
 Flow:
   scrape_topic(topic)
-      └─► [group] scrape_paper_metadata(arxiv_id) × N
-                      └─► download_pdf(arxiv_id, pdf_url)
+      └─► [group] scrape_paper_metadata(paper_id, repository) × N
+                      └─► download_pdf(paper_id, repository, pdf_url)
                               └─► parse_pdf (chain → process queue)
 ─────────────────────────────────────────────────────────────────────────
 """
@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List
-from dataclasses import asdict
 
 import arxiv
 import httpx
@@ -28,6 +27,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from types import SimpleNamespace
 from celery_app.main import app
 from celery_app.utils.dedup import is_already_processed, mark_as_queued
 from celery_app.utils.paper_schema import PaperMetadata
@@ -110,22 +110,38 @@ def scrape_topic(
     queue="scrape",
     ignore_result=False,
 )
-def scrape_paper_metadata(self, arxiv_id: str) -> Dict[str, Any]:
+def scrape_paper_metadata(self, paper_id: str, repository: str) -> Dict[str, Any]:
     """
     Fetches full metadata for a single paper then triggers PDF download.
 
     Returns serialised PaperMetadata dict (passed downstream via chain).
     """
-    log.info("scrape_paper_metadata.start", arxiv_id=arxiv_id)
+    log.info("scrape_paper_metadata.start", paper_id=paper_id, repository=repository)
 
     try:
-        paper = _fetch_single_paper(arxiv_id)
+        paper = _fetch_single_paper(paper_id, repository)
     except Exception as exc:
-        log.warning("scrape_paper_metadata.fetch_failed", arxiv_id=arxiv_id, error=str(exc))
+        log.warning("scrape_paper_metadata.fetch_failed", paper_id=paper_id, repository=repository, error=str(exc))
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
 
+    # paper = {
+    #     "title": "AAAAA",
+    #     "authors": [SimpleNamespace(name="AAAAA"), SimpleNamespace(name="BBBBB")],
+    #     "summary": "CCCCC",
+    #     "categories": "DDDDD",
+    #     "published": datetime(2022, 1, 1),
+    #     "updated": datetime(2022, 1, 1),
+    #     "pdf_url": "https://arxiv.org/pdf/2606.26184",
+    #     "doi": "HHHHH",
+    #     "journal_ref": "IIIII",
+    #     "primary_category": "JJJJJ",
+    # }
+
+    # paper = SimpleNamespace(**paper)
+
     metadata = PaperMetadata(
-        arxiv_id=arxiv_id,
+        paper_id=paper_id,
+        repository=repository,
         title=paper.title.strip().replace("\n", " "),
         abstract=paper.summary.strip().replace("\n", " "),
         authors=[a.name for a in paper.authors],
@@ -135,12 +151,13 @@ def scrape_paper_metadata(self, arxiv_id: str) -> Dict[str, Any]:
         pdf_url=paper.pdf_url,
         doi=paper.doi or "",
         journal_ref=paper.journal_ref or "",
-        # primary_category=paper.primary_category.term if paper.primary_category else "",
+        primary_category=paper.primary_category if paper.primary_category else "",
     )
 
     log.info(
         "scrape_paper_metadata.done",
-        arxiv_id=arxiv_id,
+        paper_id=paper_id,
+        repository=repository,
         title=metadata.title[:60],
     )
 
@@ -180,22 +197,23 @@ def download_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     Accepts the metadata dict from scrape_paper_metadata.
     Returns the same dict enriched with `local_pdf_path`.
     """
-    arxiv_id = metadata["arxiv_id"]
-    pdf_url  = metadata["pdf_url"]
+    paper_id   = metadata["paper_id"]
+    pdf_url    = metadata["pdf_url"]
+    repository = metadata["repository"]
 
-    log.info("download_pdf.start", arxiv_id=arxiv_id, url=pdf_url)
+    log.info("download_pdf.start", paper_id=paper_id, repository=repository, url=pdf_url)
 
-    dest_path = Path(settings.pdf_download_dir) / f"{arxiv_id}.pdf"
+    dest_path = Path(settings.pdf_download_dir) / repository / f"{paper_id}.pdf"
 
     if dest_path.exists():
-        log.info("download_pdf.cache_hit", arxiv_id=arxiv_id)
+        log.info("download_pdf.cache_hit", paper_id=paper_id, repository=repository)
         metadata["local_pdf_path"] = str(dest_path)
         return metadata
 
     try:
         _download_file(pdf_url, dest_path)
     except Exception as exc:
-        log.error("download_pdf.failed", arxiv_id=arxiv_id, error=str(exc))
+        log.error("download_pdf.failed", paper_id=paper_id, repository=repository, error=str(exc))
         raise self.retry(exc=exc, countdown=60 * 2 ** self.request.retries)
 
     size_mb = dest_path.stat().st_size / (1024 * 1024)
@@ -203,7 +221,8 @@ def download_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         dest_path.unlink(missing_ok=True)
         log.warning(
             "download_pdf.too_large",
-            arxiv_id=arxiv_id,
+            paper_id=paper_id,
+            repository=repository,
             size_mb=round(size_mb, 1),
         )
         # Don't retry — just skip this paper
@@ -213,7 +232,8 @@ def download_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     log.info(
         "download_pdf.done",
-        arxiv_id=arxiv_id,
+        paper_id=paper_id,
+        repository=repository,
         size_mb=round(size_mb, 2),
     )
     metadata["local_pdf_path"] = str(dest_path)
@@ -245,12 +265,12 @@ def _query_arxiv(topic: str, max_results: int, sort_by: str):
     return list(client.results(search))
 
 
-def _fetch_single_paper(arxiv_id: str):
-    client = arxiv.Client(num_retries=3, delay_seconds=1)
-    search = arxiv.Search(id_list=[arxiv_id])
+def _fetch_single_paper(paper_id: str, repository: str):
+    client = arxiv.Client(num_retries=3, delay_seconds=5)
+    search = arxiv.Search(id_list=[paper_id])
     results = list(client.results(search))
     if not results:
-        raise ValueError(f"No paper found for id={arxiv_id}")
+        raise ValueError(f"No paper found for id={paper_id} repository={repository}")
     return results[0]
 
 

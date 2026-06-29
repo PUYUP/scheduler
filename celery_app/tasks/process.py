@@ -31,6 +31,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from celery_app.main import app
 from celery_app.utils.text_cleaner import clean_academic_text
 from config.settings import settings
+from grobid_client.grobid_client import GrobidClient
 
 log = structlog.get_logger(__name__)
 
@@ -54,48 +55,50 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     Extracts structured text from a downloaded PDF.
 
     Returns metadata enriched with:
-      - `sections`: list of {title, text, page_start, page_end}
+      - `sections`: list of {title, text}
       - `full_text`: concatenated plain text (fallback)
-      - `page_count`: int
     """
-    arxiv_id     = metadata["arxiv_id"]
+    paper_id     = metadata["paper_id"]
+    repository   = metadata["repository"]
     pdf_path_str = metadata.get("local_pdf_path")
 
     # Skip papers that were flagged during download
     if not pdf_path_str or metadata.get("skip_reason"):
         log.warning(
             "parse_pdf.skip",
-            arxiv_id=arxiv_id,
+            paper_id=paper_id,
+            repository=repository,
             reason=metadata.get("skip_reason", "no pdf path"),
         )
         return metadata
 
     pdf_path = Path(pdf_path_str)
     if not pdf_path.exists():
-        log.error("parse_pdf.file_missing", arxiv_id=arxiv_id, path=str(pdf_path))
+        log.error("parse_pdf.file_missing", paper_id=paper_id, repository=repository, path=str(pdf_path))
         raise self.retry(exc=FileNotFoundError(str(pdf_path)))
 
-    log.info("parse_pdf.start", arxiv_id=arxiv_id)
+    log.info("parse_pdf.start", paper_id=paper_id, repository=repository)
 
     # Ensure output directory exists
-    out_dir = Path(settings.pdf_download_dir) / "out"
-    out_dir.mkdir(exist_ok=True, parents=True)
+    target_dir = Path(settings.pdf_download_dir) / repository
+    out_dir = target_dir / "out"
+    target_dir.mkdir(exist_ok=True, parents=True)
 
     # Run GROBID process (sync)
-    log.info("grobid.process.start", arxiv_id=arxiv_id, path=str(pdf_path))
-    client = GrobidClient(grobid_url="http://localhost:8070")
+    log.info("grobid.process.start", paper_id=paper_id, repository=repository, path=str(pdf_path))
+    client = GrobidClient(grobid_server=settings.grobid_server)
 
     try:
         client.process(
             service="processFulltextDocument",
-            input_path=str(pdf_path),
+            input_path=str(target_dir),
             output=str(out_dir),
             n=1,
             json_output=True,
             segment_sentences=True,
         )
     except Exception as e:
-        log.error("grobid.process.failed", arxiv_id=arxiv_id, error=str(e))
+        log.error("grobid.process.failed", paper_id=paper_id, repository=repository, error=str(e))
         raise self.retry(exc=e)
 
     # Find the output JSON
@@ -104,68 +107,42 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     json_data = None
 
     if not json_path.exists():
-        log.error("grobid.json_not_found", arxiv_id=arxiv_id, expected=str(json_path))
+        log.error("grobid.json_not_found", paper_id=paper_id, repository=repository, expected=str(json_path))
         raise self.retry(exc=FileNotFoundError(f"GROBID JSON missing: {json_path}"))
 
     with open(json_path, "r", encoding="utf-8") as f:
         json_data = json.load(f)
 
-    # parse metadata
-    title = json_data['biblio'].get('title')
-    authors = json_data['biblio'].get('authors')
-    publication_date = json_data['biblio'].get('publication_date')
-    abstract = " ".join([
-        item.get("text", "")
-        for a in json_data["biblio"].get("abstract", [])
-        for item in a
-        if item.get("text")
-    ])
+    # grouping body text
+    grouped: Dict[str, List[str]] = {}
+    full_text: str = ""
     body_text = json_data.get('body_text', [])
 
-    # grouping body text
-    grouped = {}
     for item in body_text:
         section = item.get('head_section', None)
         grouped.setdefault(section, [])
         grouped[section].append(item['text'])
+        full_text += item['text'] + "\n\n"
     
-    sections = {section: " ".join(texts) for section, texts in grouped.items()}
-    result = []
-
-    for section, text in sections.items():
-        text_splitter = RecursiveCharacterTextSplitter(
-            separators=["\n\n", "\n", ".", " "],
-            chunk_size=settings.chunk_size_tokens,
-            chunk_overlap=settings.chunk_overlap_tokens,
-            length_function=len,
-            is_separator_regex=False,
-        )
-
-        chunks = text_splitter.split_text(text)
-        result.append({
-            "heading": section if section is not None else settings.default_heading,
-            "chunks": chunks
-        })
+    sections = { 
+        section if section else settings.default_heading: " ".join(texts) 
+        for section, texts in grouped.items()
+    }
     
     log.info(
         "parse_pdf.done",
-        arxiv_id=arxiv_id,
+        paper_id=paper_id,
+        repository=repository,
         sections=len(sections),
-        total_chunks=len(result),
     )
 
-    metadata["sections"]   = result
-    metadata["full_text"]  = "\n\n".join(s["text"] for s in result if s["text"])
-    metadata["page_count"] = len(json_data["body_text"])
-    metadata["title"]      = title
-    metadata["authors"]    = authors
-    metadata["abstract"]   = abstract
-    metadata["publication_date"] = publication_date
+    metadata["sections"]   = sections
+    metadata["full_text"]  = full_text
 
     log.info(
         "parse_pdf.done",
-        arxiv_id=arxiv_id,
-        page_count=len(json_data["body_text"]),
+        paper_id=paper_id,
+        repository=repository,
         sections=len(sections),
         chars=len(metadata["full_text"]),
     )
@@ -176,6 +153,11 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         | chunk_document.s().set(queue="process")
         | signature(
             "celery_app.tasks.embed.generate_embeddings",
+            queue="embed",
+            immutable=False,
+        )
+        | signature(
+            "celery_app.tasks.embed.store_chunks",
             queue="embed",
             immutable=False,
         )
@@ -203,23 +185,25 @@ def clean_text(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
       - remove reference section (not useful for RAG body search)
       - remove figure/table captions inline markers (Figure 1, Table 2…)
     """
-    arxiv_id = metadata["arxiv_id"]
-    log.info("clean_text.start", arxiv_id=arxiv_id)
+    paper_id     = metadata["paper_id"]
+    repository   = metadata["repository"]
+    log.info("clean_text.start", paper_id=paper_id, repository=repository)
 
-    cleaned_sections = []
-    for section in metadata.get("sections", []):
-        cleaned = section.copy()
-        cleaned["text"] = clean_academic_text(section["text"])
-        if len(cleaned["text"]) >= settings.min_chunk_chars:
-            cleaned_sections.append(cleaned)
+    cleaned_sections = {}
+    for section, text in metadata.get("sections", {}).items():
+        cleaned_section = clean_academic_text(section)
+        cleaned_text = clean_academic_text(text)
+        cleaned_sections.setdefault(cleaned_section, [])
+        cleaned_sections[cleaned_section].append(cleaned_text)
 
     # Also clean the full_text field
-    metadata["sections"]  = cleaned_sections
+    metadata["sections"]  = {section: " ".join(texts) for section, texts in cleaned_sections.items()}
     metadata["full_text"] = clean_academic_text(metadata.get("full_text", ""))
 
     log.info(
         "clean_text.done",
-        arxiv_id=arxiv_id,
+        paper_id=paper_id,
+        repository=repository,
         sections_kept=len(cleaned_sections),
     )
     return metadata
@@ -242,13 +226,12 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     Each chunk is a dict:
     {
-        "chunk_id":      "<arxiv_id>_<section_idx>_<chunk_idx>",
-        "arxiv_id":      str,
+        "chunk_id":      "<paper_id>_<heading>_<chunk_idx>",
+        "paper_id":      str,
+        "repository":    str,
         "title":         str,         # paper title
-        "section":       str,         # section heading
+        "heading":       str,         # section heading
         "text":          str,         # chunk body
-        "page_start":    int,
-        "page_end":      int,
         "authors":       list[str],
         "categories":    list[str],
         "published":     str,         # ISO date
@@ -257,8 +240,9 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     Returns metadata with `chunks` key added.
     """
-    arxiv_id = metadata["arxiv_id"]
-    log.info("chunk_document.start", arxiv_id=arxiv_id)
+    paper_id     = metadata["paper_id"]
+    repository   = metadata["repository"]
+    log.info("chunk_document.start", paper_id=paper_id, repository=repository)
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=settings.chunk_size_tokens * 4,     # ~4 chars per token
@@ -269,8 +253,7 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     chunks: List[Dict[str, Any]] = []
 
-    for sec_idx, section in enumerate(metadata.get("sections", [])):
-        raw_text = section.get("text", "")
+    for sec_idx, (heading, raw_text) in enumerate(metadata.get("sections", {}).items()):
         if len(raw_text) < settings.min_chunk_chars:
             continue
 
@@ -281,13 +264,12 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 continue
 
             chunk: Dict[str, Any] = {
-                "chunk_id":    f"{arxiv_id}_{sec_idx}_{chunk_idx}",
-                "arxiv_id":    arxiv_id,
+                "chunk_id":    f"{paper_id}_{sec_idx}_{chunk_idx}",
+                "paper_id":    paper_id,
+                "repository":  repository,
                 "title":       metadata.get("title", ""),
-                "section":     section.get("title", "Body"),
+                "heading":     heading,
                 "text":        chunk_text,
-                "page_start":  section.get("page_start", 0),
-                "page_end":    section.get("page_end", 0),
                 "authors":     metadata.get("authors", []),
                 "categories":  metadata.get("categories", []),
                 "published":   metadata.get("published", ""),
@@ -299,7 +281,8 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     log.info(
         "chunk_document.done",
-        arxiv_id=arxiv_id,
+        paper_id=paper_id,
+        repository=repository,
         chunks=len(chunks),
         avg_tokens=int(sum(c["token_count"] for c in chunks) / max(len(chunks), 1)),
     )

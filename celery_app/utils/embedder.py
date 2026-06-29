@@ -87,7 +87,10 @@ class LocalEmbedder(BaseEmbedder):
         from sentence_transformers import SentenceTransformer
         self.model_name = settings.local_embedding_model
         log.info("local_embedder.loading", model=self.model_name)
-        self._model = SentenceTransformer(self.model_name)
+        self._model = SentenceTransformer(
+            model_name_or_path=self.model_name,
+            device="cpu",
+        )
         log.info("local_embedder.ready", model=self.model_name)
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:

@@ -13,10 +13,11 @@ from pydantic import BaseModel, Field, field_validator
 
 class PaperMetadata(BaseModel):
     """
-    Validated metadata for a single ArXiv paper.
+    Validated metadata for a single paper.
     Produced by scrape_paper_metadata, passed to every downstream task.
     """
-    arxiv_id:         str
+    paper_id:         str
+    repository:       str
     title:            str
     abstract:         str
     authors:          List[str]          = Field(default_factory=list)
@@ -41,7 +42,7 @@ class PaperMetadata(BaseModel):
     def normalise_whitespace(cls, v: str) -> str:
         return " ".join(v.split()) if isinstance(v, str) else v
 
-    @field_validator("arxiv_id", mode="before")
+    @field_validator("paper_id", mode="before")
     @classmethod
     def strip_version(cls, v: str) -> str:
         """Normalise '2401.12345v2' → '2401.12345'."""
@@ -56,7 +57,7 @@ class ChunkSchema(BaseModel):
     Embedded inside PaperMetadata.chunks list.
     """
     chunk_id:        str
-    arxiv_id:        str
+    paper_id:        str
     title:           str
     section:         str
     text:            str

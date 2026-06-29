@@ -53,6 +53,13 @@ _MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
 # Hyphenated line breaks: "pro-\ncess" → "process"
 _HYPHEN_BREAK_RE = re.compile(r"(\w)-\n(\w)")
 
+# Roman numeral section prefixes at the start of a line: "I.", "II.", "IV.", etc.
+# Matches valid Roman numerals (I–MMMM range) followed by a period and whitespace.
+_ROMAN_PREFIX_RE = re.compile(
+    r"^(M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{1,3}))\.\s+",
+    re.MULTILINE | re.IGNORECASE,
+)
+
 # References / Bibliography section header — everything after this is dropped
 _REFERENCES_RE = re.compile(
     r"\n\s*(?:References|Bibliography|Works\s+Cited)\s*\n",
@@ -104,11 +111,14 @@ def clean_academic_text(text: str) -> str:
     # 8. Remove surviving LaTeX commands
     text = _LATEX_CMD_RE.sub("", text)
 
-    # 9. Normalise whitespace
+    # 9. Strip Roman numeral section prefixes (e.g. "I. Introduction" → "Introduction")
+    # text = _ROMAN_PREFIX_RE.sub("", text)
+
+    # 10. Normalise whitespace
     text = _MULTI_SPACE_RE.sub(" ", text)
     text = _MULTI_NEWLINE_RE.sub("\n\n", text)
 
-    # 10. Strip leading / trailing whitespace per line
+    # 11. Strip leading / trailing whitespace per line
     lines = [line.strip() for line in text.splitlines()]
     text  = "\n".join(line for line in lines if line)
 

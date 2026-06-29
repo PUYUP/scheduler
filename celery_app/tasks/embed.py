@@ -56,16 +56,18 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     Returns the full metadata dict with embedded chunks.
     """
-    arxiv_id = metadata["arxiv_id"]
-    chunks   = metadata.get("chunks", [])
+    paper_id    = metadata["paper_id"]
+    repository  = metadata["repository"]
+    chunks      = metadata.get("chunks", [])
 
     if not chunks:
-        log.warning("generate_embeddings.no_chunks", arxiv_id=arxiv_id)
+        log.warning("generate_embeddings.no_chunks", paper_id=paper_id, repository=repository)
         return metadata
 
     log.info(
         "generate_embeddings.start",
-        arxiv_id=arxiv_id,
+        paper_id=paper_id,
+        repository=repository,
         chunks=len(chunks),
         provider=settings.embedding_provider,
     )
@@ -86,7 +88,8 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
             log.debug(
                 "generate_embeddings.batch_done",
-                arxiv_id=arxiv_id,
+                paper_id=paper_id,
+                repository=repository,
                 batch_start=batch_start,
                 batch_size=len(batch),
                 elapsed_s=round(elapsed, 2),
@@ -102,7 +105,8 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as exc:
         log.error(
             "generate_embeddings.failed",
-            arxiv_id=arxiv_id,
+            paper_id=paper_id,
+            repository=repository,
             error=str(exc),
             attempt=self.request.retries,
         )
@@ -111,7 +115,8 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     log.info(
         "generate_embeddings.done",
-        arxiv_id=arxiv_id,
+        paper_id=paper_id,
+        repository=repository,
         embedded=len(embedded_chunks),
         dim=embedded_chunks[0]["embedding_dim"] if embedded_chunks else 0,
     )
@@ -143,38 +148,40 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     └──────────────────────────────────────────────────────────┘
 
     Each chunk arriving here is guaranteed to have:
-      chunk_id, arxiv_id, title, section, text, embedding,
+      chunk_id, paper_id, title, section, text, embedding,
       embedding_model, embedding_dim, page_start, page_end,
       authors, categories, published, doi, token_count
     """
-    arxiv_id = metadata["arxiv_id"]
-    chunks   = metadata.get("chunks", [])
+    paper_id    = metadata["paper_id"]
+    repository  = metadata["repository"]
+    chunks      = metadata.get("chunks", [])
 
     # Drop chunks that somehow lost their embedding
     valid_chunks = [c for c in chunks if c.get("embedding")]
     if not valid_chunks:
-        log.warning("store_chunks.no_valid_chunks", arxiv_id=arxiv_id)
-        return {"arxiv_id": arxiv_id, "stored": 0, "status": "skipped"}
+        log.warning("store_chunks.no_valid_chunks", paper_id=paper_id, repository=repository)
+        return {"paper_id": paper_id, "repository": repository, "stored": 0, "status": "skipped"}
 
-    log.info("store_chunks.start", arxiv_id=arxiv_id, count=len(valid_chunks))
+    log.info("store_chunks.start", paper_id=paper_id, repository=repository, count=len(valid_chunks))
 
     try:
         stored_count = _write_chunks(valid_chunks)
     except Exception as exc:
-        log.error("store_chunks.failed", arxiv_id=arxiv_id, error=str(exc))
+        log.error("store_chunks.failed", paper_id=paper_id, repository=repository, error=str(exc))
         raise self.retry(exc=exc)
 
     # Mark this paper as fully processed so scrape_topic won't re-queue it
     from celery_app.utils.dedup import mark_as_processed
-    mark_as_processed(arxiv_id)
+    mark_as_processed(paper_id)
 
     # Clean up the local PDF to reclaim disk space
     _cleanup_pdf(metadata.get("local_pdf_path"))
 
-    log.info("store_chunks.done", arxiv_id=arxiv_id, stored=stored_count)
+    log.info("store_chunks.done", paper_id=paper_id, repository=repository, stored=stored_count)
 
     return {
-        "arxiv_id":   arxiv_id,
+        "paper_id":   paper_id,
+        "repository": repository,
         "stored":     stored_count,
         "status":     "ok",
         "title":      metadata.get("title", ""),
@@ -193,7 +200,8 @@ def _write_chunks(chunks: List[Dict[str, Any]]) -> int:
     Each chunk dict has this shape:
     {
         "chunk_id":        "2401.12345_2_0",
-        "arxiv_id":        "2401.12345",
+        "paper_id":        "2401.12345",
+        "repository":      "arxiv",
         "title":           "Attention Is All You Need",
         "section":         "Methods",
         "text":            "We propose a new...",
@@ -222,14 +230,14 @@ def _write_chunks(chunks: List[Dict[str, Any]]) -> int:
         )
         for c in chunks
     ]
-    client.upsert(collection_name="arxiv_chunks", points=points)
+    client.upsert(collection_name="paper_chunks", points=points)
 
     ── Example: pgvector ───────────────────────────────────────────────
     conn.executemany(
-        "INSERT INTO chunks (chunk_id, arxiv_id, section, text, embedding, metadata)
+        "INSERT INTO chunks (chunk_id, paper_id, repository, section, text, embedding, metadata)
          VALUES (%s, %s, %s, %s, %s::vector, %s)
          ON CONFLICT (chunk_id) DO NOTHING",
-        [(c["chunk_id"], c["arxiv_id"], c["section"],
+        [(c["chunk_id"], c["paper_id"], c["repository"], c["section"],
           c["text"], c["embedding"], json.dumps({...}))
          for c in chunks]
     )

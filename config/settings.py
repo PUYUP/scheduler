@@ -47,7 +47,8 @@ class Settings(BaseSettings):
 
     # ── PDF Processing ─────────────────────────────────────────
     pdf_download_dir: str   = "/Volumes/SSD1/Private/Curio"  # docker use: /app/downloads
-    pdf_max_size_mb: int    = 50
+    pdf_max_size_mb: int    = 150
+    grobid_server: str      = "http://localhost:8070"
 
     # ── Chunking ───────────────────────────────────────────────
     default_heading: str        = "Supplementary Information"
@@ -56,11 +57,11 @@ class Settings(BaseSettings):
     min_chunk_chars: int        = 100   # discard tiny chunks
 
     # ── Embeddings ─────────────────────────────────────────────
-    embedding_provider: str     = "openai"       # "openai" | "local"
+    embedding_provider: str     = "local"       # "openai" | "local"
     openai_api_key: str         = ""
     openai_embedding_model: str = "text-embedding-3-small"
     embedding_batch_size: int   = 100             # texts per API call
-    local_embedding_model: str  = "BAAI/bge-small-en-v1.5"
+    local_embedding_model: str  = "BAAI/bge-m3"
 
     # ── Logging ────────────────────────────────────────────────
     log_level: str          = "INFO"

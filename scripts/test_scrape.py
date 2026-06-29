@@ -7,6 +7,7 @@ from datetime import datetime
 from itertools import groupby
 from celery_app.tasks.scrape import scrape_paper_metadata, download_pdf
 from celery_app.tasks.process import parse_pdf, clean_text, chunk_document, _json_to_chunks
+from celery_app.tasks.embed import generate_embeddings, store_chunks
 from grobid_client.grobid_client import GrobidClient
 from langchain_text_splitters import RecursiveJsonSplitter
 from langchain_text_splitters import MarkdownHeaderTextSplitter
@@ -36,70 +37,76 @@ def save_chunks_to_json(chunks, arxiv_id: str, output_dir: str = "output"):
 
 
 def main():
-    # arxiv_id = "2606.20564"
+    paper_id = "2606.20564"
+    repository = "arxiv"
 
-    # result = scrape_paper_metadata(arxiv_id=arxiv_id)
-    # download_result = download_pdf(result)
-    # parsing = parse_pdf(download_result)
-    # cleans = clean_text(parsing)
-    # chunks = chunk_document(cleans)
+    result = scrape_paper_metadata(paper_id=paper_id, repository=repository)
+    download_result = download_pdf(result)
+    parsing = parse_pdf(download_result)
+    cleans = clean_text(parsing)
+    chunk = chunk_document(cleans)
+    embeddings = generate_embeddings(chunk)
+    store_chunks = store_chunks(embeddings)
+
+    # print(embeddings)
+    
 
     # # Simpan ke JSON
     # saved_path = save_chunks_to_json(chunks, arxiv_id=arxiv_id)
     # print(f"File tersimpan di: {saved_path}")
 
-    client = GrobidClient()
-    client.process(
-        service="processFulltextDocument",
-        input_path="/Volumes/SSD1/Private/Curio/scheduler/input",
-        output="/Volumes/SSD1/Private/Curio/scheduler/output",
-        n=10,
-        json_output=True,
-        markdown_output=True,
-        segment_sentences=True,
-    )
+    # client = GrobidClient()
+    # client.process(
+    #     service="processFulltextDocument",
+    #     input_path="/Volumes/SSD1/Private/Curio/scheduler/input",
+    #     output="/Volumes/SSD1/Private/Curio/scheduler/output",
+    #     n=10,
+    #     json_output=True,
+    #     markdown_output=True,
+    #     segment_sentences=True,
+    # )
 
-    json_file = "output/2512.00565v1.json"
-    with open(json_file, "r", encoding="utf-8") as f:
-        json_data = json.load(f)
+    # json_file = "output/2512.00565v1.json"
+    # with open(json_file, "r", encoding="utf-8") as f:
+    #     json_data = json.load(f)
     
-    # paper metadata
-    title = json_data['biblio'].get('title')
-    authors = json_data['biblio'].get('authors')
-    publication_date = json_data['biblio'].get('publication_date')
-    abstract = " ".join([
-        item.get("text", "")
-        for a in json_data["biblio"].get("abstract", [])
-        for item in a
-        if item.get("text")
-    ])
-    body_text = json_data.get('body_text', [])
+    # # paper metadata
+    # title = json_data['biblio'].get('title')
+    # authors = json_data['biblio'].get('authors')
+    # publication_date = json_data['biblio'].get('publication_date')
+    # abstract = " ".join([
+    #     item.get("text", "")
+    #     for a in json_data["biblio"].get("abstract", [])
+    #     for item in a
+    #     if item.get("text")
+    # ])
+    # body_text = json_data.get('body_text', [])
     
-    grouped = {}
-    for item in body_text:
-        section = item.get('head_section', None)
-        grouped.setdefault(section, [])
-        grouped[section].append(item['text'])
+    # grouped = {}
+    # for item in body_text:
+    #     section = item.get('head_section', None)
+    #     grouped.setdefault(section, [])
+    #     grouped[section].append(item['text'])
     
-    sections = {section: " ".join(texts) for section, texts in grouped.items()}
-    result = []
+    # sections = {section: " ".join(texts) for section, texts in grouped.items()}
+    # result = []
 
-    for section, text in sections.items():
-        text_splitter = RecursiveCharacterTextSplitter(
-            separators=["\n\n", "\n", ".", " "],
-            chunk_size=settings.chunk_size_tokens,
-            chunk_overlap=settings.chunk_overlap_tokens,
-            length_function=len,
-            is_separator_regex=False,
-        )
+    # for section, text in sections.items():
+    #     text_splitter = RecursiveCharacterTextSplitter(
+    #         separators=["\n\n", "\n", ".", " "],
+    #         chunk_size=settings.chunk_size_tokens,
+    #         chunk_overlap=settings.chunk_overlap_tokens,
+    #         length_function=len,
+    #         is_separator_regex=False,
+    #     )
 
-        chunks = text_splitter.split_text(text)
-        result.append({
-            "heading": section if section is not None else settings.default_heading,
-            "chunks": chunks
-        })
+    #     chunks = text_splitter.split_text(text)
+    #     result.append({
+    #         "heading": section if section is not None else settings.default_heading,
+    #         "chunks": chunks
+    #     })
 
-    print(result)
+    # print(result)
 
     # document = """An intuitive strategy is to split documents based on their length. This simple yet effective approach ensures that each chunk doesn’t exceed a specified size limit. Key benefits of length-based splitting:"""
     # texts = text_splitter.split_text(document)
