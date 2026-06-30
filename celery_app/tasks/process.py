@@ -39,7 +39,7 @@ log = structlog.get_logger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="celery_app.process.parse_pdf",
+    name="celery_app.tasks.process.parse_pdf",
     bind=True,
     max_retries=3,
     default_retry_delay=120,
@@ -84,7 +84,7 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     # Run GROBID process (sync)
     log.info("grobid.process.start", paper_id=paper_id, repository=repository, path=str(pdf_path))
-    client = GrobidClient(grobid_server=settings.grobid_server)
+    client = GrobidClient(grobid_server=settings.grobid_server_url)
 
     try:
         client.process(

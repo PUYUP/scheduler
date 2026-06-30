@@ -1,5 +1,5 @@
 ########################################################################
-#  ArXiv RAG Pipeline — Docker Compose
+#  Paper RAG Pipeline — Docker Compose
 #  Services: Redis, Grobid, Worker (3 tiers), Beat Scheduler, Flower
 ########################################################################
 
@@ -8,21 +8,54 @@ x-celery-common: &celery-common
     context: .
     dockerfile: Dockerfile
     target: final
+  image: curiosift/paper-rag:latest
   env_file: .env
+  environment:
+    # Volume sudah pasti terisi sebelum container ini start (lihat depends_on
+    # model-init di bawah), jadi aman cegah network call ke HF Hub sama sekali.
+    HF_HUB_OFFLINE: "1"
+    TRANSFORMERS_OFFLINE: "1"
   volumes:
     - downloads:/app/downloads
     - logs:/app/logs
+    - hf-cache:/home/celery/.cache/huggingface
   depends_on:
     redis:
       condition: service_healthy
     grobid:
       condition: service_started
+    model-init:
+      condition: service_completed_successfully
   restart: unless-stopped
   networks:
-    - arxiv-net
+    - curiosift-net
 
 
 services:
+
+  # ─── Model Cache Warmer ──────────────────────────────────────
+  # Jalan sekali sebelum semua worker start, download model embedding
+  # ke shared volume `hf-cache`. Container ini perlu akses internet;
+  # worker/beat/flower TIDAK (HF_HUB_OFFLINE=1 di x-celery-common).
+  model-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+    image: curiosift/paper-rag:latest
+    env_file: .env
+    environment:
+      # Override eksplisit — container ini WAJIB online untuk download.
+      # Mencegah kebocoran HF_HUB_OFFLINE=1 dari .env atau image lama yang
+      # belum di-rebuild dari Dockerfile versi terbaru.
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+    volumes:
+      - hf-cache:/home/celery/.cache/huggingface
+    command: ["python", "scripts/warm_model_cache.py"]
+    networks:
+      - curiosift-net
+    restart: "no"
 
   # ─── Message Broker ─────────────────────────────────────────
   redis:
@@ -44,7 +77,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - arxiv-net
+      - curiosift-net
     restart: unless-stopped
 
 
@@ -64,7 +97,7 @@ services:
       retries: 5
       start_period: 300s
     networks:
-      - arxiv-net
+      - curiosift-net
     restart: unless-stopped
     deploy:
       resources:
@@ -152,8 +185,9 @@ volumes:
   downloads:
   logs:
   grobid-tmp:
+  hf-cache:
 
 
 networks:
-  arxiv-net:
+  curiosift-net:
     driver: bridge

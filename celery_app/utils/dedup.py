@@ -11,10 +11,11 @@ A paper is skipped on the next Beat run if it exists in either set.
 TTL on "queued" prevents stuck papers from blocking re-ingestion forever.
 """
 
+from __future__ import annotations
+
 import redis
 import structlog
 
-from __future__ import annotations
 from typing import cast
 from config.settings import settings
 

@@ -20,8 +20,7 @@ class Settings(BaseSettings):
     )
 
     # ── Redis ──────────────────────────────────────────────────
-    # redis_host: str     = "localhost"  #  mac local
-    redis_host: str     = "redis"  # docker
+    redis_host: str     = "redis"
     redis_port: int     = 6379
     redis_db: int       = 0
     redis_password: str = ""
@@ -42,15 +41,14 @@ class Settings(BaseSettings):
         ]
     )
     arxiv_base_url: str     = "http://export.arxiv.org/api/query"
-    max_results_per_topic: int = 50
-    scrape_interval_seconds: float = 21_600.0    # 6 hours
+    max_results_per_topic: int = 2
+    scrape_interval_seconds: float = 600    # 6 hours
     download_timeout_seconds: int  = 120
 
     # ── PDF Processing ─────────────────────────────────────────
-    # pdf_download_dir: str   = "/Volumes/SSD1/Private/Curio"  # mac local
-    pdf_download_dir: str   = "/app/downloads"  # docker
-    pdf_max_size_mb: int    = 150
-    grobid_server: str      = "http://localhost:8070"
+    pdf_download_dir: str       = "/app/downloads"
+    pdf_max_size_mb: int        = 150
+    grobid_server_url: str      = "http://grobid:8070"
 
     # ── Chunking ───────────────────────────────────────────────
     default_section: str        = "Supplementary Information"
@@ -59,6 +57,7 @@ class Settings(BaseSettings):
     min_chunk_chars: int        = 100   # discard tiny chunks
 
     # ── Embeddings ─────────────────────────────────────────────
+    hf_token: str               = ""
     embedding_provider: str     = "local"       # "openai" | "local"
     openai_api_key: str         = ""
     openai_embedding_model: str = "text-embedding-3-small"

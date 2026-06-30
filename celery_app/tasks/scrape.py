@@ -89,7 +89,7 @@ def scrape_topic(
     if new_ids:
         # Fan-out: one scrape_paper_metadata task per new arxiv_id
         job = group(
-            scrape_paper_metadata.s(arxiv_id).set(queue="scrape")
+            scrape_paper_metadata.s(arxiv_id, repository="arxiv").set(queue="scrape")
             for arxiv_id in new_ids
         )
         job.apply_async()

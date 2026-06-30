@@ -28,7 +28,7 @@ from config.settings import settings
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Trigger ArXiv scrape tasks")
+    parser = argparse.ArgumentParser(description="Trigger paper scrape tasks")
     parser.add_argument(
         "--arxiv-topics", nargs="*",
         help="ArXiv category codes (default: settings.arxiv_topics)"

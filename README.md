@@ -76,11 +76,11 @@ open http://localhost:5555/flower
 
 # 4. Manually trigger a scrape
 docker compose exec worker-scrape \
-    python scripts/trigger_scrape.py --topics cs.CL --max-results 20
+    python scripts/trigger_scrape.py --arxiv-topics cs.CL --max-results 20
 
 # 5. Re-ingest a specific paper
 docker compose exec worker-scrape \
-    python scripts/trigger_scrape.py --arxiv-id 2401.12345
+    python scripts/trigger_scrape.py --paper-id 2606.27414 --repository arxiv
 ```
 
 ## Scaling
@@ -146,3 +146,45 @@ with your writer. Each chunk arriving there is a plain dict with:
 | `categories` | list[str] | ArXiv category codes |
 | `published` | str | ISO 8601 date |
 | `token_count` | int | Approximate token count |
+
+
+## To fix the "model-init exited with code 1" error
+
+```bash
+docker compose build --no-cache model-init
+docker volume rm <nama-project>_hf-cache
+docker compose up model-init
+```
+
+## Troubleshooting
+
+If you see these errors after rebuilding/restarting:
+
+```
+model-init-1  | [warm_model_cache] FAILED to download ... Path ... not found
+model-init-1 exited with code 1
+service "model-init" didn't complete successfully
+```
+
+It means the `hf-cache` volume was created but never populated, and the
+`model-init` container exited because it couldn't find the model files on its
+first run. To fix:
+
+1. **Clean the stale cache volume:**
+
+   ```bash
+   docker volume rm scheduler_hf-cache
+   ```
+
+   Replace `<nama-project>` with your Compose project name (usually the directory
+   name, e.g. `scheduler` or `arxiv-rag`).
+
+2. **Rebuild the image (no-cache) and restart:**
+
+   ```bash
+   docker compose build --no-cache model-init
+   docker compose up -d
+   ```
+
+This ensures Docker rebuilds the image from scratch and `model-init` has a clean
+volume to download the model into before the workers start.
