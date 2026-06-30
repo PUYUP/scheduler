@@ -98,6 +98,153 @@ def scrape_topic(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Task 1b of 5 — scrape_topic_backfill
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="celery_app.tasks.scrape.scrape_topic_backfill",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=300,
+    queue="scrape",
+    ignore_result=False,
+)
+def scrape_topic_backfill(
+    self,
+    topic: str,
+    sort_by: str = "submittedDate",
+    page_size: int = 100,
+    start: int = 0,
+    total_new: int = 0,
+    total_skipped: int = 0,
+) -> Dict[str, Any]:
+    """
+    Backfill: turun terus dari paper terbaru sampai item terakhir
+    yang tersedia di ArXiv untuk `topic`, halaman demi halaman.
+
+    Setiap pemanggilan memproses satu halaman (`page_size` item)
+    lalu men-trigger dirinya sendiri untuk halaman berikutnya,
+    sampai ArXiv tidak lagi punya hasil baru.
+
+    Task ini di-trigger berulang oleh Celery Beat (bukan one-time),
+    tapi aman untuk di-retrigger karena ada guard `is_backfill_complete`
+    di awal: kalau backfill untuk topic ini sudah pernah selesai,
+    pemanggilan baru dari beat (start=0) akan langsung di-skip tanpa
+    query ulang ke ArXiv. Guard ini sekaligus berfungsi sebagai
+    safety-net kalau chain pagination sempat terputus di tengah jalan
+    (misal worker crash) -- beat akan otomatis melanjutkan dari start=0
+    lagi, tapi semua paper yang sudah pernah diproses akan ke-skip oleh
+    is_already_processed, jadi tidak ada duplikasi kerja yang berarti.
+    """
+    # Guard: hanya cek status "complete" di awal chain (start == 0).
+    # Kalau task ini dipanggil sebagai lanjutan chain (start > 0),
+    # tidak perlu dicek lagi karena chain memang masih berjalan.
+    if start == 0 and is_backfill_complete(topic, repository="arxiv"):
+        log.info("scrape_topic_backfill.already_complete", topic=topic)
+        return {"topic": topic, "skipped_run": True}
+
+    log.info(
+        "scrape_topic_backfill.page_start",
+        topic=topic,
+        start=start,
+        page_size=page_size,
+    )
+
+    try:
+        results = list(_query_arxiv(topic, page_size, sort_by, start=start))
+    except Exception as exc:
+        log.error(
+            "scrape_topic_backfill.query_failed",
+            topic=topic,
+            start=start,
+            error=str(exc),
+        )
+        raise self.retry(exc=exc)
+
+    if not results:
+        mark_backfill_complete(topic, repository="arxiv")
+        log.info(
+            "scrape_topic_backfill.done",
+            topic=topic,
+            start=start,
+            total_new=total_new,
+            total_skipped=total_skipped,
+        )
+        return {
+            "topic": topic,
+            "new": total_new,
+            "skipped": total_skipped,
+            "total_fetched": start,
+        }
+
+    new_ids: List[str] = []
+    page_skipped = 0
+
+    for result in results:
+        arxiv_id = result.entry_id.split("/")[-1]
+        if is_already_processed(arxiv_id, repository="arxiv"):
+            page_skipped += 1
+            continue
+        mark_as_queued(arxiv_id, repository="arxiv")
+        new_ids.append(arxiv_id)
+
+    if new_ids:
+        job = group(
+            scrape_paper_metadata.s(arxiv_id, repository="arxiv").set(queue="scrape")
+            for arxiv_id in new_ids
+        )
+        job.apply_async()
+
+    total_new += len(new_ids)
+    total_skipped += page_skipped
+
+    log.info(
+        "scrape_topic_backfill.page_done",
+        topic=topic,
+        start=start,
+        new=len(new_ids),
+        skipped=page_skipped,
+    )
+
+    if len(results) < page_size:
+        # ArXiv kasih lebih sedikit dari yang diminta -> sudah mentok di ujung
+        mark_backfill_complete(topic, repository="arxiv")
+        log.info(
+            "scrape_topic_backfill.reached_end",
+            topic=topic,
+            total_new=total_new,
+            total_skipped=total_skipped,
+        )
+        return {
+            "topic": topic,
+            "new": total_new,
+            "skipped": total_skipped,
+            "total_fetched": start + len(results),
+        }
+
+    # Lanjut ke halaman berikutnya, dikasih jeda biar tidak digebuk rate-limit
+    scrape_topic_backfill.apply_async(
+        kwargs={
+            "topic": topic,
+            "sort_by": sort_by,
+            "page_size": page_size,
+            "start": start + len(results),
+            "total_new": total_new,
+            "total_skipped": total_skipped,
+        },
+        countdown=5,
+    )
+
+    return {
+        "topic": topic,
+        "new": total_new,
+        "skipped": total_skipped,
+        "total_fetched": start + len(results),
+        "continuing": True,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Task 2 of 5 — scrape_paper_metadata
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -228,7 +375,7 @@ def download_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _query_arxiv(topic: str, max_results: int, sort_by: str):
+def _query_arxiv(topic: str, max_results: int, sort_by: str, start: int = 0):
     sort_criterion = {
         "submittedDate": arxiv.SortCriterion.SubmittedDate,
         "relevance":     arxiv.SortCriterion.Relevance,
@@ -237,7 +384,7 @@ def _query_arxiv(topic: str, max_results: int, sort_by: str):
 
     client = arxiv.Client(
         page_size=min(max_results, 100),
-        delay_seconds=3,          # respect ArXiv rate limit
+        delay_seconds=10,          # respect ArXiv rate limit
         num_retries=5,
     )
     search = arxiv.Search(
@@ -246,7 +393,7 @@ def _query_arxiv(topic: str, max_results: int, sort_by: str):
         sort_by=sort_criterion,
         sort_order=arxiv.SortOrder.Descending,
     )
-    return list(client.results(search))
+    return list(client.results(search, offset=start))
 
 
 def _fetch_single_paper(paper_id: str, repository: str):

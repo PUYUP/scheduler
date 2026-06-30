@@ -96,6 +96,25 @@ def _configure_beat_schedule(app: Celery) -> None:
             }
             for topic in settings.arxiv_topics
         },
+        # ── Backfill trigger for each topic ──
+        # Catatan: beat akan memicu ulang task ini secara periodik dari start=0.
+        # Ini AMAN karena task sendiri akan skip kalau backfill sudah selesai
+        # (lihat guard is_backfill_complete di scrape_topic_backfill), dan
+        # berfungsi sebagai safety-net kalau chain pagination sempat terputus
+        # (misal worker crash di tengah jalan).
+        **{
+            f"scrape-{topic.replace(' ', '-')}-backfill": {
+                "task": "celery_app.tasks.scrape.scrape_topic_backfill",
+                "schedule": settings.scrape_backfill_interval_seconds,
+                "args": [topic],
+                "kwargs": {
+                    "page_size": settings.max_results_per_topic,
+                    "start": 0,
+                },
+                "options": {"queue": "scrape"},
+            }
+            for topic in settings.arxiv_topics
+        },
         # ── Retry dead-letter queue items every hour ──
         "retry-failed-scrape": {
             "task": "celery_app.tasks.maintenance.retry_dead_letters",
