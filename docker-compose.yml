@@ -83,7 +83,7 @@ services:
 
   # ─── Grobid: PDF Structural Parsing ─────────────────────────
   grobid:
-    image: lfoppiano/grobid:0.8.2
+    image: lfoppiano/grobid:0.9.0
     ports:
       - "8070:8070"
     environment:
