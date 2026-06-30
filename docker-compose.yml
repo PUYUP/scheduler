@@ -88,6 +88,7 @@ services:
       - "8070:8070"
     environment:
       - JAVA_OPTS=-Xms1g -Xmx2g
+      - JDK_JAVA_OPTIONS=-XX:-UseContainerSupport
     volumes:
       - grobid-tmp:/tmp/grobid
     healthcheck:
