@@ -52,7 +52,7 @@ services:
       TRANSFORMERS_OFFLINE: "0"
     volumes:
       - hf-cache:/home/celery/.cache/huggingface
-    command: ["python", "-m", "curiosift_miner.scripts.warm_model_cache"]
+    command: ["python", "src/curiosift_miner/scripts/warm_model_cache.py"]
     networks:
       - curiosift-net
     restart: "no"
@@ -88,7 +88,6 @@ services:
       - "8070:8070"
     environment:
       - JAVA_OPTS=-Xms1g -Xmx2g
-      - JDK_JAVA_OPTIONS=-XX:-UseContainerSupport
     volumes:
       - grobid-tmp:/tmp/grobid
     healthcheck:

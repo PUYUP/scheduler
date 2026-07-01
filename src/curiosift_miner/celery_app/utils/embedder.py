@@ -90,6 +90,7 @@ class LocalEmbedder(BaseEmbedder):
         self._model = SentenceTransformer(
             model_name_or_path=self.model_name,
             device="cpu",
+            truncate_dim=settings.truncate_dim,
         )
         log.info("local_embedder.ready", model=self.model_name)
 

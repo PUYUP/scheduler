@@ -24,15 +24,20 @@ import time
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List
+from datetime import datetime
 
 import structlog
 
 from curiosift_miner.celery_app.main import app
+from curiosift_miner.models.paper import PaperCreate
 from curiosift_miner.celery_app.utils.embedder import get_embedder
 from curiosift_miner.config.settings import settings
+from curiosift_miner.storage.db import DatabasePool, DatabaseConfig
+from curiosift_miner.storage.depot import PaperDepot
+from curiosift_miner.celery_app.main import db_pool
+from curiosift_miner.models.document import DocumentChunkCreate
 
 log = structlog.get_logger(__name__)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Task 6 of 7 — generate_embeddings
@@ -167,7 +172,13 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("store_chunks.start", paper_id=paper_id, repository=repository, count=len(valid_chunks))
 
     try:
-        stored_count = _write_chunks(valid_chunks)
+        paper_uuid = _write_paper(metadata)
+    except Exception as exc:
+        log.error("store_paper.failed", paper_id=paper_id, repository=repository, error=str(exc))
+        raise self.retry(exc=exc)
+
+    try:
+        stored_count = _write_chunks(paper_uuid, valid_chunks)
     except Exception as exc:
         log.error("store_chunks.failed", paper_id=paper_id, repository=repository, error=str(exc))
         raise self.retry(exc=exc)
@@ -200,7 +211,38 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # Integration stub — swap this out for your real vector store
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _write_chunks(chunks: List[Dict[str, Any]]) -> int:
+def _write_paper(metadata: Dict[str, Any]) -> str:
+    # Collect paper data
+    published = metadata.get('published', None)
+    year = None
+    if published:
+        # parse date string to datetime object
+        published = datetime.fromisoformat(published)
+        year = published.year
+        
+    payload = PaperCreate(
+        title=metadata.get('title', ''),
+        abstract=metadata.get('abstract', ''),
+        authors=metadata.get('authors', []),
+        identifier=metadata.get('paper_id', ''),
+        repository=metadata.get('repository', ''),
+        doi=metadata.get('doi', None),
+        date_published=published.strftime("%Y-%m-%d") if published else None,
+        pdf_url=metadata.get('pdf_url', ''),
+        processing_status='done',
+        keywords=metadata.get('keywords', []),
+        fields_of_study=metadata.get('categories', []),
+        year=year,
+        open_access=True,
+        processing_tool='grobid',
+        processing_version='0.9.0',
+    )
+
+    paper_depot = PaperDepot(db_pool)
+    return paper_depot.upsert_paper(payload)
+
+
+def _write_chunks(paper_uuid: str, chunks: List[Dict[str, Any]]) -> int:
     """
     Write `chunks` to your vector database.
 
@@ -221,32 +263,32 @@ def _write_chunks(chunks: List[Dict[str, Any]]) -> int:
         "doi":             "...",
         "token_count":     420,
     }
-
-    ── Example: Qdrant ─────────────────────────────────────────────────
-    from qdrant_client import QdrantClient
-    from qdrant_client.models import PointStruct
-
-    client = QdrantClient(host="qdrant", port=6333)
-    points = [
-        PointStruct(
-            id=abs(hash(c["chunk_id"])) % (2**63),
-            vector=c["embedding"],
-            payload={k: v for k, v in c.items() if k != "embedding"},
-        )
-        for c in chunks
-    ]
-    client.upsert(collection_name="paper_chunks", points=points)
-
-    ── Example: pgvector ───────────────────────────────────────────────
-    conn.executemany(
-        "INSERT INTO chunks (chunk_id, paper_id, repository, section, text, embedding, metadata)
-         VALUES (%s, %s, %s, %s, %s::vector, %s)
-         ON CONFLICT (chunk_id) DO NOTHING",
-        [(c["chunk_id"], c["paper_id"], c["repository"], c["section"],
-          c["text"], c["embedding"], json.dumps({...}))
-         for c in chunks]
-    )
     """
+
+    payloads: List[DocumentChunkCreate] = []
+
+    for chunk in chunks:
+        content = chunk.get('text', None)
+        chunk_id = chunk.get('chunk_id', None)
+        section_orders = chunk_id.rsplit('_', 2)[-2:]
+    
+        payloads.append(
+            DocumentChunkCreate(
+                paper_id=paper_uuid,
+                section=chunk.get('section', None),
+                section_order='_'.join(section_orders),
+                chunk=chunk_id,
+                chunk_type='body',
+                content=content,
+                word_count=len(content.split()),
+                embedding=chunk.get('embedding', []),
+                embedding_model=chunk.get('embedding_model', None),
+                token_count=chunk.get('token_count', None),
+            )
+        )
+
+    paper_depot = PaperDepot(db_pool)
+    paper_depot.bulk_insert_chunks(payloads)
 
     # ── Default: log-only (replace with real writer) ──────────────────
     log.info(

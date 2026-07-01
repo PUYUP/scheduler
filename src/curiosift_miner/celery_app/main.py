@@ -6,11 +6,18 @@ Import this module everywhere: `celery -A curiosift_miner.celery_app.main ...`
 """
 
 from celery import Celery
-from celery.signals import setup_logging, worker_ready, task_failure
+from celery.signals import (
+    setup_logging,
+    worker_ready,
+    worker_process_init,
+    worker_process_shutdown,
+    task_failure
+)
 from kombu import Exchange, Queue
 
 from curiosift_miner.config.settings import settings
 from curiosift_miner.config.logging import configure_logging
+from curiosift_miner.storage.db import DatabasePool, DatabaseConfig
 
 
 # ─── Singleton ────────────────────────────────────────────────────────────────
@@ -160,6 +167,20 @@ def on_worker_ready(sender, **kwargs):
     import structlog
     log = structlog.get_logger()
     log.info("worker_ready", hostname=sender.hostname)
+
+
+# ─── Database Init and Shutdown ────────────────────────────────────────────────
+
+db_pool = DatabasePool(DatabaseConfig.from_env())
+db_pool.start()
+
+@worker_process_init.connect
+def init_db(**kwargs):
+    db_pool.start()
+
+@worker_process_shutdown.connect
+def close_db(**kwargs):
+    db_pool.close()
 
 
 # Nama task per-tier, dipakai untuk menentukan queue asal saat dead-lettering.

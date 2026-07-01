@@ -1,105 +1,40 @@
-"""PostgreSQL + pgvector database connection and schema management.
-
-Provides:
-* :class:`DatabaseConfig`  — connection parameters (env-var driven).
-* :class:`DatabasePool`    — async connection pool lifecycle manager.
-* :func:`ensure_schema`    — idempotent DDL (extension + tables + indexes).
-
-Only the config and plumbing live here.  Query helpers belong in their
-own domain modules (e.g. ``executor/repository.py``).
-
-Prerequisites
--------------
-* PostgreSQL is already running (Docker or bare-metal).
-* The ``vector`` extension must be available in the server image
-  (``pgvector/pgvector`` images ship it by default).
-
-Environment variables (all optional — shown with defaults)
-----------------------------------------------------------
-.. code-block:: bash
-
-    DB_HOST=localhost
-    DB_PORT=5432
-    DB_NAME=curiosift
-    DB_USER=postgres
-    DB_PASSWORD=postgres
-    DB_MIN_POOL=2
-    DB_MAX_POOL=10
-    DB_COMMAND_TIMEOUT=30
-"""
-
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-from curiosift_miner.config.settings import settings
 
-if TYPE_CHECKING:
-    import asyncpg  # type: ignore[import-untyped]
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import QueuePool
+
+from curiosift_miner.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class DatabaseConfig:
-    """Connection parameters for the PostgreSQL / pgvector database."""
-
     host: str = settings.db_host
     port: int = settings.db_port
     database: str = settings.db_name
     user: str = settings.db_user
     password: str = settings.db_password
 
-    # Pool sizing
-    min_size: int = 2
-    max_size: int = 10
-
-    # Per-statement timeout in seconds (0 = no limit)
+    min_size: int = 2       # -> pool_size
+    max_size: int = 10      # -> max_overflow diturunkan dari ini
     command_timeout: float = 30.0
-
-    # Passed verbatim to asyncpg as server_settings
-    server_settings: dict[str, str] = field(
-        default_factory=lambda: {"application_name": "curiosift-miner"}
-    )
 
     @classmethod
     def from_env(cls) -> "DatabaseConfig":
-        """Build config entirely from environment variables.
-
-        Example::
-
-            DB_HOST=db DB_PASSWORD=secret python main.py
-        """
-        return cls(
-            host=os.getenv("DB_HOST", "localhost"),
-            port=int(os.getenv("DB_PORT", "5432")),
-            database=os.getenv("DB_NAME", "curiosift"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", "postgres"),
-            min_size=int(os.getenv("DB_MIN_POOL", "2")),
-            max_size=int(os.getenv("DB_MAX_POOL", "10")),
-            command_timeout=float(os.getenv("DB_COMMAND_TIMEOUT", "30")),
-        )
+        return cls()  # semua sudah datang dari `settings`
 
     @property
     def dsn(self) -> str:
-        """Return a ``postgresql://`` DSN string (password redacted for logging)."""
-        return (
-            f"postgresql://{self.user}:***@{self.host}:{self.port}/{self.database}"
-        )
+        # psycopg2 driver, sync
+        return f"postgresql+psycopg2://{self.user}:***@{self.host}:{self.port}/{self.database}"
 
     def _dsn_with_password(self) -> str:
-        return (
-            f"postgresql://{self.user}:{self.password}"
-            f"@{self.host}:{self.port}/{self.database}"
-        )
+        return f"postgresql+psycopg2://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
 
 
 # ---------------------------------------------------------------------------
@@ -131,17 +66,13 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 -- -----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS papers (
     -- Primary key --------------------------------------------------------
-    id                  BIGSERIAL       PRIMARY KEY,
-
-    -- Stable internal identifier (required) ------------------------------
-    paper_id            TEXT            NOT NULL UNIQUE,
+    id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
 
     -- External identifiers (all optional, unique when set) ---------------
-    doi                     TEXT            NOT NULL UNIQUE,          -- e.g. 10.1145/3442188.3445922
+    doi                     TEXT,                            -- e.g. 10.1145/3442188.3445922
     repository              TEXT            NOT NULL,        -- repo source: arXiv, PubMed, Semantic Scholar
-    repository_identifier   TEXT            NOT NULL,        -- unique identifier within the repository e.g. 10.1145/3442188.3445922, 2301.07041, 12345678
-    repository_metadata     JSONB           NOT NULL DEFAULT '{}'::jsonb,
-    -- arbitrary repository-specific raw fields for forward-compatibility
+    identifier              TEXT            NOT NULL,        -- unique identifier within the repository e.g. 10.1145/3442188.3445922, 2301.07041, 12345678
+    metadata                JSONB           NOT NULL DEFAULT '{}'::jsonb, -- arbitrary repository-specific raw fields for forward-compatibility
 
     -- Core bibliographic -------------------------------------------------
     title               TEXT            NOT NULL,
@@ -197,17 +128,14 @@ CREATE TABLE IF NOT EXISTS papers (
 );
 
 -- Indexes on papers ------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_papers_doi
-    ON papers (doi) WHERE doi IS NOT NULL;
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_papers_repo_identifier
-    ON papers (repository, repository_identifier);
+    ON papers (repository, identifier);
 
 CREATE INDEX IF NOT EXISTS idx_papers_repository
     ON papers (repository);
 
-CREATE INDEX IF NOT EXISTS idx_papers_repository_metadata_gin
-    ON papers USING gin (repository_metadata);
+CREATE INDEX IF NOT EXISTS idx_papers_metadata_gin
+    ON papers USING gin (metadata);
 
 -- Date / year range filtering
 CREATE INDEX IF NOT EXISTS idx_papers_year        ON papers (year)          WHERE year IS NOT NULL;
@@ -271,14 +199,14 @@ CREATE INDEX IF NOT EXISTS idx_papers_fos_gin
 --   embedding IS NOT NULL so they never bloat on un-embedded rows.
 -- -----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS document_chunks (
-    id                      BIGSERIAL       PRIMARY KEY,
-    paper_id                TEXT            NOT NULL REFERENCES papers(paper_id) ON DELETE CASCADE,
+    id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    paper_id                UUID            NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
 
     -- Document position -----------------------------------------------
     section                 TEXT            NOT NULL,
-    section_order           INTEGER         NOT NULL,
+    section_order           TEXT            NOT NULL,
     -- 0-based global position of this section across the paper
-    chunk                   INTEGER         NOT NULL,
+    chunk                   TEXT            NOT NULL,
     -- 0-based index of this chunk within the section
 
     -- Content ---------------------------------------------------------
@@ -330,8 +258,6 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     CONSTRAINT chunks_type_check CHECK (
         chunk_type IN ('abstract', 'body', 'conclusion', 'caption', 'equation', 'other')
     ),
-    CONSTRAINT chunks_section_order_nonneg  CHECK (section_order >= 0),
-    CONSTRAINT chunks_chunk_nonneg          CHECK (chunk >= 0),
     CONSTRAINT chunks_token_count_positive  CHECK (token_count IS NULL OR token_count > 0),
     CONSTRAINT chunks_word_count_positive   CHECK (word_count > 0)
 );
@@ -380,110 +306,69 @@ CREATE INDEX IF NOT EXISTS idx_chunks_type
 
 
 class DatabasePool:
-    """Async PostgreSQL connection pool with pgvector support.
-
-    Usage::
-
-        async with DatabasePool() as db:
-            await db.ensure_schema()
-            async with db.pool.acquire() as conn:
-                rows = await conn.fetch("SELECT 1")
-
-    Or manual lifecycle::
-
-        db = DatabasePool(DatabaseConfig.from_env())
-        await db.start()
-        ...
-        await db.close()
-    """
+    """Sync SQLAlchemy engine + session factory. Thread-safe, aman
+    dipakai lintas task Celery tanpa event loop khusus."""
 
     def __init__(self, config: DatabaseConfig | None = None) -> None:
         self._cfg = config or DatabaseConfig.from_env()
-        self._pool: "asyncpg.Pool | None" = None
+        self._engine = None
+        self._SessionLocal: sessionmaker | None = None
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    async def start(self) -> None:
-        """Open the connection pool and register the pgvector codec."""
-        if self._pool is not None:
+    def start(self) -> None:
+        if self._engine is not None:
             return
-
-        import asyncpg
-        from pgvector.asyncpg import register_vector
-
         cfg = self._cfg
-
-        # 1. Bootstrap: ensure the extension exists BEFORE any connection
-        #    tries to introspect the `vector` type via register_vector.
-        bootstrap_conn = await asyncpg.connect(
-            dsn=cfg._dsn_with_password(),
-            command_timeout=cfg.command_timeout,
+        self._engine = create_engine(
+            cfg._dsn_with_password(),
+            poolclass=QueuePool,
+            pool_size=cfg.min_size,
+            max_overflow=max(cfg.max_size - cfg.min_size, 0),
+            pool_pre_ping=True,          # buang koneksi mati otomatis
+            pool_recycle=1800,           # hindari koneksi basi (30 menit)
+            connect_args={"connect_timeout": int(cfg.command_timeout)},
         )
-        try:
-            await bootstrap_conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-        finally:
-            await bootstrap_conn.close()
+        self._SessionLocal = sessionmaker(bind=self._engine, expire_on_commit=False)
 
-        # 2. Now it's safe for every pool connection to register the vector codec.
-        async def _init_conn(conn: asyncpg.Connection) -> None:
-            await register_vector(conn)
+        with self._engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
 
-        logger.info("Connecting to %s …", cfg.dsn)
-        self._pool = await asyncpg.create_pool(
-            dsn=cfg._dsn_with_password(),
-            min_size=cfg.min_size,
-            max_size=cfg.max_size,
-            command_timeout=cfg.command_timeout,
-            server_settings=cfg.server_settings,
-            init=_init_conn,
-        )
-        logger.info("Database pool ready (min=%d max=%d)", cfg.min_size, cfg.max_size)
+        logger.info("Database engine ready (pool_size=%d)", cfg.min_size)
 
-    async def close(self) -> None:
-        """Gracefully drain and close all connections."""
-        if self._pool is not None:
-            await self._pool.close()
-            self._pool = None
-            logger.info("Database pool closed")
-
-    async def __aenter__(self) -> "DatabasePool":
-        await self.start()
-        return self
-
-    async def __aexit__(self, *_: object) -> None:
-        await self.close()
-
-    # ------------------------------------------------------------------
-    # Public helpers
-    # ------------------------------------------------------------------
+    def close(self) -> None:
+        if self._engine is not None:
+            self._engine.dispose()
+            self._engine = None
+            self._SessionLocal = None
+            logger.info("Database engine disposed")
 
     @property
-    def pool(self) -> "asyncpg.Pool":
-        """The underlying asyncpg pool (raises if not started)."""
-        if self._pool is None:
-            raise RuntimeError(
-                "DatabasePool is not started. "
-                "Use `async with DatabasePool() as db:` or call `await db.start()` first."
-            )
-        return self._pool
+    def engine(self):
+        if self._engine is None:
+            raise RuntimeError("DatabasePool not started. Call start() first.")
+        return self._engine
 
-    async def ensure_schema(self) -> None:
-        """Run DDL idempotently to create extension, tables, and indexes.
+    def session(self) -> Session:
+        if self._SessionLocal is None:
+            raise RuntimeError("DatabasePool not started. Call start() first.")
+        return self._SessionLocal()
 
-        Safe to call on every startup — all statements use ``IF NOT EXISTS``.
-        """
-        async with self.pool.acquire() as conn:
-            await conn.execute(_DDL)
+    def ensure_schema(self) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(text(_DDL))
         logger.info("Database schema verified / created")
 
-    async def ping(self) -> bool:
-        """Return True if the database is reachable."""
+    def ping(self) -> bool:
         try:
-            async with self.pool.acquire() as conn:
-                await conn.fetchval("SELECT 1")
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
             return True
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("Database ping failed: %s", exc)
             return False
+
+    def __enter__(self) -> "DatabasePool":
+        self.start()
+        return self
+
+    def __exit__(self, *_):
+        self.close()

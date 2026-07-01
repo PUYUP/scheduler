@@ -48,7 +48,8 @@ dependencies = [
     "supabase>=2.31.0",
     "psycopg2-binary>=2.9.12",
     "asyncpg>=0.31.0",
-    "pgvector>=0.4.2"
+    "pgvector>=0.4.2",
+    "sqlalchemy>=2.0.51"
 ]
 
 [project.optional-dependencies]

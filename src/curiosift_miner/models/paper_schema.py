@@ -1,5 +1,5 @@
 """
-celery_app/utils/paper_schema.py
+models/paper_schema.py
 ──────────────────────────────────
 Pydantic models for validated data flowing between tasks.
 All models use model_dump() to produce plain dicts for Celery serialisation.

@@ -34,7 +34,7 @@ from curiosift_miner.celery_app.utils.dedup import (
     mark_backfill_complete,
     mark_as_queued
 )
-from curiosift_miner.celery_app.utils.paper_schema import PaperMetadata
+from curiosift_miner.models.paper_schema import PaperMetadata
 from curiosift_miner.config.settings import settings
 
 log = structlog.get_logger(__name__)

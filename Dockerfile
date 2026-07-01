@@ -25,12 +25,14 @@ COPY pyproject.toml README.md ./
 # 4. TRIK CACHING: Buat direktori dummy untuk mengelabui setuptools.
 # setuptools butuh direktori 'src/curiosift_miner/celery_app' ada saat membaca pyproject.toml.
 # Dengan ini, kita bisa menginstal dependensi tanpa harus mencopy seluruh source code (COPY . .) dulu.
-RUN mkdir -p src/curiosift_miner/celery_app && touch src/curiosift_miner/celery_app/__init__.py
+RUN mkdir -p src/curiosift_miner/celery_app \
+    && touch src/curiosift_miner/__init__.py \
+    && touch src/curiosift_miner/celery_app/__init__.py
 
 # 5. Install dependencies dengan BuildKit cache
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip setuptools wheel \
-    && pip install . 
+    && pip install -e . 
 
 # 6. BARU copy seluruh source code asli Anda (ini akan menimpa direktori dummy di atas)
 COPY . .
