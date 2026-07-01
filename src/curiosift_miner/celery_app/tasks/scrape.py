@@ -27,10 +27,15 @@ from tenacity import (
     wait_exponential,
 )
 
-from celery_app.main import app
-from celery_app.utils.dedup import is_already_processed, mark_as_queued
-from celery_app.utils.paper_schema import PaperMetadata
-from config.settings import settings
+from curiosift_miner.celery_app.main import app
+from curiosift_miner.celery_app.utils.dedup import (
+    is_already_processed,
+    is_backfill_complete,
+    mark_backfill_complete,
+    mark_as_queued
+)
+from curiosift_miner.celery_app.utils.paper_schema import PaperMetadata
+from curiosift_miner.config.settings import settings
 
 log = structlog.get_logger(__name__)
 
@@ -40,7 +45,7 @@ log = structlog.get_logger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="celery_app.tasks.scrape.scrape_topic",
+    name="curiosift_miner.celery_app.tasks.scrape.scrape_topic",
     bind=True,
     max_retries=3,
     default_retry_delay=300,
@@ -102,7 +107,7 @@ def scrape_topic(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="celery_app.tasks.scrape.scrape_topic_backfill",
+    name="curiosift_miner.celery_app.tasks.scrape.scrape_topic_backfill",
     bind=True,
     max_retries=3,
     default_retry_delay=300,
@@ -249,7 +254,7 @@ def scrape_topic_backfill(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="celery_app.tasks.scrape.scrape_paper_metadata",
+    name="curiosift_miner.celery_app.tasks.scrape.scrape_paper_metadata",
     bind=True,
     max_retries=5,
     default_retry_delay=60,
@@ -298,7 +303,7 @@ def scrape_paper_metadata(self, paper_id: str, repository: str) -> Dict[str, Any
     (
         download_pdf.s(metadata_dict).set(queue="scrape")
         | signature(
-            "celery_app.tasks.process.parse_pdf",
+            "curiosift_miner.celery_app.tasks.process.parse_pdf",
             queue="process",
             immutable=False,
         )
@@ -312,7 +317,7 @@ def scrape_paper_metadata(self, paper_id: str, repository: str) -> Dict[str, Any
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="celery_app.tasks.scrape.download_pdf",
+    name="curiosift_miner.celery_app.tasks.scrape.download_pdf",
     bind=True,
     max_retries=5,
     default_retry_delay=120,

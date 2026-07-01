@@ -52,7 +52,7 @@ services:
       TRANSFORMERS_OFFLINE: "0"
     volumes:
       - hf-cache:/home/celery/.cache/huggingface
-    command: ["python", "scripts/warm_model_cache.py"]
+    command: ["python", "src/curiosift_miner/scripts/warm_model_cache.py"]
     networks:
       - curiosift-net
     restart: "no"
@@ -111,7 +111,7 @@ services:
   celery-beat:
     <<: *celery-common
     command: >
-      celery -A celery_app.main beat
+      celery -A curiosift_miner.celery_app.main beat
       --loglevel=info
       --scheduler celery.beat.PersistentScheduler
       --schedule /app/logs/celerybeat-schedule
@@ -123,7 +123,7 @@ services:
   worker-scrape:
     <<: *celery-common
     command: >
-      celery -A celery_app.main worker
+      celery -A curiosift_miner.celery_app.main worker
       --loglevel=info
       --queues=scrape
       --concurrency=8
@@ -138,7 +138,7 @@ services:
   worker-process:
     <<: *celery-common
     command: >
-      celery -A celery_app.main worker
+      celery -A curiosift_miner.celery_app.main worker
       --loglevel=info
       --queues=process
       --concurrency=4
@@ -153,7 +153,7 @@ services:
   worker-embed:
     <<: *celery-common
     command: >
-      celery -A celery_app.main worker
+      celery -A curiosift_miner.celery_app.main worker
       --loglevel=info
       --queues=embed
       --concurrency=2
@@ -164,11 +164,26 @@ services:
       replicas: 1
 
 
+  # ─── Worker: Maintenance Queue (DLQ retry, cleanup, health check) ───
+  worker-default:
+    <<: *celery-common
+    command: >
+      celery -A curiosift_miner.celery_app.main worker
+      --loglevel=info
+      --queues=default
+      --concurrency=2
+      --prefetch-multiplier=1
+      --max-tasks-per-child=200
+      --hostname=default@%h
+    deploy:
+      replicas: 1
+
+  
   # ─── Flower: Real-time Task Monitor ─────────────────────────
   flower:
     <<: *celery-common
     command: >
-      celery -A celery_app.main flower
+      celery -A curiosift_miner.celery_app.main flower
       --port=5555
       --url-prefix=flower
       --max-tasks=10000
@@ -179,6 +194,7 @@ services:
       - worker-scrape
       - worker-process
       - worker-embed
+      - worker-default
 
 
 volumes:

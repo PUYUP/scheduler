@@ -1,0 +1,101 @@
+########################################################################
+#  docker-compose.override.yml
+#  Dev override — hot reload untuk worker/beat tanpa rebuild image,
+#  ditambah worker-default untuk queue maintenance (retry DLQ, purge
+#  PDF, health check) yang sebelumnya tidak punya listener sama sekali.
+#
+#  JANGAN dipakai di production sebagai referensi command: source code
+#  di-bind-mount langsung dari host, dan watchmedo menambah overhead
+#  yang tidak perlu di prod. worker-default sendiri BOLEH dibawa ke
+#  base docker-compose.yml untuk production (lihat catatan di bawah).
+########################################################################
+
+x-celery-dev: &celery-dev
+  volumes:
+    - ./:/app                          # bind mount source — override volume dari base file
+    - downloads:/app/downloads
+    - logs:/app/logs
+    - hf-cache:/home/celery/.cache/huggingface
+
+services:
+
+  celery-beat:
+    <<: *celery-dev
+    command: >
+      watchmedo auto-restart
+      --directory=/app
+      --pattern=*.py
+      --recursive
+      --
+      celery -A curiosift_miner.celery_app.main beat
+      --loglevel=info
+      --scheduler celery.beat.PersistentScheduler
+      --schedule /app/logs/celerybeat-schedule
+
+  worker-scrape:
+    <<: *celery-dev
+    command: >
+      watchmedo auto-restart
+      --directory=/app
+      --pattern=*.py
+      --recursive
+      --
+      celery -A curiosift_miner.celery_app.main worker
+      --loglevel=info
+      --queues=scrape
+      --concurrency=8
+      --prefetch-multiplier=1
+      --max-tasks-per-child=100
+      --hostname=scrape@%h
+
+  worker-process:
+    <<: *celery-dev
+    command: >
+      watchmedo auto-restart
+      --directory=/app
+      --pattern=*.py
+      --recursive
+      --
+      celery -A curiosift_miner.celery_app.main worker
+      --loglevel=info
+      --queues=process
+      --concurrency=4
+      --prefetch-multiplier=1
+      --max-tasks-per-child=50
+      --hostname=process@%h
+
+  worker-embed:
+    <<: *celery-dev
+    command: >
+      watchmedo auto-restart
+      --directory=/app
+      --pattern=*.py
+      --recursive
+      --
+      celery -A curiosift_miner.celery_app.main worker
+      --loglevel=info
+      --queues=embed
+      --concurrency=2
+      --prefetch-multiplier=1
+      --max-tasks-per-child=200
+      --hostname=embed@%h
+
+  # ─── Worker: Maintenance Queue (DLQ retry, cleanup, health check) ───
+  # Tidak ada di base docker-compose.yml sebelumnya — akibatnya
+  # retry_dead_letters, purge_old_pdfs, dan pipeline_health tidak pernah
+  # dieksekusi (tidak ada worker yang --queues=default).
+  worker-default:
+    <<: *celery-dev
+    command: >
+      watchmedo auto-restart
+      --directory=/app
+      --pattern=*.py
+      --recursive
+      --
+      celery -A curiosift_miner.celery_app.main worker
+      --loglevel=info
+      --queues=default
+      --concurrency=2
+      --prefetch-multiplier=1
+      --max-tasks-per-child=200
+      --hostname=default@%h

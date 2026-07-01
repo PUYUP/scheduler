@@ -12,7 +12,7 @@ import sys
 
 import structlog
 
-from config.settings import settings
+from curiosift_miner.config.settings import settings
 
 
 def configure_logging() -> None:

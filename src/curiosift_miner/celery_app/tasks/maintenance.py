@@ -3,9 +3,9 @@ tasks/maintenance.py
 ────────────────────────────────
 Housekeeping tasks (queue: default)
 ─────────────────────────────────────────────────────────────────────────
-• retry_dead_letters  – re-queues tasks from dead-letter queues (DLQ)
-• purge_old_pdfs      – removes PDFs older than N days from disk
-• pipeline_health     – emits a structured health-check event
+- retry_dead_letters  – re-queues tasks from dead-letter queues (DLQ)
+- purge_old_pdfs      – removes PDFs older than N days from disk
+- pipeline_health     – emits a structured health-check event
 ─────────────────────────────────────────────────────────────────────────
 """
 
@@ -17,8 +17,8 @@ from typing import Any, Dict, cast
 import redis
 import structlog
 
-from celery_app.main import app
-from config.settings import settings
+from curiosift_miner.celery_app.main import app
+from curiosift_miner.config.settings import settings
 
 log = structlog.get_logger(__name__)
 
@@ -38,7 +38,7 @@ def get_redis() -> redis.Redis:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="celery_app.tasks.maintenance.retry_dead_letters",
+    name="curiosift_miner.celery_app.tasks.maintenance.retry_dead_letters",
     bind=True,
     max_retries=1,
     queue="default",
@@ -48,6 +48,12 @@ def retry_dead_letters(self, dlq_name: str, max_requeue: int = 50) -> Dict[str, 
     """
     Drains up to `max_requeue` messages from a dead-letter queue
     and re-publishes them to their original destination queue.
+
+    With the Redis broker, every Celery queue is a plain Redis list under
+    the queue's own name (no global_keyprefix is configured — see
+    celery_config.py), so RPOPLPUSH moves the already-serialized Celery
+    message as-is. Messages only land in this DLQ via main.on_task_failure
+    (app.send_task), so the format is guaranteed valid.
 
     DLQ naming convention:  dlx.<original_queue>
     Re-queue destination:   <original_queue>
@@ -65,24 +71,28 @@ def retry_dead_letters(self, dlq_name: str, max_requeue: int = 50) -> Dict[str, 
     errors   = 0
 
     for _ in range(max_requeue):
-        # RPOPLPUSH: atomic move from DLQ head → destination tail
-        msg = r.rpoplpush(dlq_name, original_queue)
-        if msg is None:
-            break   # DLQ is empty
         try:
-            requeued += 1
-            log.debug(
-                "retry_dead_letters.requeued",
-                dlq=dlq_name,
-                destination=original_queue,
-            )
+            # RPOPLPUSH: atomic move from DLQ head → destination tail
+            msg = r.rpoplpush(dlq_name, original_queue)
         except Exception as exc:
+            # Genuine failure path: Redis connection dropped, etc.
             errors += 1
             log.error(
                 "retry_dead_letters.error",
                 dlq=dlq_name,
                 error=str(exc),
             )
+            break  # connection is unhealthy, no point looping further
+
+        if msg is None:
+            break   # DLQ is empty
+
+        requeued += 1
+        log.debug(
+            "retry_dead_letters.requeued",
+            dlq=dlq_name,
+            destination=original_queue,
+        )
 
     log.info(
         "retry_dead_letters.done",
@@ -98,7 +108,7 @@ def retry_dead_letters(self, dlq_name: str, max_requeue: int = 50) -> Dict[str, 
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="celery_app.tasks.maintenance.purge_old_pdfs",
+    name="curiosift_miner.celery_app.tasks.maintenance.purge_old_pdfs",
     bind=True,
     queue="default",
     ignore_result=False,
@@ -136,7 +146,7 @@ def purge_old_pdfs(self, max_age_days: int = 7) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="celery_app.tasks.maintenance.pipeline_health",
+    name="curiosift_miner.celery_app.tasks.maintenance.pipeline_health",
     bind=True,
     queue="default",
     ignore_result=False,
@@ -184,18 +194,17 @@ def pipeline_health(self) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Add maintenance tasks to Beat schedule (called from main.py)
+# Add maintenance tasks to Beat schedule (imported into main._configure_beat_schedule)
 # ─────────────────────────────────────────────────────────────────────────────
-# These are registered here so they can be imported in main._configure_beat_schedule
 MAINTENANCE_BEAT_SCHEDULE = {
     "purge-old-pdfs-daily": {
-        "task": "celery_app.tasks.maintenance.purge_old_pdfs",
+        "task": "curiosift_miner.celery_app.tasks.maintenance.purge_old_pdfs",
         "schedule": 86_400,       # once per day
         "kwargs": {"max_age_days": 7},
         "options": {"queue": "default"},
     },
     "pipeline-health-check": {
-        "task": "celery_app.tasks.maintenance.pipeline_health",
+        "task": "curiosift_miner.celery_app.tasks.maintenance.pipeline_health",
         "schedule": 900,          # every 15 minutes
         "options": {"queue": "default"},
     },

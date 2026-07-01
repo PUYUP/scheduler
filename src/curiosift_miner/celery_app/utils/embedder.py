@@ -21,7 +21,7 @@ from typing import List
 
 import structlog
 
-from config.settings import settings
+from curiosift_miner.config.settings import settings
 
 log = structlog.get_logger(__name__)
 

@@ -3,9 +3,9 @@ requires = ["setuptools>=72", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scheduler"
+name = "curiosift_miner"
 version = "0.1.0"
-description = "Curiosift Indexer Scheduler"
+description = "Curiosift Miner Scheduler"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -41,7 +41,8 @@ dependencies = [
     "pydantic-settings==2.14.0",
     "python-dotenv==1.0.1",
     "tenacity==9.0.0",
-    "orjson==3.11.9"
+    "orjson==3.11.9",
+    "watchdog[watchmedo]==4.0.2"
 ]
 
 [project.optional-dependencies]
@@ -68,7 +69,8 @@ testpaths = ["tests"]
 addopts = "--cov=executor --cov-report=term-missing"
 
 [tool.setuptools]
-package-dir = {"" = "celery_app"}
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-where = ["celery_app"]
+where = ["src"]
+include = ["curiosift_miner*"]

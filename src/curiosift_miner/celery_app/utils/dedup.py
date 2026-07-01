@@ -17,7 +17,7 @@ import redis
 import structlog
 
 from typing import cast
-from config.settings import settings
+from curiosift_miner.config.settings import settings
 
 log = structlog.get_logger(__name__)
 
@@ -78,3 +78,19 @@ def count_processed(repository: str) -> int:
 
 def count_queued(repository: str) -> int:
     return cast(int, _get_redis().scard(f"curiosift_rag:{repository}:queued"))
+
+
+def is_backfill_complete(topic: str, repository: str) -> bool:
+    """True kalau backfill untuk topic+repository ini sudah pernah tuntas."""
+    r = _get_redis()
+    key = f"backfill:complete:{repository}:{topic}"
+    return cast(bool, r.exists(key) == 1)
+
+
+def mark_backfill_complete(topic: str, repository: str) -> None:
+    """Tandai backfill untuk topic+repository ini sebagai selesai."""
+    r = _get_redis()
+    key = f"backfill:complete:{repository}:{topic}"
+    r.set(key, "1")
+    log.info("dedup.backfill_complete", topic=topic, repository=repository)
+

@@ -5,16 +5,16 @@ All Celery settings in one place.
 Loaded via: app.config_from_object("config.celery_config")
 """
 
-from config.settings import settings
+from curiosift_miner.config.settings import settings
 
 # ─── Task Discovery ───────────────────────────────────────────────────────────
 # Listed explicitly — autodiscover with related_name="" is unreliable in Docker.
 # Every module with @app.task must appear here.
 imports = (
-    "celery_app.tasks.scrape",
-    "celery_app.tasks.process",
-    "celery_app.tasks.embed",
-    "celery_app.tasks.maintenance",
+    "curiosift_miner.celery_app.tasks.scrape",
+    "curiosift_miner.celery_app.tasks.process",
+    "curiosift_miner.celery_app.tasks.embed",
+    "curiosift_miner.celery_app.tasks.maintenance",
 )
 
 # ─── Broker & Backend ─────────────────────────────────────────────────────────
@@ -43,15 +43,15 @@ worker_prefetch_multiplier  = 1               # one task at a time per worker sl
 
 # ─── Retry Defaults (each task can override) ──────────────────────────────────
 task_annotations = {
-    "celery_app.tasks.scrape.*": {
+    "curiosift_miner.celery_app.tasks.scrape.*": {
         "max_retries": 5,
         "default_retry_delay": 60,
     },
-    "celery_app.tasks.process.*": {
+    "curiosift_miner.celery_app.tasks.process.*": {
         "max_retries": 3,
         "default_retry_delay": 120,
     },
-    "celery_app.tasks.embed.*": {
+    "curiosift_miner.celery_app.tasks.embed.*": {
         "max_retries": 10,
         "default_retry_delay": 30,
         "rate_limit": "20/m",        # stay under embedding API rate limit
@@ -61,21 +61,21 @@ task_annotations = {
 # ─── Task Routing ─────────────────────────────────────────────────────────────
 task_routes = {
     # ── Scrape tier ──
-    "celery_app.tasks.scrape.scrape_topic":          {"queue": "scrape"},
-    "celery_app.tasks.scrape.scrape_paper_metadata": {"queue": "scrape"},
-    "celery_app.tasks.scrape.download_pdf":          {"queue": "scrape"},
+    "curiosift_miner.celery_app.tasks.scrape.scrape_topic":          {"queue": "scrape"},
+    "curiosift_miner.celery_app.tasks.scrape.scrape_paper_metadata": {"queue": "scrape"},
+    "curiosift_miner.celery_app.tasks.scrape.download_pdf":          {"queue": "scrape"},
 
     # ── Process tier ──
-    "celery_app.tasks.process.parse_pdf":            {"queue": "process"},
-    "celery_app.tasks.process.clean_text":           {"queue": "process"},
-    "celery_app.tasks.process.chunk_document":       {"queue": "process"},
+    "curiosift_miner.celery_app.tasks.process.parse_pdf":            {"queue": "process"},
+    "curiosift_miner.celery_app.tasks.process.clean_text":           {"queue": "process"},
+    "curiosift_miner.celery_app.tasks.process.chunk_document":       {"queue": "process"},
 
     # ── Embed tier ──
-    "celery_app.tasks.embed.generate_embeddings":    {"queue": "embed"},
-    "celery_app.tasks.embed.store_chunks":           {"queue": "embed"},
+    "curiosift_miner.celery_app.tasks.embed.generate_embeddings":    {"queue": "embed"},
+    "curiosift_miner.celery_app.tasks.embed.store_chunks":           {"queue": "embed"},
 
     # ── Maintenance ──
-    "celery_app.tasks.maintenance.*":                {"queue": "default"},
+    "curiosift_miner.celery_app.tasks.maintenance.*":                {"queue": "default"},
 }
 
 # ─── Worker ───────────────────────────────────────────────────────────────────

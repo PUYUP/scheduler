@@ -5,14 +5,14 @@ import os
 from pathlib import Path
 from datetime import datetime
 from itertools import groupby
-from celery_app.tasks.scrape import scrape_paper_metadata, download_pdf
-from celery_app.tasks.process import parse_pdf, clean_text, chunk_document
-from celery_app.tasks.embed import generate_embeddings, store_chunks
+from curiosift_miner.celery_app.tasks.scrape import scrape_paper_metadata, download_pdf
+from curiosift_miner.celery_app.tasks.process import parse_pdf, clean_text, chunk_document
+from curiosift_miner.celery_app.tasks.embed import generate_embeddings, store_chunks
 from grobid_client.grobid_client import GrobidClient
 from langchain_text_splitters import RecursiveJsonSplitter
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from config.settings import settings
+from curiosift_miner.config.settings import settings
 
 
 def save_chunks_to_json(chunks, arxiv_id: str, output_dir: str = "output"):
