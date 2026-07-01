@@ -20,13 +20,13 @@ from curiosift_miner.config.logging import configure_logging
 # `app` belum ter-assign di sini saat itu terjadi, akan muncul ImportError
 # (circular import). Dengan app dibuat di baris pertama, atribut `app` sudah
 # ada di modul ini begitu Python mulai mengeksekusi file ini.
-app = Celery("curiosift_rag_scheduler")
+app = Celery("curiosift_miner")
 
 
 # ─── App Factory ──────────────────────────────────────────────────────────────
 
 def create_celery_app() -> Celery:
-    app.config_from_object("config.celery_config")
+    app.config_from_object("curiosift_miner.config.celery_config")
     # Explicit imports are more reliable than autodiscover across Docker
     # bind-mount layouts — every task module must be listed here.
     app.conf.include = [

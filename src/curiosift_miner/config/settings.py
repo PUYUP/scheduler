@@ -69,6 +69,17 @@ class Settings(BaseSettings):
     log_level: str          = "INFO"
     log_format: str         = "json"             # "json" | "console"
 
+    # ── Storage ───────────────────────────────────────────────
+    db_host: str            = "db"
+    db_port: int            = 5432
+    db_user: str            = "postgres"
+    db_password: str        = ""
+    db_name: str            = "curiosift"
+
+    @property
+    def db_url(self) -> str:
+        return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
     @field_validator("arxiv_topics", mode="before")
     @classmethod
     def parse_topics(cls, v):

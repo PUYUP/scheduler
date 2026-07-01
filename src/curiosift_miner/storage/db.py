@@ -34,6 +34,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+from curiosift_miner.config.settings import settings
 
 if TYPE_CHECKING:
     import asyncpg  # type: ignore[import-untyped]
@@ -50,11 +51,11 @@ logger = logging.getLogger(__name__)
 class DatabaseConfig:
     """Connection parameters for the PostgreSQL / pgvector database."""
 
-    host: str = "localhost"
-    port: int = 5432
-    database: str = "curiosift"
-    user: str = "postgres"
-    password: str = "postgres"
+    host: str = settings.db_host
+    port: int = settings.db_port
+    database: str = settings.db_name
+    user: str = settings.db_user
+    password: str = settings.db_password
 
     # Pool sizing
     min_size: int = 2
@@ -65,7 +66,7 @@ class DatabaseConfig:
 
     # Passed verbatim to asyncpg as server_settings
     server_settings: dict[str, str] = field(
-        default_factory=lambda: {"application_name": "curiosift-executor"}
+        default_factory=lambda: {"application_name": "curiosift-miner"}
     )
 
     @classmethod
@@ -107,7 +108,7 @@ class DatabaseConfig:
 
 _DDL = """\
 -- Enable pgvector extension (idempotent)
-CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 -- -----------------------------------------------------------------------
 -- papers: rich bibliographic metadata
@@ -409,13 +410,24 @@ class DatabasePool:
         if self._pool is not None:
             return
 
-        import asyncpg  # type: ignore[import-untyped]
-        from pgvector.asyncpg import register_vector  # type: ignore[import-untyped]
+        import asyncpg
+        from pgvector.asyncpg import register_vector
 
         cfg = self._cfg
 
+        # 1. Bootstrap: ensure the extension exists BEFORE any connection
+        #    tries to introspect the `vector` type via register_vector.
+        bootstrap_conn = await asyncpg.connect(
+            dsn=cfg._dsn_with_password(),
+            command_timeout=cfg.command_timeout,
+        )
+        try:
+            await bootstrap_conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        finally:
+            await bootstrap_conn.close()
+
+        # 2. Now it's safe for every pool connection to register the vector codec.
         async def _init_conn(conn: asyncpg.Connection) -> None:
-            """Called for every new connection: register the vector type."""
             await register_vector(conn)
 
         logger.info("Connecting to %s …", cfg.dsn)
@@ -427,9 +439,7 @@ class DatabasePool:
             server_settings=cfg.server_settings,
             init=_init_conn,
         )
-        logger.info(
-            "Database pool ready (min=%d max=%d)", cfg.min_size, cfg.max_size
-        )
+        logger.info("Database pool ready (min=%d max=%d)", cfg.min_size, cfg.max_size)
 
     async def close(self) -> None:
         """Gracefully drain and close all connections."""

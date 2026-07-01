@@ -37,12 +37,18 @@ dependencies = [
     "structlog==26.1.0",
 
     # ─── Utils ────────────────────────────────────────────────────
-    "pydantic==2.10.3",
+    "pydantic>=2.10.3",
     "pydantic-settings==2.14.0",
     "python-dotenv==1.0.1",
     "tenacity==9.0.0",
     "orjson==3.11.9",
-    "watchdog[watchmedo]==4.0.2"
+    "watchdog[watchmedo]==4.0.2",
+
+    # ─── Database ──────────────────────────────────────────────
+    "supabase>=2.31.0",
+    "psycopg2-binary>=2.9.12",
+    "asyncpg>=0.31.0",
+    "pgvector>=0.4.2"
 ]
 
 [project.optional-dependencies]

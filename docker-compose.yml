@@ -52,7 +52,7 @@ services:
       TRANSFORMERS_OFFLINE: "0"
     volumes:
       - hf-cache:/home/celery/.cache/huggingface
-    command: ["python", "src/curiosift_miner/scripts/warm_model_cache.py"]
+    command: ["python", "-m", "curiosift_miner.scripts.warm_model_cache"]
     networks:
       - curiosift-net
     restart: "no"
