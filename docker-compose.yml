@@ -8,7 +8,7 @@ x-celery-common: &celery-common
     context: .
     dockerfile: Dockerfile
     target: final
-  image: curiosift/paper-rag:latest
+  image: atlaner/paper-rag:latest
   env_file: .env
   environment:
     # Volume sudah pasti terisi sebelum container ini start (lihat depends_on
@@ -18,7 +18,7 @@ x-celery-common: &celery-common
   volumes:
     - downloads:/app/downloads
     - logs:/app/logs
-    - hf-cache:/home/celery/.cache/huggingface
+    - hf-cache:/home/atlazer/.cache/huggingface
   depends_on:
     redis:
       condition: service_healthy
@@ -28,7 +28,7 @@ x-celery-common: &celery-common
       condition: service_completed_successfully
   restart: unless-stopped
   networks:
-    - curiosift-net
+    - atlaner-net
 
 
 services:
@@ -42,7 +42,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: final
-    image: curiosift/paper-rag:latest
+    image: atlaner/paper-rag:latest
     env_file: .env
     environment:
       # Override eksplisit — container ini WAJIB online untuk download.
@@ -51,10 +51,10 @@ services:
       HF_HUB_OFFLINE: "0"
       TRANSFORMERS_OFFLINE: "0"
     volumes:
-      - hf-cache:/home/celery/.cache/huggingface
-    command: ["python", "src/curiosift_miner/scripts/warm_model_cache.py"]
+      - hf-cache:/home/atlazer/.cache/huggingface
+    command: ["python", "src/atlaner/scripts/warm_model_cache.py"]
     networks:
-      - curiosift-net
+      - atlaner-net
     restart: "no"
 
   # ─── Message Broker ─────────────────────────────────────────
@@ -77,7 +77,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - curiosift-net
+      - atlaner-net
     restart: unless-stopped
 
 
@@ -97,7 +97,7 @@ services:
       retries: 5
       start_period: 300s
     networks:
-      - curiosift-net
+      - atlaner-net
     restart: unless-stopped
     deploy:
       resources:
@@ -112,7 +112,7 @@ services:
   webapi:
     <<: *celery-common
     command: >
-      uvicorn curiosift_miner.webapi.main:app
+      uvicorn atlaner.webapi.main:app
       --host 0.0.0.0
       --port 8000
     ports:
@@ -130,7 +130,7 @@ services:
   celery-beat:
     <<: *celery-common
     command: >
-      celery -A curiosift_miner.celery_app.main beat
+      celery -A atlaner.celery_app.main beat
       --loglevel=info
       --scheduler celery.beat.PersistentScheduler
       --schedule /app/logs/celerybeat-schedule
@@ -142,7 +142,7 @@ services:
   worker-scrape:
     <<: *celery-common
     command: >
-      celery -A curiosift_miner.celery_app.main worker
+      celery -A atlaner.celery_app.main worker
       --loglevel=info
       --queues=scrape
       --concurrency=1
@@ -157,7 +157,7 @@ services:
   worker-process:
     <<: *celery-common
     command: >
-      celery -A curiosift_miner.celery_app.main worker
+      celery -A atlaner.celery_app.main worker
       --loglevel=info
       --queues=process
       --concurrency=1
@@ -172,7 +172,7 @@ services:
   worker-embed:
     <<: *celery-common
     command: >
-      celery -A curiosift_miner.celery_app.main worker
+      celery -A atlaner.celery_app.main worker
       --loglevel=info
       --queues=embed
       --concurrency=1
@@ -192,7 +192,7 @@ services:
   worker-default:
     <<: *celery-common
     command: >
-      celery -A curiosift_miner.celery_app.main worker
+      celery -A atlaner.celery_app.main worker
       --loglevel=info
       --queues=default
       --concurrency=1
@@ -207,7 +207,7 @@ services:
   flower:
     <<: *celery-common
     command: >
-      celery -A curiosift_miner.celery_app.main flower
+      celery -A atlaner.celery_app.main flower
       --port=5555
       --url-prefix=flower
       --max-tasks=10000
@@ -230,5 +230,5 @@ volumes:
 
 
 networks:
-  curiosift-net:
+  atlaner-net:
     driver: bridge

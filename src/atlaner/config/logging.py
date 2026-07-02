@@ -12,7 +12,7 @@ import sys
 
 import structlog
 
-from curiosift_miner.config.settings import settings
+from atlaner.config.settings import settings
 
 
 def configure_logging() -> None:

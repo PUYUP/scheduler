@@ -17,8 +17,8 @@ from typing import Any, Dict, cast
 import redis
 import structlog
 
-from curiosift_miner.celery_app.main import app
-from curiosift_miner.config.settings import settings
+from atlaner.celery_app.main import app
+from atlaner.config.settings import settings
 
 log = structlog.get_logger(__name__)
 
@@ -38,7 +38,7 @@ def get_redis() -> redis.Redis:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="curiosift_miner.celery_app.tasks.maintenance.retry_dead_letters",
+    name="atlaner.celery_app.tasks.maintenance.retry_dead_letters",
     bind=True,
     max_retries=1,
     queue="default",
@@ -108,7 +108,7 @@ def retry_dead_letters(self, dlq_name: str, max_requeue: int = 50) -> Dict[str, 
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="curiosift_miner.celery_app.tasks.maintenance.purge_old_pdfs",
+    name="atlaner.celery_app.tasks.maintenance.purge_old_pdfs",
     bind=True,
     queue="default",
     ignore_result=False,
@@ -146,7 +146,7 @@ def purge_old_pdfs(self, max_age_days: int = 7) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="curiosift_miner.celery_app.tasks.maintenance.pipeline_health",
+    name="atlaner.celery_app.tasks.maintenance.pipeline_health",
     bind=True,
     queue="default",
     ignore_result=False,
@@ -178,7 +178,7 @@ def pipeline_health(self) -> Dict[str, Any]:
 
     # Dedup key count
     try:
-        report["dedup_keys"] = cast(int, r.scard("curiosift_rag:processed")) + cast(int, r.scard("curiosift_rag:queued"))
+        report["dedup_keys"] = cast(int, r.scard("atlaner_rag:processed")) + cast(int, r.scard("atlaner_rag:queued"))
     except Exception:
         pass
 
@@ -198,13 +198,13 @@ def pipeline_health(self) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 MAINTENANCE_BEAT_SCHEDULE = {
     "purge-old-pdfs-daily": {
-        "task": "curiosift_miner.celery_app.tasks.maintenance.purge_old_pdfs",
+        "task": "atlaner.celery_app.tasks.maintenance.purge_old_pdfs",
         "schedule": 86_400,       # once per day
         "kwargs": {"max_age_days": 7},
         "options": {"queue": "default"},
     },
     "pipeline-health-check": {
-        "task": "curiosift_miner.celery_app.tasks.maintenance.pipeline_health",
+        "task": "atlaner.celery_app.tasks.maintenance.pipeline_health",
         "schedule": 900,          # every 15 minutes
         "options": {"queue": "default"},
     },

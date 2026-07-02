@@ -28,14 +28,14 @@ from datetime import datetime
 
 import structlog
 
-from curiosift_miner.celery_app.main import app
-from curiosift_miner.models.paper import PaperCreate
-from curiosift_miner.config.settings import settings
-from curiosift_miner.storage.db import DatabasePool, DatabaseConfig
-from curiosift_miner.storage.depot import PaperDepot
-from curiosift_miner.celery_app.main import db_pool
-from curiosift_miner.models.document import DocumentChunkCreate
-from curiosift_miner.utils.embedder import chunks_to_vector
+from atlaner.celery_app.main import app
+from atlaner.models.paper import PaperCreate
+from atlaner.config.settings import settings
+from atlaner.storage.db import DatabasePool, DatabaseConfig
+from atlaner.storage.depot import PaperDepot
+from atlaner.celery_app.main import db_pool
+from atlaner.models.document import DocumentChunkCreate
+from atlaner.utils.embedder import chunks_to_vector
 
 log = structlog.get_logger(__name__)
 
@@ -44,7 +44,7 @@ log = structlog.get_logger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="curiosift_miner.celery_app.tasks.embed.generate_embeddings",
+    name="atlaner.celery_app.tasks.embed.generate_embeddings",
     bind=True,
     max_retries=10,
     default_retry_delay=30,
@@ -110,7 +110,7 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="curiosift_miner.celery_app.tasks.embed.store_chunks",
+    name="atlaner.celery_app.tasks.embed.store_chunks",
     bind=True,
     max_retries=5,
     default_retry_delay=60,
@@ -157,7 +157,7 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         raise self.retry(exc=exc)
 
     # Mark this paper as fully processed so scrape_topic won't re-queue it
-    from curiosift_miner.utils.dedup import mark_as_processed
+    from atlaner.utils.dedup import mark_as_processed
     mark_as_processed(paper_id, repository=repository)
 
     # Clean up the local PDF to reclaim disk space

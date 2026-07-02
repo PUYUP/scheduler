@@ -8,9 +8,9 @@ import orjson
 from sqlalchemy import text, insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from curiosift_miner.storage.db import DatabasePool
-from curiosift_miner.models.paper import PaperCreate
-from curiosift_miner.models.document import DocumentChunkCreate, DocumentChunkORM
+from atlaner.storage.db import DatabasePool
+from atlaner.models.paper import PaperCreate
+from atlaner.models.document import DocumentChunkCreate, DocumentChunkORM
 
 logger = logging.getLogger(__name__)
 

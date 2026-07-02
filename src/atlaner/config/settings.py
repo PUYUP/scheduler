@@ -218,7 +218,7 @@ class Settings(BaseSettings):
 
     # ── Embeddings ─────────────────────────────────────────────
     hf_token: str               = ""
-    hf_home: str                = "/home/pointilis/.cache/huggingface"
+    hf_home: str                = "/home/celery/.cache/huggingface"
     embedding_provider: str     = "local"       # "openai" | "local"
     openai_api_key: str         = ""
     openai_embedding_model: str = "text-embedding-3-small"
@@ -235,7 +235,7 @@ class Settings(BaseSettings):
     db_port: int            = 5432
     db_user: str            = "postgres"
     db_password: str        = ""
-    db_name: str            = "curiosift"
+    db_name: str            = "atlaner"
 
     @property
     def db_url(self) -> str:

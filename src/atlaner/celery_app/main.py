@@ -2,7 +2,7 @@
 main.py
 ──────────────────
 Celery application factory.
-Import this module everywhere: `celery -A curiosift_miner.celery_app.main ...`
+Import this module everywhere: `celery -A atlaner.celery_app.main ...`
 """
 
 from celery import Celery
@@ -15,33 +15,33 @@ from celery.signals import (
 )
 from kombu import Exchange, Queue
 
-from curiosift_miner.config.settings import settings
-from curiosift_miner.config.logging import configure_logging
-from curiosift_miner.storage.db import DatabasePool, DatabaseConfig
-from curiosift_miner.utils.embedder import get_embedder
+from atlaner.config.settings import settings
+from atlaner.config.logging import configure_logging
+from atlaner.storage.db import DatabasePool, DatabaseConfig
+from atlaner.utils.embedder import get_embedder
 
 
 # ─── Singleton ────────────────────────────────────────────────────────────────
 # Dibuat DULU di module level, sebelum konfigurasi dijalankan. Ini penting
 # karena _configure_beat_schedule() di bawah meng-import tasks.maintenance,
-# dan modul itu sendiri melakukan `from curiosift_miner.celery_app.main import app` — kalau
+# dan modul itu sendiri melakukan `from atlaner.celery_app.main import app` — kalau
 # `app` belum ter-assign di sini saat itu terjadi, akan muncul ImportError
 # (circular import). Dengan app dibuat di baris pertama, atribut `app` sudah
 # ada di modul ini begitu Python mulai mengeksekusi file ini.
-app = Celery("curiosift_miner")
+app = Celery("atlaner")
 
 
 # ─── App Factory ──────────────────────────────────────────────────────────────
 
 def create_celery_app() -> Celery:
-    app.config_from_object("curiosift_miner.config.celery_config")
+    app.config_from_object("atlaner.config.celery_config")
     # Explicit imports are more reliable than autodiscover across Docker
     # bind-mount layouts — every task module must be listed here.
     app.conf.include = [
-        "curiosift_miner.celery_app.tasks.scrape",
-        "curiosift_miner.celery_app.tasks.process",
-        "curiosift_miner.celery_app.tasks.embed",
-        "curiosift_miner.celery_app.tasks.maintenance",
+        "atlaner.celery_app.tasks.scrape",
+        "atlaner.celery_app.tasks.process",
+        "atlaner.celery_app.tasks.embed",
+        "atlaner.celery_app.tasks.maintenance",
     ]
     _configure_queues(app)
     _configure_beat_schedule(app)
@@ -97,13 +97,13 @@ def _configure_beat_schedule(app: Celery) -> None:
     Periodic ingestion of ArXiv topics defined in settings, plus
     dead-letter retry and housekeeping tasks.
     """
-    from curiosift_miner.celery_app.tasks.maintenance import MAINTENANCE_BEAT_SCHEDULE
+    from atlaner.celery_app.tasks.maintenance import MAINTENANCE_BEAT_SCHEDULE
 
     app.conf.beat_schedule = {
         # ── Main ingestion: every 6 hours per topic ──
         **{
             f"scrape-{topic.replace(' ', '-')}-periodic": {
-                "task": "curiosift_miner.celery_app.tasks.scrape.scrape_topic",
+                "task": "atlaner.celery_app.tasks.scrape.scrape_topic",
                 "schedule": settings.scrape_interval_seconds,
                 "args": [topic],
                 "kwargs": {"max_results": settings.max_results_per_topic},
@@ -119,7 +119,7 @@ def _configure_beat_schedule(app: Celery) -> None:
         # (misal worker crash di tengah jalan).
         **{
             f"scrape-{topic.replace(' ', '-')}-backfill": {
-                "task": "curiosift_miner.celery_app.tasks.scrape.scrape_topic_backfill",
+                "task": "atlaner.celery_app.tasks.scrape.scrape_topic_backfill",
                 "schedule": settings.scrape_backfill_interval_seconds,
                 "args": [topic],
                 "kwargs": {
@@ -132,19 +132,19 @@ def _configure_beat_schedule(app: Celery) -> None:
         },
         # ── Retry dead-letter queue items every hour ──
         "retry-failed-scrape": {
-            "task": "curiosift_miner.celery_app.tasks.maintenance.retry_dead_letters",
+            "task": "atlaner.celery_app.tasks.maintenance.retry_dead_letters",
             "schedule": 3600,
             "args": ["dlx.scrape"],
             "options": {"queue": "default"},
         },
         "retry-failed-process": {
-            "task": "curiosift_miner.celery_app.tasks.maintenance.retry_dead_letters",
+            "task": "atlaner.celery_app.tasks.maintenance.retry_dead_letters",
             "schedule": 3600,
             "args": ["dlx.process"],
             "options": {"queue": "default"},
         },
         "retry-failed-embed": {
-            "task": "curiosift_miner.celery_app.tasks.maintenance.retry_dead_letters",
+            "task": "atlaner.celery_app.tasks.maintenance.retry_dead_letters",
             "schedule": 3600,
             "args": ["dlx.embed"],
             "options": {"queue": "default"},
@@ -199,9 +199,9 @@ def preload_embedder(**kwargs):
 # Nama task per-tier, dipakai untuk menentukan queue asal saat dead-lettering.
 # Harus tetap sinkron dengan task_routes di config/celery_config.py.
 _TIER_PREFIXES = {
-    "curiosift_miner.celery_app.tasks.scrape.":  "scrape",
-    "curiosift_miner.celery_app.tasks.process.": "process",
-    "curiosift_miner.celery_app.tasks.embed.":   "embed",
+    "atlaner.celery_app.tasks.scrape.":  "scrape",
+    "atlaner.celery_app.tasks.process.": "process",
+    "atlaner.celery_app.tasks.embed.":   "embed",
 }
 
 

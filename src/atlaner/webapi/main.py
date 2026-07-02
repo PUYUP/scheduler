@@ -3,8 +3,8 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 
-from curiosift_miner.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
-from curiosift_miner.webapi.schemas import (
+from atlaner.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
+from atlaner.webapi.schemas import (
     EmbedChunksRequest,
     EmbedChunksResponse,
     HealthResponse,

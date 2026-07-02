@@ -3,9 +3,9 @@ requires = ["setuptools>=72", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "curiosift_miner"
+name = "atlaner"
 version = "0.1.0"
-description = "Curiosift Miner Scheduler"
+description = "ATLANIZE Paper Miner"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -86,4 +86,4 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["curiosift_miner*"]
+include = ["atlaner*"]

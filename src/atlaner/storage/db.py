@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 
-from curiosift_miner.config.settings import settings
+from atlaner.config.settings import settings
 
 logger = logging.getLogger(__name__)
 

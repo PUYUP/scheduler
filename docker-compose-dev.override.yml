@@ -15,7 +15,7 @@ x-celery-dev: &celery-dev
     - ./:/app                          # bind mount source — override volume dari base file
     - downloads:/app/downloads
     - logs:/app/logs
-    - hf-cache:/home/celery/.cache/huggingface
+    - hf-cache:/home/atlazer/.cache/huggingface
 
 services:
 
@@ -27,7 +27,7 @@ services:
       --pattern=*.py
       --recursive
       --
-      celery -A curiosift_miner.celery_app.main beat
+      celery -A atlaner.celery_app.main beat
       --loglevel=info
       --scheduler celery.beat.PersistentScheduler
       --schedule /app/logs/celerybeat-schedule
@@ -40,7 +40,7 @@ services:
       --pattern=*.py
       --recursive
       --
-      celery -A curiosift_miner.celery_app.main worker
+      celery -A atlaner.celery_app.main worker
       --loglevel=info
       --queues=scrape
       --concurrency=8
@@ -56,7 +56,7 @@ services:
       --pattern=*.py
       --recursive
       --
-      celery -A curiosift_miner.celery_app.main worker
+      celery -A atlaner.celery_app.main worker
       --loglevel=info
       --queues=process
       --concurrency=4
@@ -72,7 +72,7 @@ services:
       --pattern=*.py
       --recursive
       --
-      celery -A curiosift_miner.celery_app.main worker
+      celery -A atlaner.celery_app.main worker
       --loglevel=info
       --queues=embed
       --concurrency=2
@@ -92,7 +92,7 @@ services:
       --pattern=*.py
       --recursive
       --
-      celery -A curiosift_miner.celery_app.main worker
+      celery -A atlaner.celery_app.main worker
       --loglevel=info
       --queues=default
       --concurrency=2
