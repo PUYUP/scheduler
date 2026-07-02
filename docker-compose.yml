@@ -157,7 +157,6 @@ services:
       celery -A curiosift_miner.celery_app.main worker
       --loglevel=info
       --queues=embed
-      --pool=solo
       --concurrency=1
       --prefetch-multiplier=1
       --max-tasks-per-child=200
