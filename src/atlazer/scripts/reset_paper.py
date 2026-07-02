@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from atlaner.utils.dedup import (
+from atlazer.utils.dedup import (
     reset_paper,
     is_already_processed,
     count_processed,
@@ -25,7 +25,7 @@ from atlaner.utils.dedup import (
 
 def _flush_all(repository: str) -> None:
     """Hapus SEMUA entry dedup untuk repository ini. Dipakai untuk testing saja."""
-    from atlaner.utils.dedup import _get_redis  # noqa: internal, testing-only use
+    from atlazer.utils.dedup import _get_redis  # noqa: internal, testing-only use
 
     confirm = input(
         f"Ini akan menghapus SEMUA dedup key untuk repository='{repository}'. "
@@ -36,9 +36,9 @@ def _flush_all(repository: str) -> None:
         return
 
     r = _get_redis()
-    r.delete(f"atlaner_rag:{repository}:processed")
-    r.delete(f"atlaner_rag:{repository}:queued")
-    for key in r.scan_iter(match=f"atlaner_rag:{repository}:queued:*"):
+    r.delete(f"atlazer_rag:{repository}:processed")
+    r.delete(f"atlazer_rag:{repository}:queued")
+    for key in r.scan_iter(match=f"atlazer_rag:{repository}:queued:*"):
         r.delete(key)
     print(f"Selesai. Semua dedup key untuk repository='{repository}' sudah dihapus.")
 

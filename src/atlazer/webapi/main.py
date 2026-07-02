@@ -3,8 +3,8 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 
-from atlaner.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
-from atlaner.webapi.schemas import (
+from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
+from atlazer.webapi.schemas import (
     EmbedChunksRequest,
     EmbedChunksResponse,
     HealthResponse,

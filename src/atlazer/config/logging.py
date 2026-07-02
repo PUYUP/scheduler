@@ -12,7 +12,7 @@ import sys
 
 import structlog
 
-from atlaner.config.settings import settings
+from atlazer.config.settings import settings
 
 
 def configure_logging() -> None:

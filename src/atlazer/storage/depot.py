@@ -8,9 +8,9 @@ import orjson
 from sqlalchemy import text, insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from atlaner.storage.db import DatabasePool
-from atlaner.models.paper import PaperCreate
-from atlaner.models.document import DocumentChunkCreate, DocumentChunkORM
+from atlazer.storage.db import DatabasePool
+from atlazer.models.paper import PaperCreate
+from atlazer.models.document import DocumentChunkCreate, DocumentChunkORM
 
 logger = logging.getLogger(__name__)
 

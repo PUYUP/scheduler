@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 
-from atlaner.config.settings import settings
+from atlazer.config.settings import settings
 
 logger = logging.getLogger(__name__)
 

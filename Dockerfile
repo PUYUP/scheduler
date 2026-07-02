@@ -23,11 +23,11 @@ ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 COPY pyproject.toml README.md ./ 
 
 # 4. TRIK CACHING: Buat direktori dummy untuk mengelabui setuptools.
-# setuptools butuh direktori 'src/atlaner/celery_app' ada saat membaca pyproject.toml.
+# setuptools butuh direktori 'src/atlazer/celery_app' ada saat membaca pyproject.toml.
 # Dengan ini, kita bisa menginstal dependensi tanpa harus mencopy seluruh source code (COPY . .) dulu.
-RUN mkdir -p src/atlaner/celery_app \
-    && touch src/atlaner/__init__.py \
-    && touch src/atlaner/celery_app/__init__.py
+RUN mkdir -p src/atlazer/celery_app \
+    && touch src/atlazer/__init__.py \
+    && touch src/atlazer/celery_app/__init__.py
 
 # 5. Install dependencies dengan BuildKit cache
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -49,9 +49,9 @@ ENV HOME=/home/atlazer
 USER atlazer
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD celery -A atlaner.celery_app.main inspect ping -d "atlazer@$HOSTNAME" --timeout 5 || exit 1
+    CMD celery -A atlazer.celery_app.main inspect ping -d "atlazer@$HOSTNAME" --timeout 5 || exit 1
 
-CMD celery -A atlaner.celery_app.main worker \
+CMD celery -A atlazer.celery_app.main worker \
     --loglevel=info \
     --concurrency=4 \
     --queues=default,scrape,process,embed

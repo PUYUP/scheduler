@@ -5,10 +5,10 @@ import os
 from pathlib import Path
 from datetime import datetime
 from itertools import groupby
-from atlaner.config.settings import settings
-from atlaner.celery_app.tasks.scrape import scrape_paper_metadata, download_pdf
-from atlaner.celery_app.tasks.process import parse_pdf, clean_text, chunk_document
-from atlaner.celery_app.tasks.embed import generate_embeddings, store_chunks
+from atlazer.config.settings import settings
+from atlazer.celery_app.tasks.scrape import scrape_paper_metadata, download_pdf
+from atlazer.celery_app.tasks.process import parse_pdf, clean_text, chunk_document
+from atlazer.celery_app.tasks.embed import generate_embeddings, store_chunks
 from grobid_client.grobid_client import GrobidClient
 from langchain_text_splitters import RecursiveJsonSplitter
 from langchain_text_splitters import MarkdownHeaderTextSplitter

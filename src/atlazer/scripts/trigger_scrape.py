@@ -22,9 +22,9 @@ from pathlib import Path
 # Allow running from project root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from atlaner.celery_app.tasks.scrape import scrape_topic, scrape_paper_metadata
-from atlaner.utils.dedup import reset_paper
-from atlaner.config.settings import settings
+from atlazer.celery_app.tasks.scrape import scrape_topic, scrape_paper_metadata
+from atlazer.utils.dedup import reset_paper
+from atlazer.config.settings import settings
 
 
 def main():

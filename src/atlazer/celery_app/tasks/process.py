@@ -26,9 +26,9 @@ import json
 from celery import signature
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from atlaner.celery_app.main import app
-from atlaner.utils.text_cleaner import clean_academic_text
-from atlaner.config.settings import settings
+from atlazer.celery_app.main import app
+from atlazer.utils.text_cleaner import clean_academic_text
+from atlazer.config.settings import settings
 from grobid_client.grobid_client import GrobidClient
 
 log = structlog.get_logger(__name__)
@@ -39,7 +39,7 @@ log = structlog.get_logger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlaner.celery_app.tasks.process.parse_pdf",
+    name="atlazer.celery_app.tasks.process.parse_pdf",
     bind=True,
     max_retries=3,
     default_retry_delay=120,
@@ -150,12 +150,12 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         clean_text.s(metadata).set(queue="process")
         | chunk_document.s().set(queue="process")
         | signature(
-            "atlaner.celery_app.tasks.embed.generate_embeddings",
+            "atlazer.celery_app.tasks.embed.generate_embeddings",
             queue="embed",
             immutable=False,
         )
         | signature(
-            "atlaner.celery_app.tasks.embed.store_chunks",
+            "atlazer.celery_app.tasks.embed.store_chunks",
             queue="embed",
             immutable=False,
         )
@@ -169,7 +169,7 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlaner.celery_app.tasks.process.clean_text",
+    name="atlazer.celery_app.tasks.process.clean_text",
     bind=True,
     max_retries=2,
     queue="process",
@@ -212,7 +212,7 @@ def clean_text(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlaner.celery_app.tasks.process.chunk_document",
+    name="atlazer.celery_app.tasks.process.chunk_document",
     bind=True,
     max_retries=2,
     queue="process",

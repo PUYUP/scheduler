@@ -5,16 +5,16 @@ All Celery settings in one place.
 Loaded via: app.config_from_object("config.celery_config")
 """
 
-from atlaner.config.settings import settings
+from atlazer.config.settings import settings
 
 # ─── Task Discovery ───────────────────────────────────────────────────────────
 # Listed explicitly — autodiscover with related_name="" is unreliable in Docker.
 # Every module with @app.task must appear here.
 imports = (
-    "atlaner.celery_app.tasks.scrape",
-    "atlaner.celery_app.tasks.process",
-    "atlaner.celery_app.tasks.embed",
-    "atlaner.celery_app.tasks.maintenance",
+    "atlazer.celery_app.tasks.scrape",
+    "atlazer.celery_app.tasks.process",
+    "atlazer.celery_app.tasks.embed",
+    "atlazer.celery_app.tasks.maintenance",
 )
 
 # ─── Broker & Backend ─────────────────────────────────────────────────────────
@@ -43,15 +43,15 @@ worker_prefetch_multiplier  = 1               # one task at a time per worker sl
 
 # ─── Retry Defaults (each task can override) ──────────────────────────────────
 task_annotations = {
-    "atlaner.celery_app.tasks.scrape.*": {
+    "atlazer.celery_app.tasks.scrape.*": {
         "max_retries": 5,
         "default_retry_delay": 60,
     },
-    "atlaner.celery_app.tasks.process.*": {
+    "atlazer.celery_app.tasks.process.*": {
         "max_retries": 3,
         "default_retry_delay": 120,
     },
-    "atlaner.celery_app.tasks.embed.*": {
+    "atlazer.celery_app.tasks.embed.*": {
         "max_retries": 10,
         "default_retry_delay": 30,
         "rate_limit": "20/m",        # stay under embedding API rate limit
@@ -61,21 +61,21 @@ task_annotations = {
 # ─── Task Routing ─────────────────────────────────────────────────────────────
 task_routes = {
     # ── Scrape tier ──
-    "atlaner.celery_app.tasks.scrape.scrape_topic":          {"queue": "scrape"},
-    "atlaner.celery_app.tasks.scrape.scrape_paper_metadata": {"queue": "scrape"},
-    "atlaner.celery_app.tasks.scrape.download_pdf":          {"queue": "scrape"},
+    "atlazer.celery_app.tasks.scrape.scrape_topic":          {"queue": "scrape"},
+    "atlazer.celery_app.tasks.scrape.scrape_paper_metadata": {"queue": "scrape"},
+    "atlazer.celery_app.tasks.scrape.download_pdf":          {"queue": "scrape"},
 
     # ── Process tier ──
-    "atlaner.celery_app.tasks.process.parse_pdf":            {"queue": "process"},
-    "atlaner.celery_app.tasks.process.clean_text":           {"queue": "process"},
-    "atlaner.celery_app.tasks.process.chunk_document":       {"queue": "process"},
+    "atlazer.celery_app.tasks.process.parse_pdf":            {"queue": "process"},
+    "atlazer.celery_app.tasks.process.clean_text":           {"queue": "process"},
+    "atlazer.celery_app.tasks.process.chunk_document":       {"queue": "process"},
 
     # ── Embed tier ──
-    "atlaner.celery_app.tasks.embed.generate_embeddings":    {"queue": "embed"},
-    "atlaner.celery_app.tasks.embed.store_chunks":           {"queue": "embed"},
+    "atlazer.celery_app.tasks.embed.generate_embeddings":    {"queue": "embed"},
+    "atlazer.celery_app.tasks.embed.store_chunks":           {"queue": "embed"},
 
     # ── Maintenance ──
-    "atlaner.celery_app.tasks.maintenance.*":                {"queue": "default"},
+    "atlazer.celery_app.tasks.maintenance.*":                {"queue": "default"},
 }
 
 # ─── Worker ───────────────────────────────────────────────────────────────────

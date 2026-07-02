@@ -28,14 +28,14 @@ from datetime import datetime
 
 import structlog
 
-from atlaner.celery_app.main import app
-from atlaner.models.paper import PaperCreate
-from atlaner.config.settings import settings
-from atlaner.storage.db import DatabasePool, DatabaseConfig
-from atlaner.storage.depot import PaperDepot
-from atlaner.celery_app.main import db_pool
-from atlaner.models.document import DocumentChunkCreate
-from atlaner.utils.embedder import chunks_to_vector
+from atlazer.celery_app.main import app
+from atlazer.models.paper import PaperCreate
+from atlazer.config.settings import settings
+from atlazer.storage.db import DatabasePool, DatabaseConfig
+from atlazer.storage.depot import PaperDepot
+from atlazer.celery_app.main import db_pool
+from atlazer.models.document import DocumentChunkCreate
+from atlazer.utils.embedder import chunks_to_vector
 
 log = structlog.get_logger(__name__)
 
@@ -44,7 +44,7 @@ log = structlog.get_logger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlaner.celery_app.tasks.embed.generate_embeddings",
+    name="atlazer.celery_app.tasks.embed.generate_embeddings",
     bind=True,
     max_retries=10,
     default_retry_delay=30,
@@ -110,7 +110,7 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlaner.celery_app.tasks.embed.store_chunks",
+    name="atlazer.celery_app.tasks.embed.store_chunks",
     bind=True,
     max_retries=5,
     default_retry_delay=60,
@@ -157,7 +157,7 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         raise self.retry(exc=exc)
 
     # Mark this paper as fully processed so scrape_topic won't re-queue it
-    from atlaner.utils.dedup import mark_as_processed
+    from atlazer.utils.dedup import mark_as_processed
     mark_as_processed(paper_id, repository=repository)
 
     # Clean up the local PDF to reclaim disk space
