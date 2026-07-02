@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import List
+from typing import List, Dict, Any
 
 import structlog
 
@@ -91,7 +91,6 @@ class LocalEmbedder(BaseEmbedder):
             model_name_or_path=self.model_name,
             device="cpu",
             truncate_dim=settings.truncate_dim,
-            cache_folder=settings.hf_home,
         )
         log.info("local_embedder.ready", model=self.model_name)
 

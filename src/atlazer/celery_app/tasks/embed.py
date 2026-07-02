@@ -66,7 +66,7 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     paper_id    = metadata["paper_id"]
     repository  = metadata["repository"]
     chunks      = metadata.get("chunks", [])
-    embedded_chunks = List[Dict[str, Any]]()
+    embedded_chunks: List[Dict[str, Any]] = []
 
     if not chunks:
         log.warning("generate_embeddings.no_chunks", paper_id=paper_id, repository=repository)
@@ -164,7 +164,7 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     _cleanup_pdf(metadata.get("local_pdf_path"))
 
     # Clean up the GROBID output
-    out_dir = Path(metadata.get("local_pdf_path")).parent / "out"
+    out_dir = Path(metadata["local_pdf_path"]).parent / "out"
     if out_dir.exists():
         shutil.rmtree(out_dir)
 
@@ -241,14 +241,14 @@ def _write_chunks(paper_uuid: str, chunks: List[Dict[str, Any]]) -> int:
     payloads: List[DocumentChunkCreate] = []
 
     for chunk in chunks:
-        content = chunk.get('text', None)
-        chunk_id = chunk.get('chunk_id', None)
+        content = chunk.get('text', '')
+        chunk_id = chunk.get('chunk_id', '')
         section_orders = chunk_id.rsplit('_', 2)[-2:]
     
         payloads.append(
             DocumentChunkCreate(
                 paper_id=paper_uuid,
-                section=chunk.get('section', None),
+                section=chunk.get('section', ''),
                 section_order='_'.join(section_orders),
                 chunk=chunk_id,
                 chunk_type='body',
