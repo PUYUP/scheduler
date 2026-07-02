@@ -76,11 +76,11 @@ open http://localhost:5555/flower
 
 # 4. Manually trigger a scrape
 docker compose exec worker-scrape \
-    python scripts/trigger_scrape.py --arxiv-topics cs.CL --max-results 20
+    python src/curiosift_miner/scripts/trigger_scrape.py --arxiv-topics cs.CL --max-results 20
 
 # 5. Re-ingest a specific paper
 docker compose exec worker-scrape \
-    python scripts/trigger_scrape.py --paper-id 2606.27414 --repository arxiv
+    python src/curiosift_miner/scripts/trigger_scrape.py --paper-id 2606.27414 --repository arxiv
 ```
 
 ## Scaling

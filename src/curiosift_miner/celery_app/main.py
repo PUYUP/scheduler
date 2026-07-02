@@ -18,6 +18,7 @@ from kombu import Exchange, Queue
 from curiosift_miner.config.settings import settings
 from curiosift_miner.config.logging import configure_logging
 from curiosift_miner.storage.db import DatabasePool, DatabaseConfig
+from curiosift_miner.celery_app.utils.embedder import get_embedder
 
 
 # ─── Singleton ────────────────────────────────────────────────────────────────
@@ -172,15 +173,27 @@ def on_worker_ready(sender, **kwargs):
 # ─── Database Init and Shutdown ────────────────────────────────────────────────
 
 db_pool = DatabasePool(DatabaseConfig.from_env())
-db_pool.start()
+# db_pool.start()
+
 
 @worker_process_init.connect
 def init_db(**kwargs):
     db_pool.start()
 
+
 @worker_process_shutdown.connect
 def close_db(**kwargs):
     db_pool.close()
+
+
+# ─── Preload embedder once per worker process ────────────────────────────────
+
+@worker_process_init.connect
+def preload_embedder(**kwargs):
+    import structlog
+    log = structlog.get_logger()
+    log.info("worker_process_init.preloading_embedder")
+    get_embedder()
 
 
 # Nama task per-tier, dipakai untuk menentukan queue asal saat dead-lettering.

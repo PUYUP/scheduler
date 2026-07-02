@@ -50,8 +50,8 @@ log = structlog.get_logger(__name__)
     default_retry_delay=30,
     queue="embed",
     # rate_limit set globally in celery_config.py  →  "20/m"
-    time_limit=600,
-    soft_time_limit=540,
+    time_limit=1800,
+    soft_time_limit=1700,
     ignore_result=False,
 )
 def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:

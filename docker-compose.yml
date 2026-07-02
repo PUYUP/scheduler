@@ -23,7 +23,7 @@ x-celery-common: &celery-common
     redis:
       condition: service_healthy
     grobid:
-      condition: service_started
+      condition: service_healthy
     model-init:
       condition: service_completed_successfully
   restart: unless-stopped
@@ -87,7 +87,7 @@ services:
     ports:
       - "8070:8070"
     environment:
-      - JAVA_OPTS=-Xms1g -Xmx2g
+      - JAVA_OPTS=-Xms1g -Xmx4g
     volumes:
       - grobid-tmp:/tmp/grobid
     healthcheck:
@@ -102,8 +102,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 3g
+          memory: 6g
           cpus: "2.0"
+        reservations:
+          memory: 4g
 
 
   # ─── Beat Scheduler (cron-style task dispatch) ───────────────
@@ -125,12 +127,12 @@ services:
       celery -A curiosift_miner.celery_app.main worker
       --loglevel=info
       --queues=scrape
-      --concurrency=8
+      --concurrency=1
       --prefetch-multiplier=1
       --max-tasks-per-child=100
       --hostname=scrape@%h
     deploy:
-      replicas: 2
+      replicas: 1
 
 
   # ─── Worker Tier 2: Process Queue ───────────────────────────
@@ -140,12 +142,12 @@ services:
       celery -A curiosift_miner.celery_app.main worker
       --loglevel=info
       --queues=process
-      --concurrency=4
+      --concurrency=1
       --prefetch-multiplier=1
       --max-tasks-per-child=50
       --hostname=process@%h
     deploy:
-      replicas: 2
+      replicas: 1
 
 
   # ─── Worker Tier 3: Embed Queue ─────────────────────────────
@@ -155,12 +157,18 @@ services:
       celery -A curiosift_miner.celery_app.main worker
       --loglevel=info
       --queues=embed
-      --concurrency=2
+      --pool=solo
+      --concurrency=1
       --prefetch-multiplier=1
       --max-tasks-per-child=200
       --hostname=embed@%h
     deploy:
       replicas: 1
+      resources:
+        limits:
+          memory: 6g
+        reservations:
+          memory: 4g
 
 
   # ─── Worker: Maintenance Queue (DLQ retry, cleanup, health check) ───
@@ -170,7 +178,7 @@ services:
       celery -A curiosift_miner.celery_app.main worker
       --loglevel=info
       --queues=default
-      --concurrency=2
+      --concurrency=1
       --prefetch-multiplier=1
       --max-tasks-per-child=200
       --hostname=default@%h
