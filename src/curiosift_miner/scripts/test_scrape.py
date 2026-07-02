@@ -37,7 +37,7 @@ def save_chunks_to_json(chunks, arxiv_id: str, output_dir: str = "output"):
 
 
 def main():
-    paper_id = "2606.31174"
+    paper_id = "2606.28684"
     repository = "arxiv"
 
     result = scrape_paper_metadata(paper_id=paper_id, repository=repository)

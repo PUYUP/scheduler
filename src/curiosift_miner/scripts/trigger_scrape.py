@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from curiosift_miner.celery_app.tasks.scrape import scrape_topic, scrape_paper_metadata
-from curiosift_miner.celery_app.utils.dedup import reset_paper
+from curiosift_miner.utils.dedup import reset_paper
 from curiosift_miner.config.settings import settings
 
 

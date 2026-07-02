@@ -30,12 +30,12 @@ import structlog
 
 from curiosift_miner.celery_app.main import app
 from curiosift_miner.models.paper import PaperCreate
-from curiosift_miner.celery_app.utils.embedder import get_embedder
 from curiosift_miner.config.settings import settings
 from curiosift_miner.storage.db import DatabasePool, DatabaseConfig
 from curiosift_miner.storage.depot import PaperDepot
 from curiosift_miner.celery_app.main import db_pool
 from curiosift_miner.models.document import DocumentChunkCreate
+from curiosift_miner.utils.embedder import chunks_to_vector
 
 log = structlog.get_logger(__name__)
 
@@ -66,6 +66,7 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     paper_id    = metadata["paper_id"]
     repository  = metadata["repository"]
     chunks      = metadata.get("chunks", [])
+    embedded_chunks = List[Dict[str, Any]]()
 
     if not chunks:
         log.warning("generate_embeddings.no_chunks", paper_id=paper_id, repository=repository)
@@ -79,36 +80,8 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         provider=settings.embedding_provider,
     )
 
-    embedder = get_embedder()
-    batch_size = settings.embedding_batch_size
-
     try:
-        embedded_chunks: List[Dict[str, Any]] = []
-
-        for batch_start in range(0, len(chunks), batch_size):
-            batch = chunks[batch_start : batch_start + batch_size]
-            texts = [c["text"] for c in batch]
-
-            t0 = time.perf_counter()
-            vectors = embedder.embed_batch(texts)
-            elapsed = time.perf_counter() - t0
-
-            log.debug(
-                "generate_embeddings.batch_done",
-                paper_id=paper_id,
-                repository=repository,
-                batch_start=batch_start,
-                batch_size=len(batch),
-                elapsed_s=round(elapsed, 2),
-            )
-
-            for chunk, vector in zip(batch, vectors):
-                chunk_with_vec = chunk.copy()
-                chunk_with_vec["embedding"]        = vector
-                chunk_with_vec["embedding_model"]  = embedder.model_name
-                chunk_with_vec["embedding_dim"]    = len(vector)
-                embedded_chunks.append(chunk_with_vec)
-
+        embedded_chunks = chunks_to_vector(chunks)
     except Exception as exc:
         log.error(
             "generate_embeddings.failed",
@@ -184,7 +157,7 @@ def store_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         raise self.retry(exc=exc)
 
     # Mark this paper as fully processed so scrape_topic won't re-queue it
-    from curiosift_miner.celery_app.utils.dedup import mark_as_processed
+    from curiosift_miner.utils.dedup import mark_as_processed
     mark_as_processed(paper_id, repository=repository)
 
     # Clean up the local PDF to reclaim disk space

@@ -18,7 +18,7 @@ from kombu import Exchange, Queue
 from curiosift_miner.config.settings import settings
 from curiosift_miner.config.logging import configure_logging
 from curiosift_miner.storage.db import DatabasePool, DatabaseConfig
-from curiosift_miner.celery_app.utils.embedder import get_embedder
+from curiosift_miner.utils.embedder import get_embedder
 
 
 # ─── Singleton ────────────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ def on_worker_ready(sender, **kwargs):
 # ─── Database Init and Shutdown ────────────────────────────────────────────────
 
 db_pool = DatabasePool(DatabaseConfig.from_env())
-# db_pool.start()
+db_pool.start()
 
 
 @worker_process_init.connect

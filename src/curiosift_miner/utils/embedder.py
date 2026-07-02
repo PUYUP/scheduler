@@ -91,7 +91,7 @@ class LocalEmbedder(BaseEmbedder):
             model_name_or_path=self.model_name,
             device="cpu",
             truncate_dim=settings.truncate_dim,
-            cache_dir=settings.hf_home,
+            cache_folder=settings.hf_home,
         )
         log.info("local_embedder.ready", model=self.model_name)
 
@@ -102,7 +102,7 @@ class LocalEmbedder(BaseEmbedder):
         # normalize_embeddings=True → cosine similarity == dot product
         vectors = self._model.encode(
             texts,
-            batch_size=64,
+            batch_size=settings.embedding_batch_size,
             normalize_embeddings=True,
             show_progress_bar=False,
         ).tolist()
@@ -146,3 +146,63 @@ def get_embedder() -> BaseEmbedder:
             f"Unknown embedding provider '{provider}'. "
             "Choose 'openai' or 'local'."
         )
+
+
+def chunks_to_vector(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Convert chunks to vectors.
+
+    Args:
+        chunks: List of chunk dicts. Each dict must contain a "text" key
+            (str) whose value will be embedded. Other keys are preserved
+            as-is in the output.
+
+    Returns:
+        List of chunks (same dicts, copied) with three additional keys:
+            - "embedding": the embedding vector (List[float]).
+            - "embedding_model": name of the model used to generate it.
+            - "embedding_dim": dimensionality of the embedding vector.
+
+    Raises:
+        KeyError: if any chunk is missing the "text" key.
+        Exception: propagates any error raised by the embedder
+            (e.g. API/network failures) after logging it.
+    """
+
+    log.info("chunks_to_vector.start", chunks=len(chunks))
+
+    embedder = get_embedder()
+    batch_size = settings.embedding_batch_size
+    embedded_chunks: List[Dict[str, Any]] = []
+
+    for batch_start in range(0, len(chunks), batch_size):
+        batch = chunks[batch_start : batch_start + batch_size]
+        texts = [c["text"] for c in batch]
+
+        t0 = time.perf_counter()
+        try:
+            vectors = embedder.embed_batch(texts)
+        except Exception:
+            log.exception(
+                "embedder.batch_failed",
+                batch_start=batch_start,
+                batch_size=len(batch),
+            )
+            raise
+
+        elapsed = time.perf_counter() - t0
+        log.debug(
+            "embedder.batch_done",
+            batch_start=batch_start,
+            batch_size=len(batch),
+            elapsed_s=round(elapsed, 2),
+        )
+
+        for chunk, vector in zip(batch, vectors):
+            chunk_with_vec = chunk.copy()
+            chunk_with_vec["embedding"] = vector
+            chunk_with_vec["embedding_model"] = embedder.model_name
+            chunk_with_vec["embedding_dim"] = len(vector)
+            embedded_chunks.append(chunk_with_vec)
+
+    return embedded_chunks

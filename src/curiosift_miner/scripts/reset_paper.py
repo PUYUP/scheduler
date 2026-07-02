@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from curiosift_miner.celery_app.utils.dedup import (
+from curiosift_miner.utils.dedup import (
     reset_paper,
     is_already_processed,
     count_processed,
@@ -25,7 +25,7 @@ from curiosift_miner.celery_app.utils.dedup import (
 
 def _flush_all(repository: str) -> None:
     """Hapus SEMUA entry dedup untuk repository ini. Dipakai untuk testing saja."""
-    from curiosift_miner.celery_app.utils.dedup import _get_redis  # noqa: internal, testing-only use
+    from curiosift_miner.utils.dedup import _get_redis  # noqa: internal, testing-only use
 
     confirm = input(
         f"Ini akan menghapus SEMUA dedup key untuk repository='{repository}'. "

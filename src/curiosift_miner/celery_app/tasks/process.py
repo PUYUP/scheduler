@@ -27,7 +27,7 @@ from celery import signature
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from curiosift_miner.celery_app.main import app
-from curiosift_miner.celery_app.utils.text_cleaner import clean_academic_text
+from curiosift_miner.utils.text_cleaner import clean_academic_text
 from curiosift_miner.config.settings import settings
 from grobid_client.grobid_client import GrobidClient
 

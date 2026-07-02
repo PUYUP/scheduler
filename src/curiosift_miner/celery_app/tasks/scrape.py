@@ -28,7 +28,7 @@ from tenacity import (
 )
 
 from curiosift_miner.celery_app.main import app
-from curiosift_miner.celery_app.utils.dedup import (
+from curiosift_miner.utils.dedup import (
     is_already_processed,
     is_backfill_complete,
     mark_backfill_complete,
