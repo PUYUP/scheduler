@@ -218,6 +218,7 @@ class Settings(BaseSettings):
 
     # ── Embeddings ─────────────────────────────────────────────
     hf_token: str               = ""
+    hf_home: str                = "/root/.cache/huggingface"
     embedding_provider: str     = "local"       # "openai" | "local"
     openai_api_key: str         = ""
     openai_embedding_model: str = "text-embedding-3-small"
