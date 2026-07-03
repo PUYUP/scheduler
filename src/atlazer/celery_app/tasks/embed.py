@@ -246,6 +246,8 @@ def _write_chunks(paper_uuid: str, chunks: List[Dict[str, Any]]) -> int:
         payloads.append(
             DocumentChunkCreate(
                 paper_id=paper_uuid,
+                repository=chunk.get("repository", ""),
+                identifier=chunk.get("paper_id", ""),
                 section=chunk.get('section', ''),
                 section_order='_'.join(section_orders),
                 chunk=chunk_id,

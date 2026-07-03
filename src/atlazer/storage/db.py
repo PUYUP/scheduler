@@ -44,111 +44,90 @@ class DatabaseConfig:
 # ---------------------------------------------------------------------------
 
 _DDL = """\
--- Enable pgvector extension (idempotent)
+-- Enable extensions (idempotent)
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- -----------------------------------------------------------------------
 -- papers: rich bibliographic metadata
 -- -----------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS papers (
-    -- Primary key --------------------------------------------------------
+CREATE TABLE papers (
     id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    -- External identifiers -----------------------------------------------
-    doi                     TEXT,                            
-    repository              TEXT            NOT NULL,        
-    identifier              TEXT            NOT NULL,        
-    attributes              JSONB           NOT NULL DEFAULT '{}'::jsonb, 
+    doi                     TEXT,
+    repository              TEXT            NOT NULL,
+    identifier              TEXT            NOT NULL,
+    attributes              JSONB           NOT NULL DEFAULT '{}'::jsonb,
 
-    -- Core bibliographic -------------------------------------------------
     title                   TEXT            NOT NULL,
     abstract                TEXT,
-    year                    SMALLINT,                        
-    date_published          DATE,                            
+    year                    SMALLINT,
+    date_published          DATE,
 
-    -- People & institutions (structured JSONB) ---------------------------
     authors                 JSONB           NOT NULL DEFAULT '[]'::jsonb,
     affiliations            JSONB           NOT NULL DEFAULT '[]'::jsonb,
 
-    -- Venue / publication ------------------------------------------------
-    venue                   TEXT,                            
-    venue_type              TEXT,                            
+    venue                   TEXT,
+    venue_type              TEXT,
     publisher               TEXT,
     volume                  TEXT,
     issue                   TEXT,
-    pages                   TEXT,                            
+    pages                   TEXT,
 
-    -- Classification & discovery -----------------------------------------
-    keywords                TEXT[],                          
-    fields_of_study         TEXT[],                          
+    keywords                TEXT[],
+    fields_of_study         TEXT[],
     language                TEXT            NOT NULL DEFAULT 'en',
 
-    -- Access & availability ----------------------------------------------
     pdf_url                 TEXT,
     open_access             BOOLEAN,
-    license                 TEXT,                            
+    license                 TEXT,
 
-    -- Bibliometric signals (populated asynchronously) --------------------
     references_count        INTEGER,
     citations_count         INTEGER,
 
-    -- Processing lifecycle -----------------------------------------------
     processing_tool         TEXT,
     processing_version      TEXT,
     processing_status       TEXT            NOT NULL DEFAULT 'pending',
     error_message           TEXT,
 
-    -- Timestamps ---------------------------------------------------------
     created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
 
-    -- Constraints --------------------------------------------------------
     CONSTRAINT papers_status_check
         CHECK (processing_status IN ('pending', 'indexing', 'done', 'failed')),
     CONSTRAINT papers_venue_type_check
-        CHECK (venue_type IN ('journal', 'conference', 'preprint', 'book', 'thesis', 'report', NULL))
+        CHECK (venue_type IN ('journal', 'conference', 'preprint', 'book', 'thesis', 'report', NULL)),
+
+    -- CHANGED: dulu CREATE UNIQUE INDEX terpisah, sekarang table constraint
+    -- langsung, supaya bisa dijadikan target composite FK dari document_chunks.
+    -- Postgres otomatis buat backing unique index dengan nama yang sama.
+    CONSTRAINT papers_repo_identifier_uniq UNIQUE (repository, identifier)
 );
 
--- Indexes on papers ------------------------------------------------------
--- =======================================================================
--- 1. INDEKS UNTUK TABEL 'papers' (Metadata Dokumentasi & Filteirng)
--- =======================================================================
-
--- Menjaga keunikan kombinasi repository & identifier sesuai permintaan Anda
-CREATE UNIQUE INDEX IF NOT EXISTS idx_papers_repo_identifier
-    ON papers (repository, identifier);
-
--- Indeks B-Tree standar untuk filter cepat berdasarkan repositori dan status antrean
-CREATE INDEX IF NOT EXISTS idx_papers_repository ON papers (repository);
-CREATE INDEX IF NOT EXISTS idx_papers_status     ON papers (processing_status);
-
--- Indeks untuk pencarian berbasis jangkauan (range filtering) seperti tahun publikasi
-CREATE INDEX IF NOT EXISTS idx_papers_year        ON papers (year)          WHERE year IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_papers_date_pub    ON papers (date_published) WHERE date_published IS NOT NULL;
-
--- Pencarian teks penuh pada judul (sangat berguna untuk skenario Hybrid Search: Keyword + Vector)
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX IF NOT EXISTS idx_papers_title_trgm ON papers USING gin (title gin_trgm_ops);
-
--- Indeks GIN untuk pencarian dalam kolom JSONB dan array (Metadata Filtering)
-CREATE INDEX IF NOT EXISTS idx_papers_attributes   ON papers USING gin (attributes);
-CREATE INDEX IF NOT EXISTS idx_papers_authors_gin  ON papers USING gin (authors);
-CREATE INDEX IF NOT EXISTS idx_papers_keywords_gin ON papers USING gin (keywords);
-CREATE INDEX IF NOT EXISTS idx_papers_fos_gin      ON papers USING gin (fields_of_study);
+-- Indexes on papers -------------------------------------------------------
+CREATE INDEX idx_papers_repository ON papers (repository);
+CREATE INDEX idx_papers_status     ON papers (processing_status);
+CREATE INDEX idx_papers_year        ON papers (year)          WHERE year IS NOT NULL;
+CREATE INDEX idx_papers_date_pub    ON papers (date_published) WHERE date_published IS NOT NULL;
+CREATE INDEX idx_papers_title_trgm ON papers USING gin (title gin_trgm_ops);
+CREATE INDEX idx_papers_attributes   ON papers USING gin (attributes);
+CREATE INDEX idx_papers_authors_gin  ON papers USING gin (authors);
+CREATE INDEX idx_papers_keywords_gin ON papers USING gin (keywords);
+CREATE INDEX idx_papers_fos_gin      ON papers USING gin (fields_of_study);
 
 -- -----------------------------------------------------------------------
 -- document_chunks: BGE-M3-embedded text chunks
 -- -----------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS document_chunks (
+CREATE TABLE document_chunks (
     id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
     paper_id                UUID            NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+    repository              TEXT            NOT NULL,
+    identifier              TEXT            NOT NULL,
 
-    -- Document position -----------------------------------------------
     section                 TEXT            NOT NULL,
-    section_order           TEXT            NOT NULL,
-    chunk                   TEXT            NOT NULL,
+    section_order           TEXT            NOT NULL,   -- lihat catatan di bawah
+    chunk                   TEXT            NOT NULL,   -- lihat catatan di bawah
 
-    -- Content ---------------------------------------------------------
     chunk_type              TEXT            NOT NULL DEFAULT 'body',
     content                 TEXT            NOT NULL,
 
@@ -156,7 +135,10 @@ CREATE TABLE IF NOT EXISTS document_chunks (
                                 GENERATED ALWAYS AS (
                                     array_length(
                                         string_to_array(
-                                            trim(regexp_replace(content, '\\s+', ' ', 'g')),
+                                            -- FIXED: dulu '\\s+' (backslash literal + huruf s,
+                                            -- tidak pernah match apa pun). Sekarang '\s+' benar,
+                                            -- collapse semua whitespace beruntun jadi satu spasi.
+                                            trim(regexp_replace(content, '\s+', ' ', 'g')),
                                             ' '
                                         ),
                                         1
@@ -168,62 +150,57 @@ CREATE TABLE IF NOT EXISTS document_chunks (
                                     encode(sha256(content::bytea), 'hex')
                                 ) STORED,
 
-    -- Embedding -------------------------------------------------------
-    embedding               vector(768),
+    -- FIXED: BGE-M3 dense embedding = 1024 dimensi, bukan 768.
+    embedding               vector(1024),
     embedding_model         TEXT,
     embedding_adapter       TEXT,
     embedding_normalized    BOOLEAN         NOT NULL DEFAULT TRUE,
     token_count             INTEGER,
 
-    -- Timestamps ------------------------------------------------------
     created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-
-    -- Constraints -----------------------------------------------------
-    -- Tetap tanpa unique constraint seperti permintaan sebelumnya
 
     CONSTRAINT chunks_type_check CHECK (
         chunk_type IN ('abstract', 'body', 'conclusion', 'caption', 'equation', 'other')
     ),
     CONSTRAINT chunks_token_count_positive  CHECK (token_count IS NULL OR token_count > 0),
-    CONSTRAINT chunks_word_count_positive   CHECK (word_count > 0)
+    CONSTRAINT chunks_word_count_positive   CHECK (word_count > 0),
+
+    -- NEW: menjaga repository/identifier di sini selalu konsisten dengan
+    -- papers, dan otomatis ikut ter-update kalau papers.repository/identifier
+    -- pernah diedit. Ini valid karena papers_repo_identifier_uniq sekarang
+    -- constraint asli, bukan sekadar index.
+    CONSTRAINT chunks_repo_identifier_fkey FOREIGN KEY (repository, identifier)
+        REFERENCES papers (repository, identifier)
+        ON UPDATE CASCADE ON DELETE CASCADE
 );
 
--- Indexes on document_chunks ------------------------------------------
--- =======================================================================
--- 2. INDEKS UNTUK TABEL 'document_chunks' (Optimasi Vektor & Posisi)
--- =======================================================================
+-- Indexes on document_chunks -----------------------------------------------
+CREATE UNIQUE INDEX idx_chunks_repo_identifier_section_chunk
+    ON document_chunks (repository, identifier, section, chunk);
 
--- UTAMA: HNSW Vector Index untuk Cosine Similarity Search
--- Indeks ini sangat cepat untuk pencarian ANN (Approximate Nearest Neighbor).
--- Kita buat sebagai partial index (WHERE embedding IS NOT NULL) agar indeks tidak membengkak karena baris yang belum di-embed.
-CREATE INDEX IF NOT EXISTS idx_chunks_embedding_hnsw
+CREATE INDEX idx_chunks_embedding_hnsw
     ON document_chunks
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64)
     WHERE embedding IS NOT NULL;
 
--- Indeks untuk rekonstruksi urutan membaca dokumen asli secara cepat setelah chunk ditemukan
-CREATE INDEX IF NOT EXISTS idx_chunks_paper_order
+CREATE INDEX idx_chunks_paper_order
     ON document_chunks (paper_id, section_order, chunk);
 
--- Antrean Embedding: Mempercepat background worker/AI agent mencari chunk yang masih kosong vektornya
-CREATE INDEX IF NOT EXISTS idx_chunks_unembedded
+CREATE INDEX idx_chunks_unembedded
     ON document_chunks (paper_id, created_at)
     WHERE embedding IS NULL;
 
--- Deteksi Staleness: Mencari chunk dengan model/adapter lama jika Anda melakukan upgrade model embedding
-CREATE INDEX IF NOT EXISTS idx_chunks_embedding_model
+CREATE INDEX idx_chunks_embedding_model
     ON document_chunks (embedding_model, embedding_adapter)
     WHERE embedding IS NOT NULL;
 
--- Deduplikasi Konten: Menghindari pemborosan token embedding jika teks/konten tidak berubah
-CREATE INDEX IF NOT EXISTS idx_chunks_content_hash
+CREATE INDEX idx_chunks_content_hash
     ON document_chunks (content_hash)
     WHERE embedding IS NOT NULL;
 
--- Filter Tipe Chunk: Memungkinkan pencarian vektor terbatas hanya di segmen tertentu (misal: hanya di 'abstract' atau 'conclusion')
-CREATE INDEX IF NOT EXISTS idx_chunks_type
+CREATE INDEX idx_chunks_type
     ON document_chunks (chunk_type, paper_id);
 """
 

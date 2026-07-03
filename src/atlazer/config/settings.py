@@ -222,7 +222,7 @@ class Settings(BaseSettings):
     embedding_provider: str     = "local"       # "openai" | "local"
     openai_api_key: str         = ""
     openai_embedding_model: str = "text-embedding-3-small"
-    truncate_dim: int           = 768
+    truncate_dim: int           = 1024
     embedding_batch_size: int   = 100             # texts per API call
     local_embedding_model: str  = "BAAI/bge-m3"
 

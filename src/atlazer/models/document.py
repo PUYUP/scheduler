@@ -21,6 +21,8 @@ class DocumentChunkBase(BaseModel):
     Model dasar yang berisi field utama yang diisi oleh aplikasi (user/system).
     """
     paper_id: str
+    repository: str
+    identifier: str
     section: str
     section_order: str
     chunk: str
@@ -36,8 +38,8 @@ class DocumentChunkBase(BaseModel):
 
     @field_validator('embedding')
     def check_embedding_length(cls, v):
-        if v is not None and len(v) != 768:
-            raise ValueError('Embedding must have exactly 768 dimensions (vector(768))')
+        if v is not None and len(v) != 1024:
+            raise ValueError('Embedding must have exactly 1024 dimensions (vector(1024))')
         return v
 
     @field_validator('content')
@@ -73,6 +75,8 @@ class DocumentChunkORM(Base):
         PG_UUID(as_uuid=True), ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
     )
 
+    repository: Mapped[str] = mapped_column(Text, nullable=False)
+    identifier: Mapped[str] = mapped_column(Text, nullable=False)
     section: Mapped[str] = mapped_column(Text, nullable=False)
     section_order: Mapped[int] = mapped_column(Text, nullable=False)
     chunk: Mapped[int] = mapped_column(Text, nullable=False)
@@ -85,7 +89,7 @@ class DocumentChunkORM(Base):
     word_count: Mapped[int] = mapped_column(Integer, nullable=False, insert_default=None)
     content_hash: Mapped[str] = mapped_column(Text, nullable=False, insert_default=None)
 
-    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768), nullable=True)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
     embedding_model: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     embedding_adapter: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     embedding_normalized: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")

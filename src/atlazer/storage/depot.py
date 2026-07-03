@@ -37,7 +37,7 @@ class PaperDepot:
     # exactly what's in the DB (name + WHERE predicate) or Postgres will
     # reject the ON CONFLICT clause at runtime — confirm this against
     # your migration before relying on it.
-    _REPO_IDENTIFIER_CONSTRAINT = "idx_papers_repo_identifier"
+    _REPO_IDENTIFIER_COLUMNS = ["repository", "identifier"]
     _UPSERT_COLUMNS = (
         "repository", "identifier", "attributes",
         "title", "abstract", "year", "date_published",
@@ -85,13 +85,13 @@ class PaperDepot:
             "error_message": paper.error_message,
         }
 
-    def _upsert_stmt(self, values: dict, constraint: str):
+    def _upsert_stmt(self, values: dict, index_elements: list[str]):
         stmt = pg_insert(PaperORM).values(values)
         excluded = stmt.excluded
         set_ = {col: getattr(excluded, col) for col in self._UPSERT_COLUMNS}
         set_["updated_at"] = func.now()
         return stmt.on_conflict_do_update(
-            constraint=constraint,
+            index_elements=index_elements,
             set_=set_,
         ).returning(PaperORM.id)
 
@@ -108,7 +108,7 @@ class PaperDepot:
             with self._pool.session() as session:
                 try:
                     row = session.execute(
-                        self._upsert_stmt(values, self._REPO_IDENTIFIER_CONSTRAINT)
+                        self._upsert_stmt(values, self._REPO_IDENTIFIER_COLUMNS)
                     ).fetchone()
                     session.commit()
 
@@ -160,9 +160,9 @@ class PaperDepot:
 
         stmt = pg_insert(DocumentChunkORM).values(values)
 
-        # On (paper_id, section, chunk) collision, refresh the mutable
-        # fields instead of aborting the whole batch — makes re-processing
-        # a paper (crash/retry/duplicate task delivery) idempotent.
+        # On (repository, identifier, section, chunk) collision, refresh the
+        # mutable fields instead of aborting the whole batch — makes
+        # re-processing a paper (crash/retry/duplicate task delivery) idempotent.
         update_cols = {
             "content": stmt.excluded.content,
             "chunk_type": stmt.excluded.chunk_type,
@@ -176,7 +176,12 @@ class PaperDepot:
         }
 
         stmt = stmt.on_conflict_do_update(
-            index_elements=["paper_id", "section", "chunk"],
+            index_elements=[
+                DocumentChunkORM.repository,
+                DocumentChunkORM.identifier,
+                DocumentChunkORM.section,
+                DocumentChunkORM.chunk,
+            ],
             set_=update_cols,
         )
 
@@ -185,7 +190,8 @@ class PaperDepot:
                 session.execute(stmt)
                 session.commit()
                 logger.info(
-                    "Upserted %s chunks for paper %s", len(chunks), chunks[0].paper_id
+                    "Upserted %s chunks for repository=%s identifier=%s",
+                    len(chunks), chunks[0].repository, chunks[0].identifier,
                 )
             except SQLAlchemyError as e:
                 session.rollback()
