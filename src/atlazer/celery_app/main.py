@@ -42,6 +42,7 @@ def create_celery_app() -> Celery:
         "atlazer.celery_app.tasks.process",
         "atlazer.celery_app.tasks.embed",
         "atlazer.celery_app.tasks.maintenance",
+        "atlazer.celery_app.tasks.webapi",
     ]
     _configure_queues(app)
     _configure_beat_schedule(app)
@@ -68,6 +69,7 @@ def _configure_queues(app: Celery) -> None:
     scrape_exchange  = Exchange("scrape",  type="direct")
     process_exchange = Exchange("process", type="direct")
     embed_exchange   = Exchange("embed",   type="direct")
+    webapi_exchange  = Exchange("webapi",  type="direct")
     dlx_exchange     = Exchange("dlx",     type="direct")   # dead-letter (nama saja; tidak ada semantik khusus di Redis)
 
     app.conf.task_queues = (
@@ -78,11 +80,14 @@ def _configure_queues(app: Celery) -> None:
         Queue("process", process_exchange, routing_key="process"),
         # ── Tier 3: API rate-limited ──
         Queue("embed",   embed_exchange,   routing_key="embed"),
+        # ── WebAPI rate-limited ──
+        Queue("webapi",  webapi_exchange,  routing_key="webapi"),
         # ── Dead-letter sinks (diisi manual via on_task_failure, dikuras via
         #     tasks.maintenance.retry_dead_letters) ──
         Queue("dlx.scrape",   dlx_exchange, routing_key="dlx.scrape"),
         Queue("dlx.process",  dlx_exchange, routing_key="dlx.process"),
         Queue("dlx.embed",    dlx_exchange, routing_key="dlx.embed"),
+        Queue("dlx.webapi",   dlx_exchange, routing_key="dlx.webapi"),
     )
 
     app.conf.task_default_queue    = "default"
@@ -201,6 +206,7 @@ _TIER_PREFIXES = {
     "atlazer.celery_app.tasks.scrape.":  "scrape",
     "atlazer.celery_app.tasks.process.": "process",
     "atlazer.celery_app.tasks.embed.":   "embed",
+    "atlazer.celery_app.tasks.webapi.":  "webapi",
 }
 
 

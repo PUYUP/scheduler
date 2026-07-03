@@ -3,6 +3,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 
+from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
     EmbedChunksRequest,
@@ -45,5 +46,21 @@ def embed(payload: EmbedChunksRequest):
     try:
         embedded_chunks = chunks_to_vector(payload.chunks)
         return EmbedChunksResponse(chunks=embedded_chunks)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/embed-parallel", response_model=EmbedChunksResponse)
+def embed_parallel(payload: EmbedChunksRequest):
+    if embedder_service is None:
+        raise HTTPException(status_code=503, detail="Service is not ready yet.")
+    
+    try:
+        #generate embeddings in parallel using Celery
+        job = generate_embeddings.delay(
+            kwargs={"chunks": payload.chunks},
+            queue="webapi",
+        )
+        return {"job_id": job.id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
