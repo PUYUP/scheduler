@@ -76,7 +76,7 @@ open http://localhost:5555/flower
 
 # 4. Manually trigger a scrape
 docker compose exec worker-scrape \
-    python src/atlazer/scripts/trigger_scrape.py --arxiv-topics cs.CL --max-results 20
+    python src/atlazer/scripts/trigger_scrape.py --arxiv-topics cs.CL cs.AI --max-results 5
 
 # 5. Re-ingest a specific paper
 docker compose exec worker-scrape \

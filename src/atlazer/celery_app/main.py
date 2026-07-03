@@ -154,6 +154,12 @@ def _configure_beat_schedule(app: Celery) -> None:
             "args": ["dlx.embed"],
             "options": {"queue": "default"},
         },
+        "retry-failed-webapi": {
+            "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
+            "schedule": 3600,
+            "args": ["dlx.webapi"],
+            "options": {"queue": "default"},
+        },
         # ── Housekeeping (purge_old_pdfs, pipeline_health) ──
         **MAINTENANCE_BEAT_SCHEDULE,
     }

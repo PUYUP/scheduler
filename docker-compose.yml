@@ -188,6 +188,21 @@ services:
           memory: 4g
 
 
+  # ─── Worker: WebAPI Queue ───────────────────────────────────
+  worker-webapi:
+    <<: *celery-common
+    command: >
+      celery -A atlazer.celery_app.main worker
+      --loglevel=info
+      --queues=webapi
+      --concurrency=1
+      --prefetch-multiplier=1
+      --max-tasks-per-child=100
+      --hostname=webapi@%h
+    deploy:
+      replicas: 1
+
+
   # ─── Worker: Maintenance Queue (DLQ retry, cleanup, health check) ───
   worker-default:
     <<: *celery-common
@@ -218,6 +233,7 @@ services:
       - worker-scrape
       - worker-process
       - worker-embed
+      - worker-webapi
       - worker-default
 
 

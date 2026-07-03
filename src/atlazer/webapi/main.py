@@ -1,3 +1,4 @@
+import structlog
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -8,9 +9,11 @@ from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
     EmbedChunksRequest,
     EmbedChunksResponse,
+    EmbedParallelResponse,
     HealthResponse,
 )
 
+log = structlog.get_logger(__name__)
 embedder_service: Optional[BaseEmbedder] = None
 
 
@@ -44,23 +47,29 @@ def embed(payload: EmbedChunksRequest):
         raise HTTPException(status_code=503, detail="Service is not ready yet.")
     
     try:
+        log.info("webapi.embed.start", chunks_count=len(payload.chunks))
         embedded_chunks = chunks_to_vector(payload.chunks)
+        log.info("webapi.embed.success", chunks_count=len(embedded_chunks))
         return EmbedChunksResponse(chunks=embedded_chunks)
     except Exception as e:
+        log.error("webapi.embed.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/embed-parallel", response_model=EmbedChunksResponse)
+@app.post("/embed-parallel", response_model=EmbedParallelResponse)
 def embed_parallel(payload: EmbedChunksRequest):
     if embedder_service is None:
         raise HTTPException(status_code=503, detail="Service is not ready yet.")
     
     try:
         #generate embeddings in parallel using Celery
-        job = generate_embeddings.delay(
-            kwargs={"chunks": payload.chunks},
+        log.info("webapi.embed-parallel.start", chunks_count=len(payload.chunks))
+        job = generate_embeddings.apply_async(
+            kwargs={"chunks": payload.chunks, "provision": payload.provision},
             queue="webapi",
         )
-        return {"job_id": job.id}
+        log.info("webapi.embed-parallel.success", task_id=job.id)
+        return EmbedParallelResponse(task_id=job.id)
     except Exception as e:
+        log.error("webapi.embed-parallel.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
