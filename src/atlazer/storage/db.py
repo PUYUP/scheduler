@@ -43,7 +43,7 @@ class DatabaseConfig:
 # DDL — schema definitions
 # ---------------------------------------------------------------------------
 
-_DDL = """\
+_DDL = """
 -- Enable extensions (idempotent)
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
