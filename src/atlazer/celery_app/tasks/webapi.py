@@ -1,6 +1,6 @@
 import structlog
 
-from typing import Dict, Any
+from typing import List, Dict, Any
 from atlazer.celery_app.main import app
 from atlazer.utils.embedder import chunks_to_vector
 
@@ -17,7 +17,8 @@ log = structlog.get_logger(__name__)
 )
 def generate_embeddings(
     self,
-    metadata: Dict[str, Any],
+    chunks: List[Dict[str, Any]],
+    provision: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """
     Generates embedding vectors for a list of texts.
@@ -49,15 +50,15 @@ def generate_embeddings(
         }
     """
 
-    log.info("webapi.generate_embeddings.start", metadata=metadata)
+    log.info("webapi.generate_embeddings.start", chunks_count=len(chunks), provision=provision)
 
     # generate embeddings
-    embedded_chunks = chunks_to_vector(metadata["chunks"])
+    embedded_chunks = chunks_to_vector(chunks)
 
     # store chunks for profile interest embedding
-    if "provision" in metadata:
-        provision = metadata["provision"]
-        if "profile_id" in provision:
+    if provision is not None:
+        profile_id = provision.get("profile_id")
+        if profile_id is not None:
             result = embedded_chunks[0]
             embedding = result["embedding"]
             log.info("webapi.generate_embeddings.profile_interest", embedding=embedding)
