@@ -20,7 +20,6 @@ Design notes:
 
 from __future__ import annotations
 
-import time
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List
@@ -31,7 +30,6 @@ import structlog
 from atlazer.celery_app.main import app
 from atlazer.models.paper import PaperCreate
 from atlazer.config.settings import settings
-from atlazer.storage.db import DatabasePool, DatabaseConfig
 from atlazer.storage.depot import PaperDepot
 from atlazer.celery_app.main import db_pool
 from atlazer.models.document import DocumentChunkCreate
