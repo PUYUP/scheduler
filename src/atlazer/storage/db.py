@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS papers (
     doi                     TEXT,                            -- e.g. 10.1145/3442188.3445922
     repository              TEXT            NOT NULL,        -- repo source: arXiv, PubMed, Semantic Scholar
     identifier              TEXT            NOT NULL,        -- unique identifier within the repository e.g. 10.1145/3442188.3445922, 2301.07041, 12345678
-    metadata                JSONB           NOT NULL DEFAULT '{}'::jsonb, -- arbitrary repository-specific raw fields for forward-compatibility
+    attributes              JSONB           NOT NULL DEFAULT '{}'::jsonb, -- arbitrary repository-specific raw fields for forward-compatibility
 
     -- Core bibliographic -------------------------------------------------
     title               TEXT            NOT NULL,
@@ -136,8 +136,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_papers_repo_identifier
 CREATE INDEX IF NOT EXISTS idx_papers_repository
     ON papers (repository);
 
-CREATE INDEX IF NOT EXISTS idx_papers_metadata_gin
-    ON papers USING gin (metadata);
+CREATE INDEX IF NOT EXISTS idx_papers_attributes
+    ON papers (attributes);
 
 -- Date / year range filtering
 CREATE INDEX IF NOT EXISTS idx_papers_year        ON papers (year)          WHERE year IS NOT NULL;
