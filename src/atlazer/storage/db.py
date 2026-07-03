@@ -49,78 +49,58 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 -- -----------------------------------------------------------------------
 -- papers: rich bibliographic metadata
---
--- Design decisions
--- ----------------
--- * paper_id   : caller-controlled stable key (e.g. SHA-256 of DOI / arXiv ID).
--- * doi / arxiv_id / pmid / pmcid / s2_id : well-known external identifiers,
---   nullable because many sources only expose a subset.
--- * authors    : JSONB array — flexible enough to store name, affiliation,
---   ORCID and email per author without a separate join table.
---   Shape: [{"name": "…", "first": "…", "last": "…",
---            "affiliation": "…", "orcid": "…", "email": "…"}, …]
--- * affiliations : JSONB array of institution objects extracted by GROBID.
---   Shape: [{"name": "…", "department": "…", "country": "…"}, …]
--- * references_count / citations_count : bibliometric signals, populated
---   asynchronously from Semantic Scholar / OpenAlex.
--- * processing_status : lifecycle state machine —
---   pending → indexing → done | failed
 -- -----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS papers (
     -- Primary key --------------------------------------------------------
     id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    -- External identifiers (all optional, unique when set) ---------------
-    doi                     TEXT,                            -- e.g. 10.1145/3442188.3445922
-    repository              TEXT            NOT NULL,        -- repo source: arXiv, PubMed, Semantic Scholar
-    identifier              TEXT            NOT NULL,        -- unique identifier within the repository e.g. 10.1145/3442188.3445922, 2301.07041, 12345678
-    attributes              JSONB           NOT NULL DEFAULT '{}'::jsonb, -- arbitrary repository-specific raw fields for forward-compatibility
+    -- External identifiers -----------------------------------------------
+    doi                     TEXT,                            
+    repository              TEXT            NOT NULL,        
+    identifier              TEXT            NOT NULL,        
+    attributes              JSONB           NOT NULL DEFAULT '{}'::jsonb, 
 
     -- Core bibliographic -------------------------------------------------
-    title               TEXT            NOT NULL,
-    abstract            TEXT,
-    year                SMALLINT,                        -- publication year (fast range filter)
-    date_published      DATE,                            -- full date when available
+    title                   TEXT            NOT NULL,
+    abstract                TEXT,
+    year                    SMALLINT,                        
+    date_published          DATE,                            
 
     -- People & institutions (structured JSONB) ---------------------------
-    authors             JSONB           NOT NULL DEFAULT '[]'::jsonb,
-    -- [{name, first, last, affiliation, orcid, email}, …]
-
-    affiliations        JSONB           NOT NULL DEFAULT '[]'::jsonb,
-    -- [{name, department, country}, …]
+    authors                 JSONB           NOT NULL DEFAULT '[]'::jsonb,
+    affiliations            JSONB           NOT NULL DEFAULT '[]'::jsonb,
 
     -- Venue / publication ------------------------------------------------
-    venue               TEXT,                            -- journal or conference name
-    venue_type          TEXT,                            -- 'journal' | 'conference' | 'preprint' | 'book'
-    publisher           TEXT,
-    volume              TEXT,
-    issue               TEXT,
-    pages               TEXT,                            -- e.g. "1–14" or "1432"
+    venue                   TEXT,                            
+    venue_type              TEXT,                            
+    publisher               TEXT,
+    volume                  TEXT,
+    issue                   TEXT,
+    pages                   TEXT,                            
 
     -- Classification & discovery -----------------------------------------
-    keywords            TEXT[],                          -- author-supplied keywords
-    fields_of_study     TEXT[],                          -- e.g. {'Computer Science','NLP'}
-    language            TEXT            NOT NULL DEFAULT 'en',
+    keywords                TEXT[],                          
+    fields_of_study         TEXT[],                          
+    language                TEXT            NOT NULL DEFAULT 'en',
 
     -- Access & availability ----------------------------------------------
-    pdf_url             TEXT,
-    open_access         BOOLEAN,
-    license             TEXT,                            -- SPDX or free-text
+    pdf_url                 TEXT,
+    open_access             BOOLEAN,
+    license                 TEXT,                            
 
     -- Bibliometric signals (populated asynchronously) --------------------
-    references_count    INTEGER,
-    citations_count     INTEGER,
+    references_count        INTEGER,
+    citations_count         INTEGER,
 
     -- Processing lifecycle -----------------------------------------------
-    processing_tool     TEXT,
-    processing_version  TEXT,
-    processing_status   TEXT            NOT NULL DEFAULT 'pending',
-    -- 'pending' → 'indexing' → 'done' | 'failed'
-    error_message       TEXT,
+    processing_tool         TEXT,
+    processing_version      TEXT,
+    processing_status       TEXT            NOT NULL DEFAULT 'pending',
+    error_message           TEXT,
 
     -- Timestamps ---------------------------------------------------------
-    created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
 
     -- Constraints --------------------------------------------------------
     CONSTRAINT papers_status_check
@@ -130,75 +110,34 @@ CREATE TABLE IF NOT EXISTS papers (
 );
 
 -- Indexes on papers ------------------------------------------------------
+-- =======================================================================
+-- 1. INDEKS UNTUK TABEL 'papers' (Metadata Dokumentasi & Filteirng)
+-- =======================================================================
+
+-- Menjaga keunikan kombinasi repository & identifier sesuai permintaan Anda
 CREATE UNIQUE INDEX IF NOT EXISTS idx_papers_repo_identifier
     ON papers (repository, identifier);
 
-CREATE INDEX IF NOT EXISTS idx_papers_repository
-    ON papers (repository);
+-- Indeks B-Tree standar untuk filter cepat berdasarkan repositori dan status antrean
+CREATE INDEX IF NOT EXISTS idx_papers_repository ON papers (repository);
+CREATE INDEX IF NOT EXISTS idx_papers_status     ON papers (processing_status);
 
-CREATE INDEX IF NOT EXISTS idx_papers_attributes
-    ON papers (attributes);
-
--- Date / year range filtering
+-- Indeks untuk pencarian berbasis jangkauan (range filtering) seperti tahun publikasi
 CREATE INDEX IF NOT EXISTS idx_papers_year        ON papers (year)          WHERE year IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_papers_date_pub    ON papers (date_published) WHERE date_published IS NOT NULL;
 
--- Processing queue
-CREATE INDEX IF NOT EXISTS idx_papers_status     ON papers (processing_status);
-
--- Full-text search on title (pg_trgm trigram index for ILIKE / similarity)
+-- Pencarian teks penuh pada judul (sangat berguna untuk skenario Hybrid Search: Keyword + Vector)
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX IF NOT EXISTS idx_papers_title_trgm
-    ON papers USING gin (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_papers_title_trgm ON papers USING gin (title gin_trgm_ops);
 
--- GIN index for JSONB authors array (supports @> containment queries)
-CREATE INDEX IF NOT EXISTS idx_papers_authors_gin
-    ON papers USING gin (authors);
-
--- GIN index for keyword and fields-of-study arrays
-CREATE INDEX IF NOT EXISTS idx_papers_keywords_gin
-    ON papers USING gin (keywords);
-CREATE INDEX IF NOT EXISTS idx_papers_fos_gin
-    ON papers USING gin (fields_of_study);
+-- Indeks GIN untuk pencarian dalam kolom JSONB dan array (Metadata Filtering)
+CREATE INDEX IF NOT EXISTS idx_papers_attributes   ON papers USING gin (attributes);
+CREATE INDEX IF NOT EXISTS idx_papers_authors_gin  ON papers USING gin (authors);
+CREATE INDEX IF NOT EXISTS idx_papers_keywords_gin ON papers USING gin (keywords);
+CREATE INDEX IF NOT EXISTS idx_papers_fos_gin      ON papers USING gin (fields_of_study);
 
 -- -----------------------------------------------------------------------
 -- document_chunks: BGE-M3-embedded text chunks
---
--- Production design decisions
--- ---------------------------
--- * section_order : 0-based global reading order of sections within the
---   paper. Lets callers reconstruct document structure without re-parsing.
---
--- * content_hash  : SHA-256 of the raw content string, stored as a
---   generated column. Enables skip-on-no-change re-indexing:
---     SELECT id FROM document_chunks
---     WHERE paper_id = $1 AND content_hash = $2 AND embedding IS NOT NULL;
---
--- * word_count    : stored computed; avoids recomputing at query time and
---   supports filtering short/long chunks without loading content.
---
--- * embedding_model / embedding_adapter : provenance columns. When the
---   model is upgraded, stale chunks are found instantly:
---     SELECT * FROM document_chunks
---     WHERE embedding_model != 'allenai/specter2_base';
---
--- * token_count   : actual tokens fed to the encoder. A value equal to
---   max_length (default 512) means the chunk was hard-truncated and may
---   have lost trailing content. Useful for quality auditing.
---
--- * embedding_normalized : explicit flag; TRUE means dot-product distance
---   equals cosine distance, which halves query cost in pgvector.
---
--- * HNSW vs IVFFlat : IVFFlat requires a separate VACUUM+ANALYZE training
---   step, delivers poor recall on small tables, and needs lists retuned as
---   the table grows. HNSW (available since pgvector 0.5 / Postgres 15) is
---   trained incrementally, works from the first row, and gives consistently
---   better recall at the same ef_search budget.
---   m=16 (connections per graph node) and ef_construction=64 (build-time
---   candidate list) are conservative, high-quality defaults.
---
--- * Partial indexes   : all expensive indexes are filtered WHERE
---   embedding IS NOT NULL so they never bloat on un-embedded rows.
 -- -----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS document_chunks (
     id                      UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -207,13 +146,10 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     -- Document position -----------------------------------------------
     section                 TEXT            NOT NULL,
     section_order           TEXT            NOT NULL,
-    -- 0-based global position of this section across the paper
     chunk                   TEXT            NOT NULL,
-    -- 0-based index of this chunk within the section
 
     -- Content ---------------------------------------------------------
     chunk_type              TEXT            NOT NULL DEFAULT 'body',
-    -- 'abstract' | 'body' | 'conclusion' | 'caption' | 'equation' | 'other'
     content                 TEXT            NOT NULL,
 
     word_count              INTEGER         NOT NULL
@@ -226,36 +162,25 @@ CREATE TABLE IF NOT EXISTS document_chunks (
                                         1
                                     )
                                 ) STORED,
-    -- Recomputed from content on every write; never stale.
 
     content_hash            TEXT            NOT NULL
                                 GENERATED ALWAYS AS (
                                     encode(sha256(content::bytea), 'hex')
                                 ) STORED,
-    -- SHA-256 hex digest of the raw content string.
 
     -- Embedding -------------------------------------------------------
     embedding               vector(768),
-    -- NULL until the embedding worker completes this chunk.
-
     embedding_model         TEXT,
-    -- HuggingFace base model ID, e.g. 'allenai/specter2_base'
-
     embedding_adapter       TEXT,
-    -- Active adapter, e.g. 'allenai/specter2' or 'allenai/specter2_adhoc_query'
-
     embedding_normalized    BOOLEAN         NOT NULL DEFAULT TRUE,
-    -- TRUE ⟹ L2-normalised; cosine sim == dot product (faster at query time)
-
     token_count             INTEGER,
-    -- Tokens consumed by the tokenizer. token_count = 512 ⟹ truncation occurred.
 
     -- Timestamps ------------------------------------------------------
     created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
 
     -- Constraints -----------------------------------------------------
-    UNIQUE (paper_id, section, chunk),
+    -- Tetap tanpa unique constraint seperti permintaan sebelumnya
 
     CONSTRAINT chunks_type_check CHECK (
         chunk_type IN ('abstract', 'body', 'conclusion', 'caption', 'equation', 'other')
@@ -265,38 +190,39 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 );
 
 -- Indexes on document_chunks ------------------------------------------
+-- =======================================================================
+-- 2. INDEKS UNTUK TABEL 'document_chunks' (Optimasi Vektor & Posisi)
+-- =======================================================================
 
--- HNSW vector index for cosine ANN search (partial: embedded rows only).
--- No pre-training required. Consistent high recall from first insert.
---   m=16              → connections per graph node (memory ↔ recall)
---   ef_construction=64 → build-time candidate list (quality ↔ speed)
--- At query time tune SET hnsw.ef_search = 100; for higher recall.
+-- UTAMA: HNSW Vector Index untuk Cosine Similarity Search
+-- Indeks ini sangat cepat untuk pencarian ANN (Approximate Nearest Neighbor).
+-- Kita buat sebagai partial index (WHERE embedding IS NOT NULL) agar indeks tidak membengkak karena baris yang belum di-embed.
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding_hnsw
     ON document_chunks
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64)
     WHERE embedding IS NOT NULL;
 
--- Reading-order retrieval: reconstruct a paper's full chunk sequence.
+-- Indeks untuk rekonstruksi urutan membaca dokumen asli secara cepat setelah chunk ditemukan
 CREATE INDEX IF NOT EXISTS idx_chunks_paper_order
     ON document_chunks (paper_id, section_order, chunk);
 
--- Embedding queue: find chunks still waiting for a vector.
+-- Antrean Embedding: Mempercepat background worker/AI agent mencari chunk yang masih kosong vektornya
 CREATE INDEX IF NOT EXISTS idx_chunks_unembedded
     ON document_chunks (paper_id, created_at)
     WHERE embedding IS NULL;
 
--- Model staleness scan: find chunks embedded with an old model/adapter.
+-- Deteksi Staleness: Mencari chunk dengan model/adapter lama jika Anda melakukan upgrade model embedding
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding_model
     ON document_chunks (embedding_model, embedding_adapter)
     WHERE embedding IS NOT NULL;
 
--- Deduplication: skip re-embedding when content is unchanged.
+-- Deduplikasi Konten: Menghindari pemborosan token embedding jika teks/konten tidak berubah
 CREATE INDEX IF NOT EXISTS idx_chunks_content_hash
     ON document_chunks (content_hash)
     WHERE embedding IS NOT NULL;
 
--- Chunk-type filtering (e.g. abstract-only retrieval).
+-- Filter Tipe Chunk: Memungkinkan pencarian vektor terbatas hanya di segmen tertentu (misal: hanya di 'abstract' atau 'conclusion')
 CREATE INDEX IF NOT EXISTS idx_chunks_type
     ON document_chunks (chunk_type, paper_id);
 """
