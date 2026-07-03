@@ -43,7 +43,7 @@ class DatabaseConfig:
 # DDL — schema definitions
 # ---------------------------------------------------------------------------
 
-_DDL = """
+_DDL = """\
 -- Enable extensions (idempotent)
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -135,10 +135,7 @@ CREATE TABLE document_chunks (
                                 GENERATED ALWAYS AS (
                                     array_length(
                                         string_to_array(
-                                            -- FIXED: dulu '\\s+' (backslash literal + huruf s,
-                                            -- tidak pernah match apa pun). Sekarang '\s+' benar,
-                                            -- collapse semua whitespace beruntun jadi satu spasi.
-                                            trim(regexp_replace(content, '\s+', ' ', 'g')),
+                                            trim(regexp_replace(content, '\\s+', ' ', 'g')),
                                             ' '
                                         ),
                                         1
