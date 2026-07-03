@@ -17,8 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class PaperDuplicateError(Exception):
-    """Raised when a paper can't be resolved to a single row via either
-    the `doi` unique index or the `(repository, identifier)` unique
+    """Raised when a paper can't be resolved to a single row via `(repository, identifier)` unique
     constraint."""
 
 
@@ -38,7 +37,6 @@ class PaperDepot:
     # exactly what's in the DB (name + WHERE predicate) or Postgres will
     # reject the ON CONFLICT clause at runtime — confirm this against
     # your migration before relying on it.
-    _DOI_CONSTRAINT = "idx_papers_doi_unique"
     _REPO_IDENTIFIER_CONSTRAINT = "idx_papers_repo_identifier"
     _UPSERT_COLUMNS = (
         "repository", "identifier", "attributes",
@@ -99,14 +97,9 @@ class PaperDepot:
 
     def upsert_paper(self, paper: PaperCreate, *, max_attempts: int = 3) -> str:
         """Insert a new paper, or update the matching row if one already
-        exists under the same `doi` OR the same `(repository, identifier)`.
+        exists under the same `(repository, identifier)`.
 
         Returns the `id` of the upserted row.
-
-        Raises:
-            PaperDuplicateError: if     the row can't be resolved to a single
-                match (doi matches one row, repo+identifier matches a
-                different one).
         """
         values = self._values(paper)
         last_exc: Exception | None = None
@@ -115,7 +108,7 @@ class PaperDepot:
             with self._pool.session() as session:
                 try:
                     row = session.execute(
-                        self._upsert_stmt(values, self._DOI_CONSTRAINT)
+                        self._upsert_stmt(values, self._REPO_IDENTIFIER_CONSTRAINT)
                     ).fetchone()
                     session.commit()
 
@@ -126,41 +119,7 @@ class PaperDepot:
                         # ON CONFLICT DO UPDATE ... RETURNING). Safe to retry
                         # the whole upsert from scratch.
                         logger.warning(
-                            "doi upsert returned no row for doi=%s (attempt %d/%d); retrying",
-                            paper.doi, attempt, max_attempts,
-                        )
-                        continue
-
-                    logger.info("Upserted paper id=%s (matched on doi)", row.id)
-                    return str(row.id)
-
-                except SQLAlchemyError as exc:
-                    session.rollback()
-                    last_exc = exc
-                    logger.info(
-                        "doi=%s not found; falling back to (repository=%s, identifier=%s): %s",
-                        paper.doi, paper.repository, paper.identifier, exc,
-                    )
-                    try:
-                        row = session.execute(
-                            self._upsert_stmt(values, self._REPO_IDENTIFIER_CONSTRAINT)
-                        ).fetchone()
-                        session.commit()
-                    except SQLAlchemyError as exc2:
-                        session.rollback()
-                        logger.warning(
-                            "Irreconcilable conflict for doi=%s repository=%s/%s: %s",
-                            paper.doi, paper.repository, paper.identifier, exc2,
-                        )
-                        raise PaperDuplicateError(
-                            f"Paper with doi={paper.doi!r} conflicts with a "
-                            f"different row than the one matched by "
-                            f"repository={paper.repository!r}/identifier={paper.identifier!r}."
-                        ) from exc2
-
-                    if row is None:
-                        logger.warning(
-                            "repo+identifier upsert returned no row for repository=%s/%s "
+                            "repo+identifier upsert returned no row for repository=%s identifier=%s "
                             "(attempt %d/%d); retrying",
                             paper.repository, paper.identifier, attempt, max_attempts,
                         )
@@ -171,10 +130,22 @@ class PaperDepot:
                     )
                     return str(row.id)
 
+                except SQLAlchemyError as exc:
+                    session.rollback()
+                    last_exc = exc
+                    logger.error(
+                        "Database error during upsert for repository=%s identifier=%s: %s",
+                        paper.repository, paper.identifier, exc,
+                    )
+                    # Jika terjadi error database selain konflik unik (misal: koneksi terputus),
+                    # lemparkan errornya ke atas.
+                    raise
+
+        # Jika loop selesai tapi row masih None (kena race condition terus-menerus)
         raise PaperDuplicateError(
-            f"Could not upsert paper doi={paper.doi!r} "
+            f"Could not upsert paper "
             f"repository={paper.repository!r} identifier={paper.identifier!r} "
-            f"after {max_attempts} attempts: no row returned by either arbiter."
+            f"after {max_attempts} attempts: no row returned by arbiter."
         ) from last_exc
 
     def bulk_insert_chunks(self, chunks: List[DocumentChunkCreate]) -> None:
