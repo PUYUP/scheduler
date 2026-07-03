@@ -240,6 +240,13 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     """
     paper_id     = metadata["paper_id"]
     repository   = metadata["repository"]
+    abstract     = (metadata.get("abstract") or "").strip()
+    sections     = metadata.get("sections", {})
+
+    # ensure abstract is in sections
+    section_keys_lower = {str(k).strip().lower() for k in sections.keys()}
+    abstract_in_sections = "abstract" in section_keys_lower
+
     log.info("chunk_document.start", paper_id=paper_id, repository=repository)
 
     splitter = RecursiveCharacterTextSplitter(
@@ -251,7 +258,24 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     chunks: List[Dict[str, Any]] = []
 
-    for sec_idx, (section, raw_text) in enumerate(metadata.get("sections", {}).items()):
+    # ─── PREPARE ABSTRACT CHUNK (if provided & not already in sections) ───────────────────────────────────────────────
+    if abstract and not abstract_in_sections and len(abstract) >= settings.min_chunk_chars:
+        chunks.append({
+            "chunk_id":    f"{paper_id}_abstract_0",
+            "paper_id":    paper_id,
+            "repository":  repository,
+            "title":       metadata.get("title", ""),
+            "section":     "Abstract",
+            "text":        abstract,
+            "authors":     metadata.get("authors", []),
+            "categories":  metadata.get("categories", []),
+            "published":   metadata.get("published", ""),
+            "doi":         metadata.get("doi", ""),
+            "token_count": len(abstract) // 4,
+        })
+
+    # ─── PREPARE BODY SECTIONS (excluding references) ───────────────────────────────────────────────────────────────
+    for sec_idx, (section, raw_text) in enumerate(sections.items()):
         if len(raw_text) < settings.min_chunk_chars:
             continue
 
