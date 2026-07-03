@@ -10,9 +10,6 @@ Mirrors the DDL in `storage/db.py`. Split into three models:
   (use `.model_dump(exclude_unset=True)`).
 * PaperRead    — full row as returned from the DB, including the
   read-only / auto-generated columns.
-
-NOTE: `repository_identifier` / `repository_metadata` were renamed to
-`identifier` / `metadata` to match the current DB schema.
 """
 
 from __future__ import annotations
@@ -21,13 +18,12 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import (
-    Text, UniqueConstraint, func
-)
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-
+from sqlalchemy import (
+    TIMESTAMP, Integer, Boolean, ARRAY, Date, SmallInteger, Text, UniqueConstraint, func
+)
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .base import Base
 
 
@@ -37,27 +33,57 @@ from .base import Base
 
 
 class PaperORM(Base):
-    """
-    Maps 1:1 onto the `papers` table defined in the DDL.
-    Must share the same `Base` (and therefore the same MetaData) as
-    DocumentChunkORM below, otherwise ForeignKey("papers.id") cannot
-    be resolved and SQLAlchemy raises NoReferencedTableError.
-    """
     __tablename__ = "papers"
- 
+
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
     )
- 
-    identifier: Mapped[str] = mapped_column(Text, nullable=False)
+
+    doi: Mapped[str | None] = mapped_column(Text)
     repository: Mapped[str] = mapped_column(Text, nullable=False)
-    # repository_metadata, title, abstract, authors, etc. omitted here for
-    # brevity — add the remaining columns from the DDL as needed. Only the
-    # primary key matters for the FK to resolve; SQLAlchemy doesn't require
-    # every column to be mapped for cross-table FK references to work.
- 
+    identifier: Mapped[str] = mapped_column(Text, nullable=False)
+    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    abstract: Mapped[str | None] = mapped_column(Text)
+    year: Mapped[int | None] = mapped_column(SmallInteger)
+    date_published: Mapped[Date | None] = mapped_column(Date)
+
+    authors: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    affiliations: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+
+    venue: Mapped[str | None] = mapped_column(Text)
+    venue_type: Mapped[str | None] = mapped_column(Text)
+    publisher: Mapped[str | None] = mapped_column(Text)
+    volume: Mapped[str | None] = mapped_column(Text)
+    issue: Mapped[str | None] = mapped_column(Text)
+    pages: Mapped[str | None] = mapped_column(Text)
+
+    keywords: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    fields_of_study: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    language: Mapped[str] = mapped_column(Text, nullable=False, server_default="en")
+
+    pdf_url: Mapped[str | None] = mapped_column(Text)
+    open_access: Mapped[bool | None] = mapped_column(Boolean)
+    license: Mapped[str | None] = mapped_column(Text)
+
+    references_count: Mapped[int | None] = mapped_column(Integer)
+    citations_count: Mapped[int | None] = mapped_column(Integer)
+
+    processing_tool: Mapped[str | None] = mapped_column(Text)
+    processing_version: Mapped[str | None] = mapped_column(Text)
+    processing_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
+
     __table_args__ = (
         UniqueConstraint("repository", "identifier", name="idx_papers_repo_identifier"),
+        # If a unique index on `doi` exists in the live DB (required for the
+        # doi-arbiter upsert below), declare it here too, e.g.:
+        # Index("idx_papers_doi_unique", "doi", unique=True,
+        #       postgresql_where=text("doi IS NOT NULL")),
     )
 
 
@@ -102,10 +128,10 @@ class PaperCreate(BaseModel):
   doi: str | None = None
   repository: str
   identifier: str
+  attributes: dict = Field(default_factory=dict)
   title: str
 
   # Optional with DB default — mirrored here so callers can omit them --
-  metadata: dict = Field(default_factory=dict)
   authors: list[str] = Field(default_factory=list)
   affiliations: list[Affiliation] = Field(default_factory=list)
   language: str = "en"
@@ -163,8 +189,7 @@ class PaperUpdate(BaseModel):
   doi: str | None = None
   repository: str | None = None
   identifier: str | None = None
-  metadata: dict | None = None
-
+  attributes: dict | None = None
   title: str | None = None
   abstract: str | None = None
   year: int | None = None
@@ -216,7 +241,7 @@ class PaperRead(BaseModel):
   doi: str
   repository: str
   identifier: str
-  metadata: dict
+  attributes: dict
   title: str
   abstract: str | None = None
   year: int | None = None

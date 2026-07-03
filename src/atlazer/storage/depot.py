@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+from typing import List
 
-import orjson
-from sqlalchemy import text, insert
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from atlazer.storage.db import DatabasePool
-from atlazer.models.paper import PaperCreate
+from atlazer.models.paper import PaperCreate, PaperORM
 from atlazer.models.document import DocumentChunkCreate, DocumentChunkORM
 
 logger = logging.getLogger(__name__)
@@ -17,8 +18,14 @@ logger = logging.getLogger(__name__)
 
 class PaperDuplicateError(Exception):
     """Raised when a paper can't be resolved to a single row via either
-    the `doi` UNIQUE constraint or the `(repository, identifier)` UNIQUE
+    the `doi` unique index or the `(repository, identifier)` unique
     constraint."""
+
+
+def _as_dict(item) -> dict:
+    """Coerce a pydantic sub-model (author/affiliation) to a plain dict;
+    pass through if it's already one."""
+    return item.model_dump() if hasattr(item, "model_dump") else item
 
 
 class PaperDepot:
@@ -27,117 +34,39 @@ class PaperDepot:
     Takes an already-started :class:`DatabasePool`.
     """
 
-    _INSERT_ON_DOI_CONFLICT_SQL = """
-        INSERT INTO papers (
-            doi, repository, identifier, metadata,
-            title, abstract, year, date_published,
-            authors, affiliations,
-            venue, venue_type, publisher, volume, issue, pages,
-            keywords, fields_of_study, language,
-            pdf_url, open_access, license,
-            references_count, citations_count,
-            processing_tool, processing_version, processing_status, error_message
-        ) VALUES (
-            :doi, :repository, :identifier, :metadata,
-            :title, :abstract, :year, :date_published,
-            :authors, :affiliations,
-            :venue, :venue_type, :publisher, :volume, :issue, :pages,
-            :keywords, :fields_of_study, :language,
-            :pdf_url, :open_access, :license,
-            :references_count, :citations_count,
-            :processing_tool, :processing_version, :processing_status, :error_message
-        )
-        ON CONFLICT (doi) WHERE doi IS NOT NULL DO UPDATE SET
-            repository           = EXCLUDED.repository,
-            identifier           = EXCLUDED.identifier,
-            metadata             = EXCLUDED.metadata,
-            title                = EXCLUDED.title,
-            abstract             = EXCLUDED.abstract,
-            year                 = EXCLUDED.year,
-            date_published       = EXCLUDED.date_published,
-            authors              = EXCLUDED.authors,
-            affiliations         = EXCLUDED.affiliations,
-            venue                = EXCLUDED.venue,
-            venue_type           = EXCLUDED.venue_type,
-            publisher            = EXCLUDED.publisher,
-            volume               = EXCLUDED.volume,
-            issue                = EXCLUDED.issue,
-            pages                = EXCLUDED.pages,
-            keywords             = EXCLUDED.keywords,
-            fields_of_study      = EXCLUDED.fields_of_study,
-            language             = EXCLUDED.language,
-            pdf_url              = EXCLUDED.pdf_url,
-            open_access          = EXCLUDED.open_access,
-            license              = EXCLUDED.license,
-            references_count     = EXCLUDED.references_count,
-            citations_count      = EXCLUDED.citations_count,
-            processing_tool      = EXCLUDED.processing_tool,
-            processing_version   = EXCLUDED.processing_version,
-            processing_status    = EXCLUDED.processing_status,
-            error_message        = EXCLUDED.error_message,
-            updated_at           = NOW()
-        RETURNING id;
-    """
-
-    # Fallback: matched on (repository, identifier) instead of doi.
-    _UPDATE_ON_REPO_IDENTIFIER_SQL = """
-        UPDATE papers SET
-            doi                  = :doi,
-            metadata             = :metadata,
-            title                = :title,
-            abstract             = :abstract,
-            year                 = :year,
-            date_published       = :date_published,
-            authors              = :authors,
-            affiliations         = :affiliations,
-            venue                = :venue,
-            venue_type           = :venue_type,
-            publisher            = :publisher,
-            volume               = :volume,
-            issue                = :issue,
-            pages                = :pages,
-            keywords             = :keywords,
-            fields_of_study      = :fields_of_study,
-            language             = :language,
-            pdf_url              = :pdf_url,
-            open_access          = :open_access,
-            license              = :license,
-            references_count     = :references_count,
-            citations_count      = :citations_count,
-            processing_tool      = :processing_tool,
-            processing_version   = :processing_version,
-            processing_status    = :processing_status,
-            error_message        = :error_message,
-            updated_at           = NOW()
-        WHERE repository = :repository AND identifier = :identifier
-        RETURNING id;
-    """
+    # Name of the partial unique index/constraint on `doi`. Must match
+    # exactly what's in the DB (name + WHERE predicate) or Postgres will
+    # reject the ON CONFLICT clause at runtime — confirm this against
+    # your migration before relying on it.
+    _DOI_CONSTRAINT = "idx_papers_doi_unique"
+    _REPO_IDENTIFIER_CONSTRAINT = "idx_papers_repo_identifier"
+    _UPSERT_COLUMNS = (
+        "repository", "identifier", "attributes",
+        "title", "abstract", "year", "date_published",
+        "authors", "affiliations",
+        "venue", "venue_type", "publisher", "volume", "issue", "pages",
+        "keywords", "fields_of_study", "language",
+        "pdf_url", "open_access", "license",
+        "references_count", "citations_count",
+        "processing_tool", "processing_version", "processing_status",
+        "error_message",
+    )
 
     def __init__(self, pool: DatabasePool) -> None:
         self._pool = pool
 
-    # Insert/update paper
-    def upsert_paper(self, paper: PaperCreate) -> str:
-        """Insert a new paper, or update the matching row if one already
-        exists under the same `doi` OR the same `(repository, identifier)`.
-
-        Returns the `id` of the upserted row.
-
-        Raises:
-            PaperDuplicateError: if the row can't be resolved to a single
-                match.
-        """
-        params = {
-            "doi": paper.doi,
+    def _values(self, paper: PaperCreate) -> dict:
+        return {
+            "doi": paper.doi or None,  # normalize '' -> NULL if it ever occurs
             "repository": paper.repository,
             "identifier": paper.identifier,
-            "metadata": orjson.dumps(paper.metadata).decode(),
+            "attributes": paper.attributes,
             "title": paper.title,
             "abstract": paper.abstract,
             "year": paper.year,
             "date_published": paper.date_published,
-            "authors": orjson.dumps(list(paper.authors)).decode(),
-            "affiliations": orjson.dumps(list(paper.affiliations)).decode(),
+            "authors": [_as_dict(a) for a in paper.authors],
+            "affiliations": [_as_dict(a) for a in paper.affiliations],
             "venue": paper.venue,
             "venue_type": paper.venue_type,
             "publisher": paper.publisher,
@@ -158,53 +87,96 @@ class PaperDepot:
             "error_message": paper.error_message,
         }
 
-        with self._pool.session() as session:
-            try:
-                row = session.execute(
-                    text(self._INSERT_ON_DOI_CONFLICT_SQL), params
-                ).fetchone()
-                session.commit()
-                logger.info("Upserted paper id=%s (matched on doi)", row.id)
-                return str(row.id)
+    def _upsert_stmt(self, values: dict, constraint: str):
+        stmt = pg_insert(PaperORM).values(values)
+        excluded = stmt.excluded
+        set_ = {col: getattr(excluded, col) for col in self._UPSERT_COLUMNS}
+        set_["updated_at"] = func.now()
+        return stmt.on_conflict_do_update(
+            constraint=constraint,
+            set_=set_,
+        ).returning(PaperORM.id)
 
-            except IntegrityError as exc:
-                # `doi` arbiter let the INSERT through, but the other
-                # UNIQUE constraint (repository, identifier) fired.
-                session.rollback()
-                logger.info(
-                    "doi=%s not found; falling back to (repository=%s, identifier=%s): %s",
-                    paper.doi, paper.repository, paper.identifier, exc,
-                )
+    def upsert_paper(self, paper: PaperCreate, *, max_attempts: int = 3) -> str:
+        """Insert a new paper, or update the matching row if one already
+        exists under the same `doi` OR the same `(repository, identifier)`.
+
+        Returns the `id` of the upserted row.
+
+        Raises:
+            PaperDuplicateError: if     the row can't be resolved to a single
+                match (doi matches one row, repo+identifier matches a
+                different one).
+        """
+        values = self._values(paper)
+        last_exc: Exception | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            with self._pool.session() as session:
                 try:
                     row = session.execute(
-                        text(self._UPDATE_ON_REPO_IDENTIFIER_SQL), params
+                        self._upsert_stmt(values, self._DOI_CONSTRAINT)
                     ).fetchone()
                     session.commit()
-                except IntegrityError as exc2:
+
+                    if row is None:
+                        # Arbiter resolved a conflict, but the conflicting row
+                        # was concurrently deleted/rolled back before the
+                        # UPDATE could apply (documented Postgres race for
+                        # ON CONFLICT DO UPDATE ... RETURNING). Safe to retry
+                        # the whole upsert from scratch.
+                        logger.warning(
+                            "doi upsert returned no row for doi=%s (attempt %d/%d); retrying",
+                            paper.doi, attempt, max_attempts,
+                        )
+                        continue
+
+                    logger.info("Upserted paper id=%s (matched on doi)", row.id)
+                    return str(row.id)
+
+                except SQLAlchemyError as exc:
                     session.rollback()
-                    logger.warning(
-                        "Irreconcilable conflict for doi=%s repository=%s/%s: %s",
-                        paper.doi, paper.repository, paper.identifier, exc2,
+                    last_exc = exc
+                    logger.info(
+                        "doi=%s not found; falling back to (repository=%s, identifier=%s): %s",
+                        paper.doi, paper.repository, paper.identifier, exc,
                     )
-                    raise PaperDuplicateError(
-                        f"Paper with doi={paper.doi!r} conflicts with a "
-                        f"different row than the one matched by "
-                        f"repository={paper.repository!r}/identifier={paper.identifier!r}."
-                    ) from exc2
+                    try:
+                        row = session.execute(
+                            self._upsert_stmt(values, self._REPO_IDENTIFIER_CONSTRAINT)
+                        ).fetchone()
+                        session.commit()
+                    except SQLAlchemyError as exc2:
+                        session.rollback()
+                        logger.warning(
+                            "Irreconcilable conflict for doi=%s repository=%s/%s: %s",
+                            paper.doi, paper.repository, paper.identifier, exc2,
+                        )
+                        raise PaperDuplicateError(
+                            f"Paper with doi={paper.doi!r} conflicts with a "
+                            f"different row than the one matched by "
+                            f"repository={paper.repository!r}/identifier={paper.identifier!r}."
+                        ) from exc2
 
-                if row is None:
-                    raise PaperDuplicateError(
-                        f"Could not upsert paper doi={paper.doi!r} "
-                        f"repository={paper.repository!r} identifier={paper.identifier!r}: "
-                        f"no existing row matched either unique key."
-                    ) from exc
+                    if row is None:
+                        logger.warning(
+                            "repo+identifier upsert returned no row for repository=%s/%s "
+                            "(attempt %d/%d); retrying",
+                            paper.repository, paper.identifier, attempt, max_attempts,
+                        )
+                        continue
 
-                logger.info(
-                    "Upserted paper id=%s (matched on repository+identifier)", row.id
-                )
-                return str(row.id)
+                    logger.info(
+                        "Upserted paper id=%s (matched on repository+identifier)", row.id
+                    )
+                    return str(row.id)
 
-    # Bulk insert chunks
+        raise PaperDuplicateError(
+            f"Could not upsert paper doi={paper.doi!r} "
+            f"repository={paper.repository!r} identifier={paper.identifier!r} "
+            f"after {max_attempts} attempts: no row returned by either arbiter."
+        ) from last_exc
+
     def bulk_insert_chunks(self, chunks: List[DocumentChunkCreate]) -> None:
         if not chunks:
             return
@@ -215,14 +187,36 @@ class PaperDepot:
             for chunk in chunks
         ]
 
+        stmt = pg_insert(DocumentChunkORM).values(values)
+
+        # On (paper_id, section, chunk) collision, refresh the mutable
+        # fields instead of aborting the whole batch — makes re-processing
+        # a paper (crash/retry/duplicate task delivery) idempotent.
+        update_cols = {
+            "content": stmt.excluded.content,
+            "chunk_type": stmt.excluded.chunk_type,
+            "section_order": stmt.excluded.section_order,
+            "embedding": stmt.excluded.embedding,
+            "embedding_model": stmt.excluded.embedding_model,
+            "embedding_adapter": stmt.excluded.embedding_adapter,
+            "embedding_normalized": stmt.excluded.embedding_normalized,
+            "token_count": stmt.excluded.token_count,
+            "updated_at": func.now(),
+        }
+
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["paper_id", "section", "chunk"],
+            set_=update_cols,
+        )
+
         with self._pool.session() as session:
             try:
-                session.execute(insert(DocumentChunkORM), values)
+                session.execute(stmt)
                 session.commit()
                 logger.info(
-                    "Inserted %s chunks for paper %s", len(chunks), chunks[0].paper_id
+                    "Upserted %s chunks for paper %s", len(chunks), chunks[0].paper_id
                 )
             except SQLAlchemyError as e:
                 session.rollback()
-                logger.exception("Failed to insert chunks: %s", e)
+                logger.exception("Failed to upsert chunks: %s", e)
                 raise
