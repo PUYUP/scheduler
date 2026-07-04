@@ -80,17 +80,33 @@ def count_queued(repository: str) -> int:
     return cast(int, _get_redis().scard(f"atlazer_rag:{repository}:queued"))
 
 
-def is_backfill_complete(topic: str, repository: str) -> bool:
+def is_backfill_complete(topic: str, repository: str, last_position: int) -> bool:
     """True kalau backfill untuk topic+repository ini sudah pernah tuntas."""
     r = _get_redis()
     key = f"backfill:complete:{repository}:{topic}"
-    return cast(bool, r.exists(key) == 1)
+    try:
+        return cast(bool, r.sismember(key, str(last_position)))
+    except Exception as exc:
+        r.delete(key)
+        log.error(
+            "dedup.backfill_complete.error",
+            topic=topic,
+            repository=repository,
+            last_position=last_position,
+            error=str(exc)
+        )
+        return False
 
 
-def mark_backfill_complete(topic: str, repository: str) -> None:
+def mark_backfill_complete(topic: str, repository: str, last_position: int) -> None:
     """Tandai backfill untuk topic+repository ini sebagai selesai."""
     r = _get_redis()
     key = f"backfill:complete:{repository}:{topic}"
-    r.set(key, "1")
-    log.info("dedup.backfill_complete", topic=topic, repository=repository)
+    r.sadd(key, str(last_position))
+    log.info(
+        "dedup.backfill_complete",
+        topic=topic,
+        repository=repository,
+        last_position=last_position
+    )
 

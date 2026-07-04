@@ -119,10 +119,10 @@ services:
       - "8000:8000"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
-      interval: 30s
+      interval: 300s
       timeout: 10s
       retries: 5
-      start_period: 40s
+      start_period: 300s
     deploy:
       replicas: 1
 
@@ -145,12 +145,21 @@ services:
       celery -A atlazer.celery_app.main worker
       --loglevel=info
       --queues=scrape
-      --concurrency=1
+      --concurrency=3
       --prefetch-multiplier=1
       --max-tasks-per-child=100
       --hostname=scrape@%h
     deploy:
       replicas: 1
+    healthcheck:
+      test: [
+        "CMD-SHELL", 
+        "celery -A atlazer.celery_app.main inspect ping -d scrape@$$HOSTNAME --timeout=10 | grep -q OK"
+      ]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
 
 
   # ─── Worker Tier 2: Process Queue ───────────────────────────
@@ -160,12 +169,21 @@ services:
       celery -A atlazer.celery_app.main worker
       --loglevel=info
       --queues=process
-      --concurrency=1
+      --concurrency=2
       --prefetch-multiplier=1
       --max-tasks-per-child=50
       --hostname=process@%h
     deploy:
       replicas: 1
+    healthcheck:
+      test: [
+        "CMD-SHELL", 
+        "celery -A atlazer.celery_app.main inspect ping -d process@$$HOSTNAME --timeout=10 | grep -q OK"
+      ]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
 
 
   # ─── Worker Tier 3: Embed Queue ─────────────────────────────
@@ -186,6 +204,15 @@ services:
           memory: 6g
         reservations:
           memory: 4g
+    healthcheck:
+      test: [
+        "CMD-SHELL", 
+        "celery -A atlazer.celery_app.main inspect ping -d embed@$$HOSTNAME --timeout=10 | grep -q OK"
+      ]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
 
 
   # ─── Worker: WebAPI Queue ───────────────────────────────────
@@ -195,12 +222,21 @@ services:
       celery -A atlazer.celery_app.main worker
       --loglevel=info
       --queues=webapi
-      --concurrency=1
+      --concurrency=2
       --prefetch-multiplier=1
       --max-tasks-per-child=100
       --hostname=webapi@%h
     deploy:
       replicas: 1
+    healthcheck:
+      test: [
+        "CMD-SHELL", 
+        "celery -A atlazer.celery_app.main inspect ping -d webapi@$$HOSTNAME --timeout=10 | grep -q OK"
+      ]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
 
 
   # ─── Worker: Maintenance Queue (DLQ retry, cleanup, health check) ───
@@ -210,12 +246,21 @@ services:
       celery -A atlazer.celery_app.main worker
       --loglevel=info
       --queues=default
-      --concurrency=1
+      --concurrency=2
       --prefetch-multiplier=1
       --max-tasks-per-child=200
       --hostname=default@%h
     deploy:
       replicas: 1
+    healthcheck:
+      test: [
+        "CMD-SHELL", 
+        "celery -A atlazer.celery_app.main inspect ping -d default@$$HOSTNAME --timeout=10 | grep -q OK"
+      ]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
 
   
   # ─── Flower: Real-time Task Monitor ─────────────────────────

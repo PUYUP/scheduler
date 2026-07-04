@@ -46,15 +46,27 @@ task_annotations = {
     "atlazer.celery_app.tasks.scrape.*": {
         "max_retries": 5,
         "default_retry_delay": 60,
+        "time_limit": 180,
+        "soft_time_limit": 150,
     },
     "atlazer.celery_app.tasks.process.*": {
         "max_retries": 3,
         "default_retry_delay": 120,
+        "time_limit": 1800,
+        "soft_time_limit": 1500,
     },
     "atlazer.celery_app.tasks.embed.*": {
         "max_retries": 10,
         "default_retry_delay": 30,
         "rate_limit": "20/m",        # stay under embedding API rate limit
+        "time_limit": 3600,
+        "soft_time_limit": 3300,
+    },
+    "atlazer.celery_app.tasks.webapi.*": {
+        "max_retries": 3,
+        "default_retry_delay": 60,
+        "time_limit": 3600,
+        "soft_time_limit": 3300,
     },
 }
 
@@ -73,6 +85,9 @@ task_routes = {
     # ── Embed tier ──
     "atlazer.celery_app.tasks.embed.generate_embeddings":    {"queue": "embed"},
     "atlazer.celery_app.tasks.embed.store_chunks":           {"queue": "embed"},
+
+    # ── WebAPI tier ──
+    "atlazer.celery_app.tasks.webapi.generate_embeddings":   {"queue": "webapi"},
 
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":                {"queue": "default"},

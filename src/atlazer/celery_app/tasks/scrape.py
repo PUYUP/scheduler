@@ -12,13 +12,13 @@ Flow:
 """
 
 from __future__ import annotations
-
 from pathlib import Path
 from typing import Any, Dict, List
 
 import arxiv
 import httpx
 import structlog
+from celery.exceptions import SoftTimeLimitExceeded
 from celery import group, signature
 from tenacity import (
     retry,
@@ -69,6 +69,9 @@ def scrape_topic(
 
     try:
         results = _query_arxiv(topic, max_results, sort_by)
+    except SoftTimeLimitExceeded as exc:
+        log.error("scrape_topic.query_timeout", topic=topic)
+        raise self.retry(exc=exc)
     except Exception as exc:
         log.error("scrape_topic.query_failed", topic=topic, error=str(exc))
         raise self.retry(exc=exc)
@@ -144,9 +147,18 @@ def scrape_topic_backfill(
     # Guard: hanya cek status "complete" di awal chain (start == 0).
     # Kalau task ini dipanggil sebagai lanjutan chain (start > 0),
     # tidak perlu dicek lagi karena chain memang masih berjalan.
-    if start == 0 and is_backfill_complete(topic, repository="arxiv"):
+    if start == 0 and is_backfill_complete(topic, repository="arxiv", last_position=start):
         log.info("scrape_topic_backfill.already_complete", topic=topic)
-        return {"topic": topic, "skipped_run": True}
+        mark_backfill_complete(
+            topic,
+            repository="arxiv",
+            last_position=start + settings.max_results_per_topic
+        )
+        return {
+            "topic": topic,
+            "skipped_run": True,
+            "last_position": start + settings.max_results_per_topic
+        }
 
     log.info(
         "scrape_topic_backfill.page_start",
@@ -167,7 +179,7 @@ def scrape_topic_backfill(
         raise self.retry(exc=exc)
 
     if not results:
-        mark_backfill_complete(topic, repository="arxiv")
+        mark_backfill_complete(topic, repository="arxiv", last_position=start)
         log.info(
             "scrape_topic_backfill.done",
             topic=topic,
@@ -213,12 +225,13 @@ def scrape_topic_backfill(
 
     if len(results) < page_size:
         # ArXiv kasih lebih sedikit dari yang diminta -> sudah mentok di ujung
-        mark_backfill_complete(topic, repository="arxiv")
+        mark_backfill_complete(topic, repository="arxiv", last_position=start + len(results))
         log.info(
             "scrape_topic_backfill.reached_end",
             topic=topic,
             total_new=total_new,
             total_skipped=total_skipped,
+            last_position=start + len(results),
         )
         return {
             "topic": topic,

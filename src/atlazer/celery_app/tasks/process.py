@@ -246,6 +246,7 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     # ensure abstract is in sections
     section_keys_lower = {str(k).strip().lower() for k in sections.keys()}
     abstract_in_sections = "abstract" in section_keys_lower
+    background_in_sections = "background" in section_keys_lower
 
     log.info("chunk_document.start", paper_id=paper_id, repository=repository)
 
@@ -284,7 +285,11 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         for chunk_idx, chunk_text in enumerate(split_texts):
             if len(chunk_text) < settings.min_chunk_chars:
                 continue
-
+            
+            # jika "abstract" tidak ada maka jadikan "background" sebagai pengganti
+            if section.strip().lower() == "background" and not abstract_in_sections:
+                section = "Abstract"
+            
             chunk: Dict[str, Any] = {
                 "chunk_id":    f"{paper_id}_{sec_idx}_{chunk_idx}",
                 "paper_id":    paper_id,
