@@ -3,6 +3,9 @@ import structlog
 from typing import List, Dict, Any
 from atlazer.celery_app.main import app
 from atlazer.utils.embedder import chunks_to_vector
+from atlazer.celery_app.main import db_pool
+from atlazer.storage.user import UserDepot
+from atlazer.models.user import ProfileUpdate
 
 log = structlog.get_logger(__name__)
 
@@ -62,6 +65,13 @@ def generate_embeddings(
             result = embedded_chunks[0]
             embedding = result["embedding"]
             log.info("webapi.generate_embeddings.profile_interest", embedding=embedding)
+            
+            try:
+                user_depot = UserDepot(db_pool)
+                user_depot.update_profile(profile_id, ProfileUpdate(interest_embedding=embedding))
+                log.info("webapi.generate_embeddings.profile_interest.success", profile_id=profile_id, embedding=embedding)
+            except Exception as e:
+                log.error("webapi.generate_embeddings.profile_interest.failed", error=str(e))
 
     return {
         "chunks": embedded_chunks

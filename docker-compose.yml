@@ -83,7 +83,7 @@ services:
 
   # ─── Grobid: PDF Structural Parsing ─────────────────────────
   grobid:
-    image: lfoppiano/grobid:0.9.0-full
+    image: lfoppiano/grobid:0.9.0-crf
     ports:
       - "8070:8070"
     environment:
@@ -145,7 +145,7 @@ services:
       celery -A atlazer.celery_app.main worker
       --loglevel=info
       --queues=scrape
-      --concurrency=3
+      --concurrency=1
       --prefetch-multiplier=1
       --max-tasks-per-child=100
       --hostname=scrape@%h
@@ -169,7 +169,7 @@ services:
       celery -A atlazer.celery_app.main worker
       --loglevel=info
       --queues=process
-      --concurrency=2
+      --concurrency=1
       --prefetch-multiplier=1
       --max-tasks-per-child=50
       --hostname=process@%h
@@ -222,7 +222,7 @@ services:
       celery -A atlazer.celery_app.main worker
       --loglevel=info
       --queues=webapi
-      --concurrency=2
+      --concurrency=1
       --prefetch-multiplier=1
       --max-tasks-per-child=100
       --hostname=webapi@%h
@@ -246,7 +246,7 @@ services:
       celery -A atlazer.celery_app.main worker
       --loglevel=info
       --queues=default
-      --concurrency=2
+      --concurrency=1
       --prefetch-multiplier=1
       --max-tasks-per-child=200
       --hostname=default@%h

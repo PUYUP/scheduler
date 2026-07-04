@@ -91,9 +91,11 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             service="processFulltextDocument",
             input_path=str(target_dir),
             output=str(out_dir),
-            n=1,
+            n=10,
             json_output=True,
             segment_sentences=True,
+            consolidate_citations=False,
+            consolidate_header=False,
         )
     except Exception as e:
         log.error("grobid.process.failed", paper_id=paper_id, repository=repository, error=str(e))
