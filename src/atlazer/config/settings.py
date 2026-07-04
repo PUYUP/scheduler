@@ -201,8 +201,8 @@ class Settings(BaseSettings):
     )
     arxiv_base_url: str     = "http://export.arxiv.org/api/query"
     max_results_per_topic: int = 1
-    scrape_interval_seconds: float = 21_600    # 6 hours
-    scrape_backfill_interval_seconds: float = 1200 # 20 minutes
+    scrape_interval_seconds: float = 43_200    # 12 hours
+    scrape_backfill_interval_seconds: float = 21_600 # 6 hours
     download_timeout_seconds: int  = 120
 
     # ── PDF Processing ─────────────────────────────────────────

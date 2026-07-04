@@ -78,7 +78,7 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("parse_pdf.start", paper_id=paper_id, repository=repository)
 
     # Ensure output directory exists
-    target_dir = Path(settings.pdf_download_dir) / repository
+    target_dir = Path(settings.pdf_download_dir) / repository / paper_id
     out_dir = target_dir / "out"
     target_dir.mkdir(exist_ok=True, parents=True)
 
@@ -153,11 +153,6 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         | chunk_document.s().set(queue="process")
         | signature(
             "atlazer.celery_app.tasks.embed.generate_embeddings",
-            queue="embed",
-            immutable=False,
-        )
-        | signature(
-            "atlazer.celery_app.tasks.embed.store_chunks",
             queue="embed",
             immutable=False,
         )
@@ -248,7 +243,6 @@ def chunk_document(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     # ensure abstract is in sections
     section_keys_lower = {str(k).strip().lower() for k in sections.keys()}
     abstract_in_sections = "abstract" in section_keys_lower
-    background_in_sections = "background" in section_keys_lower
 
     log.info("chunk_document.start", paper_id=paper_id, repository=repository)
 

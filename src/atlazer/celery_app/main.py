@@ -41,6 +41,7 @@ def create_celery_app() -> Celery:
         "atlazer.celery_app.tasks.scrape",
         "atlazer.celery_app.tasks.process",
         "atlazer.celery_app.tasks.embed",
+        "atlazer.celery_app.tasks.store",
         "atlazer.celery_app.tasks.maintenance",
         "atlazer.celery_app.tasks.webapi",
         "atlazer.celery_app.tasks.matcher",
@@ -63,13 +64,14 @@ def create_celery_app() -> Celery:
 #
 # Tasks chain:  scrape_topic → scrape_paper_metadata → download_pdf
 #                           → parse_pdf → chunk_document
-#                           → generate_embeddings → store_chunks
+#                           → generate_embeddings → store_paper
 
 def _configure_queues(app: Celery) -> None:
     default_exchange = Exchange("default", type="direct")
     scrape_exchange  = Exchange("scrape",  type="direct")
     process_exchange = Exchange("process", type="direct")
     embed_exchange   = Exchange("embed",   type="direct")
+    store_exchange   = Exchange("store",   type="direct")
     webapi_exchange  = Exchange("webapi",  type="direct")
     matcher_exchange = Exchange("matcher", type="direct")
     dlx_exchange     = Exchange("dlx",     type="direct")   # dead-letter (nama saja; tidak ada semantik khusus di Redis)
@@ -82,6 +84,8 @@ def _configure_queues(app: Celery) -> None:
         Queue("process", process_exchange, routing_key="process"),
         # ── Tier 3: API rate-limited ──
         Queue("embed",   embed_exchange,   routing_key="embed"),
+        # ── Tier 4: CPU bound (store paper metadata) ──
+        Queue("store",   store_exchange,   routing_key="store"),
         # ── WebAPI ──
         Queue("webapi",  webapi_exchange,  routing_key="webapi"),
         # ── Matcher ──
@@ -91,6 +95,7 @@ def _configure_queues(app: Celery) -> None:
         Queue("dlx.scrape",   dlx_exchange, routing_key="dlx.scrape"),
         Queue("dlx.process",  dlx_exchange, routing_key="dlx.process"),
         Queue("dlx.embed",    dlx_exchange, routing_key="dlx.embed"),
+        Queue("dlx.store",    dlx_exchange, routing_key="dlx.store"),
         Queue("dlx.webapi",   dlx_exchange, routing_key="dlx.webapi"),
         Queue("dlx.matcher",  dlx_exchange, routing_key="dlx.matcher"),
     )
@@ -159,6 +164,12 @@ def _configure_beat_schedule(app: Celery) -> None:
             "args": ["dlx.embed"],
             "options": {"queue": "default"},
         },
+        "retry-failed-store": {
+            "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
+            "schedule": 3600,
+            "args": ["dlx.store"],
+            "options": {"queue": "default"},
+        },
         "retry-failed-webapi": {
             "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
             "schedule": 3600,
@@ -223,6 +234,7 @@ _TIER_PREFIXES = {
     "atlazer.celery_app.tasks.scrape.":  "scrape",
     "atlazer.celery_app.tasks.process.": "process",
     "atlazer.celery_app.tasks.embed.":   "embed",
+    "atlazer.celery_app.tasks.store.":   "store",
     "atlazer.celery_app.tasks.webapi.":  "webapi",
     "atlazer.celery_app.tasks.matcher.": "matcher",
 }

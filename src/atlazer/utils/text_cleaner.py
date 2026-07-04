@@ -78,6 +78,7 @@ def clean_academic_text(text: str) -> str:
     Full cleaning pipeline for a text block extracted from an ArXiv PDF.
     Returns cleaned string.
     """
+
     if not text:
         return ""
 

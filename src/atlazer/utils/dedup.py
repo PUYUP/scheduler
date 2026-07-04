@@ -50,7 +50,7 @@ def mark_as_queued(paper_id: str, repository: str) -> None:
 def mark_as_processed(paper_id: str, repository: str) -> None:
     """
     Promote paper from queued → processed.
-    Called by store_chunks after successful write.
+    Called by store_paper after successful write.
     """
     r = _get_redis()
     pipe = r.pipeline()

@@ -308,6 +308,7 @@ def scrape_paper_metadata(self, paper_id: str, repository: str) -> Dict[str, Any
         paper_id=paper_id,
         repository=repository,
         title=metadata.title[:60],
+        paper=paper
     )
 
     metadata_dict = metadata.model_dump(exclude_none=True)
@@ -352,7 +353,7 @@ def download_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     log.info("download_pdf.start", paper_id=paper_id, repository=repository, url=pdf_url)
 
-    dest_path = Path(settings.pdf_download_dir) / repository / f"{paper_id}.pdf"
+    dest_path = Path(settings.pdf_download_dir) / repository / paper_id / f"{paper_id}.pdf"
 
     if dest_path.exists():
         log.info("download_pdf.cache_hit", paper_id=paper_id, repository=repository)

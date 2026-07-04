@@ -8,7 +8,8 @@ from itertools import groupby
 from atlazer.config.settings import settings
 from atlazer.celery_app.tasks.scrape import scrape_paper_metadata, download_pdf
 from atlazer.celery_app.tasks.process import parse_pdf, clean_text, chunk_document
-from atlazer.celery_app.tasks.embed import generate_embeddings, store_chunks
+from atlazer.celery_app.tasks.embed import generate_embeddings
+from atlazer.celery_app.tasks.store import store_paper
 from grobid_client.grobid_client import GrobidClient
 from langchain_text_splitters import RecursiveJsonSplitter
 from langchain_text_splitters import MarkdownHeaderTextSplitter
@@ -46,7 +47,7 @@ def main():
     cleans = clean_text(parsing)
     chunk = chunk_document(cleans)
     embeddings = generate_embeddings(chunk)
-    store = store_chunks(embeddings)
+    store = store_paper(embeddings)
 
     # print(embeddings)
     

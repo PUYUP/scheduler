@@ -56,7 +56,7 @@ scrape_topic                         │                           │
                                                │  512-tok chunks  │
                                                └─────────────► generate_embeddings
                                                                  │  Batch embed API
-                                                                 └─► store_chunks
+                                                                 └─► store_paper
                                                                        │  Write vectors
                                                                        └─► mark_as_processed
 ```
@@ -80,7 +80,7 @@ docker compose exec worker-scrape \
 
 # 5. Re-ingest a specific paper
 docker compose exec worker-scrape \
-    python src/atlazer/scripts/trigger_scrape.py --paper-id 2606.27414 --repository arxiv
+    python src/atlazer/scripts/trigger_scrape.py --paper-id 2607.02044 --repository arxiv
 ```
 
 ## Scaling

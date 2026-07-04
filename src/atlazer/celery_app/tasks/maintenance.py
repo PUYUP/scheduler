@@ -116,7 +116,7 @@ def retry_dead_letters(self, dlq_name: str, max_requeue: int = 50) -> Dict[str, 
 def purge_old_pdfs(self, max_age_days: int = 7) -> Dict[str, Any]:
     """
     Removes PDF files from the download directory that are older than
-    `max_age_days` days.  Useful safety net in case store_chunks failed
+    `max_age_days` days.  Useful safety net in case store_paper failed
     to clean up after itself.
     """
     download_dir = Path(settings.pdf_download_dir)
