@@ -37,6 +37,7 @@ result_compression          = "gzip"
 result_extended             = True            # store task name, args, kwargs
 
 # ─── Reliability ──────────────────────────────────────────────────────────────
+worker_proc_alive_timeout   = settings.worker_proc_alive_timeout
 task_acks_late              = True            # ack AFTER task completes
 task_reject_on_worker_lost  = True            # re-queue if worker dies mid-task
 task_track_started          = True

@@ -91,7 +91,7 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             service="processFulltextDocument",
             input_path=str(target_dir),
             output=str(out_dir),
-            n=10,
+            n=1,
             json_output=True,
             segment_sentences=True,
             consolidate_citations=False,

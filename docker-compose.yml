@@ -90,6 +90,7 @@ services:
       - JAVA_OPTS=-Xms1g -Xmx4g
     volumes:
       - grobid-tmp:/tmp/grobid
+      - ./grobid.yaml:/opt/grobid/grobid-home/config/grobid.yaml:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8070/api/isalive | grep -q true"]
       interval: 30s
@@ -125,6 +126,7 @@ services:
       start_period: 300s
     deploy:
       replicas: 1
+
 
   # ─── Beat Scheduler (cron-style task dispatch) ───────────────
   celery-beat:
@@ -189,11 +191,15 @@ services:
   # ─── Worker Tier 3: Embed Queue ─────────────────────────────
   worker-embed:
     <<: *celery-common
+    environment:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
     command: >
       celery -A atlazer.celery_app.main worker
       --loglevel=info
       --queues=embed
       --concurrency=1
+      --pool=solo
       --prefetch-multiplier=1
       --max-tasks-per-child=200
       --hostname=embed@%h

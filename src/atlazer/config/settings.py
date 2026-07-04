@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # ── ArXiv Scraping ─────────────────────────────────────────
     arxiv_topics: List[str] = Field(
         default=[
-            "cs.AI",    # (Artificial Intelligence)
+            # "cs.AI",    # (Artificial Intelligence)
             # "cs.AR",    # (Hardware Architecture)
             # "cs.CC",    # (Computational Complexity)
             # "cs.CE",    # (Computational Engineering, Finance, and Science)
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
             # "cs.DC",    # (Distributed, Parallel, and Cluster Computing)
             # "cs.DL",    # (Deep Learning)
             # "cs.DM",    # (Discrete Mathematics)
-            # "cs.DS",    # (Data Structures and Algorithms)
+            "cs.DS",    # (Data Structures and Algorithms)
             # "cs.ET",    # (Emerging Technologies)
             # "cs.FL",    # (Formal Languages and Automata Theory)
             # "cs.GL",    # (General Literature)
@@ -91,7 +91,7 @@ class Settings(BaseSettings):
             # "math.CT",  # (Category Theory)
             # "math.CV",  # (Complex Variables)
             # "math.DG",  # (Differential Geometry)
-            # "math.DS",  # (Dynamical Systems)
+            "math.DS",  # (Dynamical Systems)
             # "math.FA",  # (Functional Analysis)
             # "math.GM",  # (General Mathematics)
             # "math.GN",  # (General Topology)
@@ -194,7 +194,7 @@ class Settings(BaseSettings):
             # "stat.AP",  # (Applications)
             # "stat.CO",  # (Computation)
             # "stat.ME",  # (Methodology)
-            "stat.ML",  # (Machine Learning)
+            # "stat.ML",  # (Machine Learning)
             # "stat.OT",  # (Other Statistics)
             # "stat.TH",  # (Statistics Theory)
         ]
@@ -212,11 +212,12 @@ class Settings(BaseSettings):
 
     # ── Chunking ───────────────────────────────────────────────
     default_section: str        = "Supplementary Information"
-    chunk_size_tokens: int      = 512
-    chunk_overlap_tokens: int   = 64
+    chunk_size_tokens: int      = 1024
+    chunk_overlap_tokens: int   = 128
     min_chunk_chars: int        = 100   # discard tiny chunks
 
     # ── Embeddings ─────────────────────────────────────────────
+    worker_proc_alive_timeout: int = 60              # seconds
     hf_token: str               = ""
     hf_home: str                = "/home/atlazer/.cache/huggingface"
     embedding_provider: str     = "local"       # "openai" | "local"

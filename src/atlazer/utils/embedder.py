@@ -103,7 +103,7 @@ class LocalEmbedder(BaseEmbedder):
             texts,
             batch_size=settings.embedding_batch_size,
             normalize_embeddings=True,
-            show_progress_bar=False,
+            show_progress_bar=True,
         ).tolist()
         elapsed = time.perf_counter() - t0
         log.debug(
