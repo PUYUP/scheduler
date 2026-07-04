@@ -14,6 +14,8 @@ imports = (
     "atlazer.celery_app.tasks.scrape",
     "atlazer.celery_app.tasks.process",
     "atlazer.celery_app.tasks.embed",
+    "atlazer.celery_app.tasks.webapi",
+    "atlazer.celery_app.tasks.matcher",
     "atlazer.celery_app.tasks.maintenance",
 )
 
@@ -68,6 +70,12 @@ task_annotations = {
         "time_limit": 3600,
         "soft_time_limit": 3300,
     },
+    "atlazer.celery_app.tasks.matcher.*": {
+        "max_retries": 3,
+        "default_retry_delay": 60,
+        "time_limit": 3600,
+        "soft_time_limit": 3300,
+    },
 }
 
 # ─── Task Routing ─────────────────────────────────────────────────────────────
@@ -88,6 +96,9 @@ task_routes = {
 
     # ── WebAPI tier ──
     "atlazer.celery_app.tasks.webapi.generate_embeddings":   {"queue": "webapi"},
+
+    # ── Matcher tier ──
+    "atlazer.celery_app.tasks.matcher.paper_fitter":         {"queue": "matcher"},
 
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":                {"queue": "default"},
