@@ -1,3 +1,6 @@
+from datetime import timezone
+from datetime import datetime
+from datetime import timedelta
 import structlog
 
 from typing import List, Dict, Any
@@ -68,7 +71,16 @@ def generate_embeddings(
             
             try:
                 user_depot = UserDepot(db_pool)
-                user_depot.update_profile(profile_id, ProfileUpdate(interest_embedding=embedding))
+                # Set next processed at to 48 hours from now, to prevent updating
+                # frequently
+                next_processed_at = datetime.now(timezone.utc) + timedelta(hours=48)
+                user_depot.update_profile(
+                    profile_id, 
+                    ProfileUpdate(
+                        interest_embedding=embedding, 
+                        next_processed_at=next_processed_at
+                    )
+                )
                 log.info("webapi.generate_embeddings.profile_interest.success", profile_id=profile_id, embedding=embedding)
             except Exception as e:
                 log.error("webapi.generate_embeddings.profile_interest.failed", error=str(e))
