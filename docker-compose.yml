@@ -18,7 +18,8 @@ x-celery-common: &celery-common
   volumes:
     - downloads:/app/downloads
     - logs:/app/logs
-    - hf-cache:/home/atlazer/.cache/huggingface
+    - hf_cache:/home/atlazer/.cache/huggingface
+    - onnx_cache:/app/data/onnx_cache
   depends_on:
     redis:
       condition: service_healthy
@@ -26,6 +27,8 @@ x-celery-common: &celery-common
       condition: service_healthy
     model-init:
       condition: service_completed_successfully
+    onnx-export:
+        condition: service_completed_successfully
   restart: unless-stopped
   networks:
     - atlazer-net
@@ -35,7 +38,7 @@ services:
 
   # ─── Model Cache Warmer ──────────────────────────────────────
   # Jalan sekali sebelum semua worker start, download model embedding
-  # ke shared volume `hf-cache`. Container ini perlu akses internet;
+  # ke shared volume `hf_cache`. Container ini perlu akses internet;
   # worker/beat/flower TIDAK (HF_HUB_OFFLINE=1 di x-celery-common).
   model-init:
     build:
@@ -51,11 +54,22 @@ services:
       HF_HUB_OFFLINE: "0"
       TRANSFORMERS_OFFLINE: "0"
     volumes:
-      - hf-cache:/home/atlazer/.cache/huggingface
+      - hf_cache:/home/atlazer/.cache/huggingface
     command: ["python", "src/atlazer/scripts/warm_model_cache.py"]
     networks:
       - atlazer-net
     restart: "no"
+
+
+  onnx-export:
+    build: .
+    command: ["python", "src/atlazer/scripts/export_onnx.py"]
+    env_file: .env
+    volumes:
+      - onnx_cache:/app/data/onnx_cache
+    environment:
+      - ONNX_CACHE_DIR=/app/data/onnx_cache
+
 
   # ─── Message Broker ─────────────────────────────────────────
   redis:
@@ -68,7 +82,7 @@ services:
       --appendonly yes
       --appendfsync everysec
     volumes:
-      - redis-data:/data
+      - redis_data:/data
     ports:
       - "6379:6379"
     healthcheck:
@@ -89,7 +103,7 @@ services:
     environment:
       - JAVA_OPTS=-Xms1g -Xmx4g
     volumes:
-      - grobid-tmp:/tmp/grobid
+      - grobid_tmp:/tmp/grobid
       - ./grobid.yaml:/opt/grobid/grobid-home/config/grobid.yaml:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8070/api/isalive | grep -q true"]
@@ -107,6 +121,22 @@ services:
           cpus: "2.0"
         reservations:
           memory: 4g
+
+
+  # ─── TEI --
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    pull_policy: always
+    ports:
+      - "9090:80"
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - ./data:/data
+    command: ["--model-id", "${LOCAL_EMBEDDING_MODEL}"]
+    networks:
+      - atlazer-net
+    restart: unless-stopped
 
 
   # ─── WebAPI: FastAPI Service ────────────────────────────────
@@ -343,11 +373,12 @@ services:
 
 
 volumes:
-  redis-data:
+  redis_data:
   downloads:
   logs:
-  grobid-tmp:
-  hf-cache:
+  grobid_tmp:
+  hf_cache:
+  onnx_cache:
 
 
 networks:

@@ -41,8 +41,10 @@ COPY . .
 # tapi tetap dibuat & di-chown di sini supaya kepemilikan awal volume benar
 # saat Docker pertama kali inisialisasi volume kosong dari isi image ini.
 ENV HF_HOME=/home/atlazer/.cache/huggingface
-RUN mkdir -p /app/downloads /app/logs /home/atlazer/.cache/huggingface \
-    && chown -R atlazer:atlazer /app/downloads /app/logs /home/atlazer
+ENV ONNX_CACHE_DIR=/app/data/onnx_cache
+
+RUN mkdir -p /app/downloads /app/logs /app/data/onnx_cache /home/atlazer/.cache/huggingface \
+    && chown -R atlazer:atlazer /app/downloads /app/logs /app/data/onnx_cache /home/atlazer
 
 ENV HOME=/home/atlazer
 

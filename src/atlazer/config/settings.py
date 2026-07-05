@@ -220,13 +220,16 @@ class Settings(BaseSettings):
     worker_proc_alive_timeout: int = 60              # seconds
     hf_token: str               = ""
     hf_home: str                = "/home/atlazer/.cache/huggingface"
-    embedding_provider: str     = "local"       # "openai" | "local"
+    embedding_provider: str     = "tei"       # "openai" | "local" | "tei" | "onnx"
+    onnx_provider: str          = "CPUExecutionProvider"  # "CUDAExecutionProvider" / "CPUExecutionProvider"
     openai_api_key: str         = ""
     openai_embedding_model: str = "text-embedding-3-small"
     truncate_dim: int           = 1024
     embedding_batch_size: int   = 100             # texts per API call
     local_embedding_model: str  = "BAAI/bge-m3"
-
+    tei_base_url: str           = "http://localhost:8080"
+    onnx_cache_dir: str         = "/app/data/onnx_cache"
+    
     # ── Logging ────────────────────────────────────────────────
     log_level: str          = "INFO"
     log_format: str         = "json"             # "json" | "console"

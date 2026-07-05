@@ -76,11 +76,11 @@ open http://localhost:5555/flower
 
 # 4. Manually trigger a scrape
 docker compose exec worker-scrape \
-    python src/atlazer/scripts/trigger_scrape.py --arxiv-topics math.FA --max-results 2
+    python src/atlazer/scripts/trigger_scrape.py --arxiv-topics math.FA --max-results 1
 
 # 5. Re-ingest a specific paper
 docker compose exec worker-scrape \
-    python src/atlazer/scripts/trigger_scrape.py --paper-id 2607.02044 --repository arxiv
+    python src/atlazer/scripts/trigger_scrape.py --paper-id 2607.02449 --repository arxiv
 ```
 
 ## Scaling
