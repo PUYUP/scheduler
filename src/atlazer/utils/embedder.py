@@ -137,7 +137,12 @@ class TEIEmbedder(BaseEmbedder):
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Request embeddings untuk satu batch teks ke endpoint /embed TEI."""
-        payload = {"inputs": texts, "normalize": self.normalize}
+        payload = {
+            "inputs": texts,
+            "normalize": self.normalize,
+            "truncate": True,
+            "dimensions": settings.truncate_dim,
+        }
 
         last_exc: Optional[Exception] = None
         for attempt in range(1, self.max_retries + 1):

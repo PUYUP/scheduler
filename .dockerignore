@@ -23,6 +23,7 @@ build/
 # Env files (use env_file in compose instead)
 .env
 .env.*
+.env.local
 
 # Logs and downloads (mounted as volumes anyway)
 logs/

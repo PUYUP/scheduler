@@ -206,10 +206,12 @@ def on_worker_ready(sender, **kwargs):
 # ─── Database Init and Shutdown ────────────────────────────────────────────────
 
 db_pool = DatabasePool(DatabaseConfig.from_env())
+db_pool.start()
 
 
 @worker_process_init.connect
 def init_db(**kwargs):
+    db_pool.close()
     db_pool.start()
 
 
