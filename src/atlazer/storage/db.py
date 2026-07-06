@@ -48,6 +48,17 @@ _DDL = """\
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
+-- convert_to() bawaan Postgres ditandai STABLE (bukan IMMUTABLE) di katalog,
+-- padahal untuk encoding tetap ('UTF8') hasilnya deterministic. Kolom
+-- GENERATED mensyaratkan ekspresi IMMUTABLE, jadi kita bungkus dengan
+-- wrapper ini agar bisa dipakai di content_hash di bawah.
+CREATE OR REPLACE FUNCTION immutable_utf8_bytes(text)
+RETURNS bytea
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$ SELECT convert_to($1, 'UTF8'); $$;
+
 -- -----------------------------------------------------------------------
 -- papers: rich bibliographic metadata
 -- -----------------------------------------------------------------------
@@ -98,9 +109,9 @@ CREATE TABLE papers (
     CONSTRAINT papers_venue_type_check
         CHECK (venue_type IN ('journal', 'conference', 'preprint', 'book', 'thesis', 'report', NULL)),
 
-    -- CHANGED: dulu CREATE UNIQUE INDEX terpisah, sekarang table constraint
-    -- langsung, supaya bisa dijadikan target composite FK dari document_chunks.
-    -- Postgres otomatis buat backing unique index dengan nama yang sama.
+    -- Table constraint langsung (bukan CREATE UNIQUE INDEX terpisah), supaya
+    -- bisa dijadikan target composite FK dari document_chunks. Postgres
+    -- otomatis buat backing unique index dengan nama yang sama.
     CONSTRAINT papers_repo_identifier_uniq UNIQUE (repository, identifier)
 );
 
@@ -125,8 +136,8 @@ CREATE TABLE document_chunks (
     identifier              TEXT            NOT NULL,
 
     section                 TEXT            NOT NULL,
-    section_order           TEXT            NOT NULL,   -- lihat catatan di bawah
-    chunk                   TEXT            NOT NULL,   -- lihat catatan di bawah
+    section_order           TEXT            NOT NULL,
+    chunk                   TEXT            NOT NULL,
 
     chunk_type              TEXT            NOT NULL DEFAULT 'body',
     content                 TEXT            NOT NULL,
@@ -142,12 +153,18 @@ CREATE TABLE document_chunks (
                                     )
                                 ) STORED,
 
+    -- FIXED: content::bytea gagal untuk string yang mengandung pola literal
+    -- '\\x...' (mis. LaTeX seperti \\xi, \\times) karena Postgres mencoba
+    -- memparsingnya sebagai hex-encoded bytea. convert_to() aman karena
+    -- murni mengambil byte UTF-8 tanpa parsing escape, tapi convert_to()
+    -- sendiri ditandai STABLE sehingga tidak bisa dipakai langsung di
+    -- GENERATED column -> dibungkus via immutable_utf8_bytes().
     content_hash            TEXT            NOT NULL
                                 GENERATED ALWAYS AS (
-                                    encode(sha256(content::bytea), 'hex')
+                                    encode(sha256(immutable_utf8_bytes(content)), 'hex')
                                 ) STORED,
 
-    -- FIXED: BGE-M3 dense embedding = 1024 dimensi, bukan 768.
+    -- BGE-M3 dense embedding = 1024 dimensi.
     embedding               vector(1024),
     embedding_model         TEXT,
     embedding_adapter       TEXT,
@@ -163,9 +180,9 @@ CREATE TABLE document_chunks (
     CONSTRAINT chunks_token_count_positive  CHECK (token_count IS NULL OR token_count > 0),
     CONSTRAINT chunks_word_count_positive   CHECK (word_count > 0),
 
-    -- NEW: menjaga repository/identifier di sini selalu konsisten dengan
-    -- papers, dan otomatis ikut ter-update kalau papers.repository/identifier
-    -- pernah diedit. Ini valid karena papers_repo_identifier_uniq sekarang
+    -- Menjaga repository/identifier di sini selalu konsisten dengan papers,
+    -- dan otomatis ikut ter-update kalau papers.repository/identifier
+    -- pernah diedit. Valid karena papers_repo_identifier_uniq adalah
     -- constraint asli, bukan sekadar index.
     CONSTRAINT chunks_repo_identifier_fkey FOREIGN KEY (repository, identifier)
         REFERENCES papers (repository, identifier)

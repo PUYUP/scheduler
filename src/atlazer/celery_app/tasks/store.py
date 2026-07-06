@@ -9,7 +9,6 @@ import structlog
 
 from atlazer.celery_app.main import app
 from atlazer.models.paper import PaperCreate
-from atlazer.config.settings import settings
 from atlazer.storage.paper import PaperDepot
 from atlazer.celery_app.main import db_pool
 from atlazer.models.document import DocumentChunkCreate

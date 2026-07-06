@@ -16,7 +16,7 @@ from __future__ import annotations
 import redis
 import structlog
 
-from typing import cast
+from typing import cast, Dict, Any
 from atlazer.config.settings import settings
 
 log = structlog.get_logger(__name__)
@@ -110,3 +110,53 @@ def mark_backfill_complete(topic: str, repository: str, last_position: int) -> N
         last_position=last_position
     )
 
+
+def check_increment_process(topic: str, repository: str) -> Dict[str, Any] | None:
+    """Return info about topic process.
+
+    Return:
+        topic: str
+        repository: str
+        start: int
+        max_results: int
+    """
+    r = _get_redis()
+    key = f"increment:{repository}:{topic}"
+    value = cast(Dict[str, Any], r.hgetall(key))
+    if not value:
+        return None
+    return value
+
+
+def set_increment_process(topic: str, repository: str, start: int) -> Dict[str, Any]:
+    """Set increment process"""
+    r = _get_redis()
+    key = f"increment:{repository}:{topic}"
+    process = {
+        "start": start,
+        "topic": topic,
+        "repository": repository,
+    }
+
+    r.hset(key, mapping=process)
+
+    log.info(
+        "dedup.set_increment_process",
+        topic=topic,
+        repository=repository,
+        start=start
+    )
+    return process
+
+
+def clear_increment_process(topic: str, repository: str) -> None:
+    """Clear increment process"""
+    r = _get_redis()
+    key = f"increment:{repository}:{topic}"
+    r.delete(key)
+    log.info(
+        "dedup.clear_increment_process",
+        topic=topic,
+        repository=repository
+    )
+    return None

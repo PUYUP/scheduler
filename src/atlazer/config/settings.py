@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # ── ArXiv Scraping ─────────────────────────────────────────
     arxiv_topics: List[str] = Field(
         default=[
-            # "cs.AI",    # (Artificial Intelligence)
+            "cs.AI",    # (Artificial Intelligence)
             # "cs.AR",    # (Hardware Architecture)
             # "cs.CC",    # (Computational Complexity)
             # "cs.CE",    # (Computational Engineering, Finance, and Science)
@@ -202,7 +202,7 @@ class Settings(BaseSettings):
     arxiv_base_url: str     = "http://export.arxiv.org/api/query"
     max_results_per_topic: int = 1
     scrape_interval_seconds: float = 43_200    # 12 hours
-    scrape_backfill_interval_seconds: float = 21_600 # 6 hours
+    scrape_backfill_interval_seconds: float = 1800 # 30 minutes
     download_timeout_seconds: int  = 120
 
     # ── PDF Processing ─────────────────────────────────────────

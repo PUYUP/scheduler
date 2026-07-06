@@ -60,7 +60,8 @@ def create_celery_app() -> Celery:
 #
 #  scrape  → discover papers, download PDFs
 #  process → parse PDF, clean text, chunk
-#  embed   → generate embeddings, store vectors
+#  embed   → generate embeddings
+#  store   → store metadata and vectors to database
 #
 # Tasks chain:  scrape_topic → scrape_paper_metadata → download_pdf
 #                           → parse_pdf → chunk_document

@@ -19,7 +19,7 @@ import arxiv
 import httpx
 import structlog
 from celery.exceptions import SoftTimeLimitExceeded
-from celery import group, signature
+from celery import group, chord, signature
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -32,7 +32,10 @@ from atlazer.utils.dedup import (
     is_already_processed,
     is_backfill_complete,
     mark_backfill_complete,
-    mark_as_queued
+    mark_as_queued,
+    check_increment_process,
+    set_increment_process,
+    clear_increment_process
 )
 from atlazer.models.paper_schema import PaperMetadata
 from atlazer.config.settings import settings
@@ -259,6 +262,155 @@ def scrape_topic_backfill(
         "skipped": total_skipped,
         "total_fetched": start + len(results),
         "continuing": True,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 1c of 5 — scrape_topic_incremental
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.scrape.scrape_topic_incremental",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=300,
+    queue="scrape",
+    ignore_result=False,
+)
+def scrape_topic_incremental(
+    self,
+    topic: str,
+    sort_by: str = "submittedDate",
+    start: int = 0,
+    repository: str = "arxiv",
+) -> Dict[str, Any]:
+    serving_topics = settings.arxiv_topics
+    max_results = settings.max_results_per_topic
+
+    # topic None/kosong -> mulai dari topic pertama
+    if not topic:
+        topic = serving_topics[0]
+
+    if topic not in serving_topics:
+        raise ValueError(f"Topic {topic} is not valid")
+
+    # redis sudah menyimpan topic & halaman yang sedang diproses
+    process = check_increment_process(topic=topic, repository=repository) or None
+
+    if process:
+        topic = process.get("topic", topic)
+        start = process.get("start", start)
+
+    # safety net: kalau topic dari redis ternyata sudah tidak valid lagi
+    # (mis. config serving_topics berubah), reset ke topic pertama
+    if topic not in serving_topics:
+        topic = serving_topics[0]
+        start = 0
+
+    # topic_index dihitung ULANG setelah topic final diketahui
+    topic_index = serving_topics.index(topic)
+
+    log.info(
+        "scrape_topic_incremental.start",
+        topic=topic,
+        start=start,
+        process=process,
+    )
+
+    try:
+        results = list(
+            _query_arxiv(
+                topic,
+                max_results=max_results,
+                sort_by=sort_by,
+                start=int(start),
+            )
+        )
+    except Exception as exc:
+        log.error(
+            "scrape_topic_incremental.query_failed",
+            topic=topic,
+            start=start,
+            error=str(exc),
+        )
+        raise self.retry(exc=exc)
+
+    # tidak ada hasil lagi -> topic ini selesai, lanjut ke topic berikutnya
+    # (wrap kembali ke topic pertama kalau sudah di ujung serving_topics)
+    if len(results) <= 0:
+        next_index = (topic_index + 1) % len(serving_topics)
+        next_topic = serving_topics[next_index]
+
+        # bersihkan process lama untuk topic yang barusan selesai
+        clear_increment_process(topic, repository)
+
+        log.info(
+            "scrape_topic_increment.next_topic",
+            start=0,
+            topic=next_topic,
+            process=process,
+        )
+
+        scrape_topic_incremental.apply_async(
+            kwargs={"topic": next_topic, "sort_by": sort_by, "start": 0},
+            queue="scrape"
+        )
+
+        return {
+            "start": 0,
+            "topic": next_topic,
+            "process": process,
+        }
+
+    # ambil id baru dan tandai sebagai queued
+    new_ids: List[str] = []
+    page_skipped = 0
+
+    for result in results:
+        arxiv_id = result.entry_id.split("/")[-1]
+        if is_already_processed(arxiv_id, repository="arxiv"):
+            page_skipped += 1
+            continue
+        mark_as_queued(arxiv_id, repository="arxiv")
+        new_ids.append(arxiv_id)
+
+    # halaman berikutnya untuk topic yang sama
+    next_start = int(start) + len(results)
+
+    set_increment_process(
+        topic=topic,
+        repository=repository,
+        start=next_start,
+    )
+
+    if new_ids:
+        job = group(
+            scrape_paper_metadata.s(arxiv_id, repository="arxiv").set(queue="scrape")
+            for arxiv_id in new_ids
+        )
+        job.apply_async()
+
+        # trigger lagi task ini untuk lanjut ke halaman berikutnya di topic yang sama
+        # setelah semua task dalam job selesai
+        chord(job)(
+            scrape_topic_incremental.apply_async(
+                kwargs={"topic": topic, "sort_by": sort_by, "start": next_start},
+                queue="scrape"
+            )
+        )
+    else:
+        # Jika semua item di halaman ini sudah ada di DB, 
+        # kita HARUS men-trigger halaman berikutnya agar loop tidak putus.
+        scrape_topic_incremental.si(
+            topic=topic,
+            sort_by=sort_by,
+            start=next_start,
+        ).apply_async(queue="scrape")
+
+    return {
+        "start": next_start,
+        "topic": topic,
+        "process": process,
     }
 
 
