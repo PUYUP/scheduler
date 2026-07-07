@@ -13,7 +13,7 @@ Flow:
 
 from __future__ import annotations
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import arxiv
 import httpx
@@ -124,7 +124,7 @@ def scrape_topic_backfill(
     self,
     topic: str,
     sort_by: str = "submittedDate",
-    page_size: int = 100,
+    max_results: int = 100,
     start: int = 0,
     total_new: int = 0,
     total_skipped: int = 0,
@@ -133,7 +133,7 @@ def scrape_topic_backfill(
     Backfill: turun terus dari paper terbaru sampai item terakhir
     yang tersedia di ArXiv untuk `topic`, halaman demi halaman.
 
-    Setiap pemanggilan memproses satu halaman (`page_size` item)
+    Setiap pemanggilan memproses satu halaman (`max_results` item)
     lalu men-trigger dirinya sendiri untuk halaman berikutnya,
     sampai ArXiv tidak lagi punya hasil baru.
 
@@ -167,11 +167,11 @@ def scrape_topic_backfill(
         "scrape_topic_backfill.page_start",
         topic=topic,
         start=start,
-        page_size=page_size,
+        max_results=max_results,
     )
 
     try:
-        results = list(_query_arxiv(topic, page_size, sort_by, start=start))
+        results = list(_query_arxiv(topic, max_results, sort_by, start=start))
     except Exception as exc:
         log.error(
             "scrape_topic_backfill.query_failed",
@@ -226,7 +226,7 @@ def scrape_topic_backfill(
         skipped=page_skipped,
     )
 
-    if len(results) < page_size:
+    if len(results) < max_results:
         # ArXiv kasih lebih sedikit dari yang diminta -> sudah mentok di ujung
         mark_backfill_complete(topic, repository="arxiv", last_position=start + len(results))
         log.info(
@@ -248,7 +248,7 @@ def scrape_topic_backfill(
         kwargs={
             "topic": topic,
             "sort_by": sort_by,
-            "page_size": page_size,
+            "max_results": max_results,
             "start": start + len(results),
             "total_new": total_new,
             "total_skipped": total_skipped,
@@ -280,26 +280,18 @@ def scrape_topic_backfill(
 def scrape_topic_incremental(
     self,
     topic: str,
+    repository: str = "arxiv",
     sort_by: str = "submittedDate",
     start: int = 0,
-    repository: str = "arxiv",
 ) -> Dict[str, Any]:
     serving_topics = settings.arxiv_topics
     max_results = settings.max_results_per_topic
 
-    # topic None/kosong -> mulai dari topic pertama
-    if not topic:
-        topic = serving_topics[0]
-
-    if topic not in serving_topics:
-        raise ValueError(f"Topic {topic} is not valid")
-
     # redis sudah menyimpan topic & halaman yang sedang diproses
-    process = check_increment_process(topic=topic, repository=repository) or None
-
+    process = check_increment_process(repository=repository) or None
     if process:
-        topic = process.get("topic", topic)
-        start = process.get("start", start)
+        topic = process.get("topic", '')
+        start = int(process.get("start", 1))
 
     # safety net: kalau topic dari redis ternyata sudah tidak valid lagi
     # (mis. config serving_topics berubah), reset ke topic pertama
@@ -318,14 +310,12 @@ def scrape_topic_incremental(
     )
 
     try:
-        results = list(
-            _query_arxiv(
-                topic,
-                max_results=max_results,
-                sort_by=sort_by,
-                start=int(start),
-            )
-        )
+        results = list(_query_arxiv(
+            topic,
+            sort_by=sort_by,
+            max_results=max_results + start,
+            start=start,
+        ))
     except Exception as exc:
         log.error(
             "scrape_topic_incremental.query_failed",
@@ -334,6 +324,14 @@ def scrape_topic_incremental(
             error=str(exc),
         )
         raise self.retry(exc=exc)
+    
+    log.info(
+        "scrape_topic_incremental.results_count",
+        topic=topic,
+        start=start,
+        results=results,
+        count=len(results),
+    )
 
     # tidak ada hasil lagi -> topic ini selesai, lanjut ke topic berikutnya
     # (wrap kembali ke topic pertama kalau sudah di ujung serving_topics)
@@ -342,7 +340,7 @@ def scrape_topic_incremental(
         next_topic = serving_topics[next_index]
 
         # bersihkan process lama untuk topic yang barusan selesai
-        clear_increment_process(topic, repository)
+        clear_increment_process(repository=repository)
 
         log.info(
             "scrape_topic_increment.next_topic",
@@ -351,9 +349,15 @@ def scrape_topic_incremental(
             process=process,
         )
 
-        scrape_topic_incremental.apply_async(
-            kwargs={"topic": next_topic, "sort_by": sort_by, "start": 0},
-            queue="scrape"
+        # scrape_topic_incremental.apply_async(
+        #     kwargs={"topic": next_topic, "sort_by": sort_by, "start": 0},
+        #     queue="scrape"
+        # )
+
+        set_increment_process(
+            repository=repository,
+            topic=next_topic,
+            start=0,
         )
 
         return {
@@ -375,11 +379,11 @@ def scrape_topic_incremental(
         new_ids.append(arxiv_id)
 
     # halaman berikutnya untuk topic yang sama
-    next_start = int(start) + len(results)
+    next_start = start + len(results)
 
     set_increment_process(
-        topic=topic,
         repository=repository,
+        topic=topic,
         start=next_start,
     )
 
@@ -392,20 +396,22 @@ def scrape_topic_incremental(
 
         # trigger lagi task ini untuk lanjut ke halaman berikutnya di topic yang sama
         # setelah semua task dalam job selesai
-        chord(job)(
-            scrape_topic_incremental.apply_async(
-                kwargs={"topic": topic, "sort_by": sort_by, "start": next_start},
-                queue="scrape"
-            )
-        )
+        # chord(job)(
+        #     scrape_topic_incremental.apply_async(
+        #         kwargs={"topic": topic, "sort_by": sort_by, "start": next_start},
+        #         queue="scrape"
+        #     )
+        # )
+
     else:
         # Jika semua item di halaman ini sudah ada di DB, 
         # kita HARUS men-trigger halaman berikutnya agar loop tidak putus.
-        scrape_topic_incremental.si(
-            topic=topic,
-            sort_by=sort_by,
-            start=next_start,
-        ).apply_async(queue="scrape")
+        # scrape_topic_incremental.si(
+        #     topic=topic,
+        #     sort_by=sort_by,
+        #     start=next_start,
+        # ).apply_async(queue="scrape")
+        pass
 
     return {
         "start": next_start,
@@ -426,7 +432,12 @@ def scrape_topic_incremental(
     queue="scrape",
     ignore_result=False,
 )
-def scrape_paper_metadata(self, paper_id: str, repository: str) -> Dict[str, Any]:
+def scrape_paper_metadata(
+    self,
+    paper_id: str,
+    repository: str,
+    topic: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Fetches full metadata for a single paper then triggers PDF download.
 

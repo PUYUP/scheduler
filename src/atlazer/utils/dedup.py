@@ -111,7 +111,7 @@ def mark_backfill_complete(topic: str, repository: str, last_position: int) -> N
     )
 
 
-def check_increment_process(topic: str, repository: str) -> Dict[str, Any] | None:
+def check_increment_process(repository: str) -> Dict[str, Any] | None:
     """Return info about topic process.
 
     Return:
@@ -121,17 +121,17 @@ def check_increment_process(topic: str, repository: str) -> Dict[str, Any] | Non
         max_results: int
     """
     r = _get_redis()
-    key = f"increment:{repository}:{topic}"
+    key = f"increment:{repository}"
     value = cast(Dict[str, Any], r.hgetall(key))
     if not value:
         return None
     return value
 
 
-def set_increment_process(topic: str, repository: str, start: int) -> Dict[str, Any]:
+def set_increment_process(repository: str, topic: str, start: int) -> Dict[str, Any]:
     """Set increment process"""
     r = _get_redis()
-    key = f"increment:{repository}:{topic}"
+    key = f"increment:{repository}"
     process = {
         "start": start,
         "topic": topic,
@@ -142,21 +142,20 @@ def set_increment_process(topic: str, repository: str, start: int) -> Dict[str, 
 
     log.info(
         "dedup.set_increment_process",
-        topic=topic,
         repository=repository,
+        topic=topic,
         start=start
     )
     return process
 
 
-def clear_increment_process(topic: str, repository: str) -> None:
+def clear_increment_process(repository: str) -> None:
     """Clear increment process"""
     r = _get_redis()
-    key = f"increment:{repository}:{topic}"
+    key = f"increment:{repository}"
     r.delete(key)
     log.info(
         "dedup.clear_increment_process",
-        topic=topic,
         repository=repository
     )
     return None

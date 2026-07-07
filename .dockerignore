@@ -28,6 +28,7 @@ build/
 # Logs and downloads (mounted as volumes anyway)
 logs/
 downloads/
+data/
 
 # Docker files (no need to copy into image)
 Dockerfile

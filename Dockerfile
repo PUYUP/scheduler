@@ -17,7 +17,7 @@ WORKDIR /app
 RUN groupadd -r atlazer && useradd -r -g atlazer -d /home/atlazer atlazer
 
 # 2. KUNCI UTAMA: Paksa pip memprioritaskan repository versi CPU (Hemat ~2GB+)
-ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
+# ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 
 # 3. Copy file konfigurasi project
 COPY pyproject.toml README.md ./ 

@@ -133,18 +133,29 @@ def _configure_beat_schedule(app: Celery) -> None:
         # (lihat guard is_backfill_complete di scrape_topic_backfill), dan
         # berfungsi sebagai safety-net kalau chain pagination sempat terputus
         # (misal worker crash di tengah jalan).
-        **{
-            f"scrape-{topic.replace(' ', '-')}-backfill": {
-                "task": "atlazer.celery_app.tasks.scrape.scrape_topic_backfill",
-                "schedule": settings.scrape_backfill_interval_seconds,
-                "args": [topic],
-                "kwargs": {
-                    "page_size": settings.max_results_per_topic,
-                    "start": 0,
-                },
-                "options": {"queue": "scrape"},
-            }
-            for topic in settings.arxiv_topics
+        # **{
+        #     f"scrape-{topic.replace(' ', '-')}-backfill": {
+        #         "task": "atlazer.celery_app.tasks.scrape.scrape_topic_backfill",
+        #         "schedule": settings.scrape_backfill_interval_seconds,
+        #         "args": [topic],
+        #         "kwargs": {
+        #             "max_results": settings.max_results_per_topic,
+        #             "start": 0,
+        #         },
+        #         "options": {"queue": "scrape"},
+        #     }
+        #     for topic in settings.arxiv_topics
+        # },
+        # ── Incremental ingestion: every 10 minutes per topic ──
+        "scrape-topic-incremental": {
+            "task": "atlazer.celery_app.tasks.scrape.scrape_topic_incremental",
+            "schedule": 600,
+            "args": ["cs.AI", "arxiv"],
+            "kwargs": {
+                "max_results": settings.max_results_per_topic,
+                "start": 0,
+            },
+            "options": {"queue": "scrape"},
         },
         # ── Retry dead-letter queue items every hour ──
         "retry-failed-scrape": {
