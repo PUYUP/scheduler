@@ -1,14 +1,10 @@
 ########################################################################
 #  Paper RAG Pipeline — Docker Compose
-#  Services: Redis, Grobid, Worker (3 tiers), Beat Scheduler, Flower
+#  Services: Redis, Grobid, TEI, Worker (3 tiers), Beat Scheduler, Flower
 ########################################################################
 
 x-celery-common: &celery-common
-  build:
-    context: .
-    dockerfile: Dockerfile
-    target: final
-  image: atlanize/paper-miner:latest
+  image: atlanize/paper-miner:${IMAGE_TAG:-latest}
   env_file: .env
   environment:
     # Volume sudah pasti terisi sebelum container ini start (lihat depends_on
@@ -18,13 +14,16 @@ x-celery-common: &celery-common
   volumes:
     - downloads:/app/downloads
     - logs:/app/logs
-    - hf-cache:/home/atlazer/.cache/huggingface
+    - hf_cache:/home/atlazer/.cache/huggingface
+    - onnx_cache:/app/data/onnx_cache
   depends_on:
     redis:
       condition: service_healthy
     grobid:
       condition: service_healthy
     model-init:
+      condition: service_completed_successfully
+    onnx-export:
       condition: service_completed_successfully
   restart: unless-stopped
   networks:
@@ -33,16 +32,34 @@ x-celery-common: &celery-common
 
 services:
 
-  # ─── Model Cache Warmer ──────────────────────────────────────
-  # Jalan sekali sebelum semua worker start, download model embedding
-  # ke shared volume `hf-cache`. Container ini perlu akses internet;
-  # worker/beat/flower TIDAK (HF_HUB_OFFLINE=1 di x-celery-common).
-  model-init:
+  # ─── Dummy Build Service ─────────────────────────────────────
+  # Satu-satunya tempat `build:` didefinisikan. Semua service lain yang
+  # butuh image `atlanize/paper-miner` (celery services, model-init,
+  # onnx-export) cukup referensi `image:` yang sama tanpa build ulang.
+  # Service ini tidak pernah benar-benar dijalankan — profiles memastikan
+  # dia di-exclude dari `docker compose up` biasa.
+  #
+  # Build image:
+  #   docker compose build builder
+  # Build dengan tag versi eksplisit:
+  #   IMAGE_TAG=$(git rev-parse --short HEAD) docker compose build builder
+  builder:
     build:
       context: .
       dockerfile: Dockerfile
       target: final
-    image: atlanize/paper-miner:latest
+    image: atlanize/paper-miner:${IMAGE_TAG:-latest}
+    profiles: ["build-only"]
+    command: ["true"]
+    restart: "no"
+
+
+  # ─── Model Cache Warmer ──────────────────────────────────────
+  # Jalan sekali sebelum semua worker start, download model embedding
+  # ke shared volume `hf_cache`. Container ini perlu akses internet;
+  # worker/beat/flower TIDAK (HF_HUB_OFFLINE=1 di x-celery-common).
+  model-init:
+    image: atlanize/paper-miner:${IMAGE_TAG:-latest}
     env_file: .env
     environment:
       # Override eksplisit — container ini WAJIB online untuk download.
@@ -51,12 +68,33 @@ services:
       HF_HUB_OFFLINE: "0"
       TRANSFORMERS_OFFLINE: "0"
     volumes:
-      - hf-cache:/home/atlazer/.cache/huggingface
+      - hf_cache:/home/atlazer/.cache/huggingface
     command: ["python", "src/atlazer/scripts/warm_model_cache.py"]
     networks:
       - atlazer-net
     restart: "no"
-    
+
+
+  # ─── ONNX Export Container ─────────────────────────────────
+  onnx-export:
+    image: atlanize/paper-miner:${IMAGE_TAG:-latest}
+    env_file: .env
+    environment:
+      - ONNX_CACHE_DIR=/app/data/onnx_cache
+      - HF_HUB_OFFLINE=0
+      - TRANSFORMERS_OFFLINE=0
+      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - hf_cache:/home/atlazer/.cache/huggingface
+      - onnx_cache:/app/data/onnx_cache
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+    command: ["python", "src/atlazer/scripts/export_onnx.py"]
+    networks:
+      - atlazer-net
+    restart: "no"
+
 
   # ─── Message Broker ─────────────────────────────────────────
   redis:
@@ -69,7 +107,7 @@ services:
       --appendonly yes
       --appendfsync everysec
     volumes:
-      - redis-data:/data
+      - redis_data:/data
     ports:
       - "6379:6379"
     healthcheck:
@@ -90,7 +128,7 @@ services:
     environment:
       - JAVA_OPTS=-Xms1g -Xmx4g
     volumes:
-      - grobid-tmp:/tmp/grobid
+      - grobid_tmp:/tmp/grobid
       - ./grobid.yaml:/opt/grobid/grobid-home/config/grobid.yaml:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8070/api/isalive | grep -q true"]
@@ -105,9 +143,41 @@ services:
       resources:
         limits:
           memory: 4g
-          cpus: "2.0"
         reservations:
           memory: 2g
+
+
+  # ─── TEI --
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    pull_policy: always
+    ports:
+      - "9090:80"
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+    volumes:
+      - ./data:/data
+    command: [
+      "--model-id", "${LOCAL_EMBEDDING_MODEL}",
+      "--max-batch-tokens", "2048",
+      "--max-client-batch-size", "8",
+      "--auto-truncate"
+    ]
+    healthcheck:
+      test: ["CMD-SHELL", "curl", "-sf", "http://localhost:80/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+        reservations:
+          memory: 2g
+    networks:
+      - atlazer-net
+    restart: unless-stopped
 
 
   # ─── WebAPI: FastAPI Service ────────────────────────────────
@@ -207,9 +277,9 @@ services:
       replicas: 1
       resources:
         limits:
-          memory: 6g
-        reservations:
           memory: 4g
+        reservations:
+          memory: 2g
     healthcheck:
       test: [
         "CMD-SHELL", 
@@ -236,9 +306,9 @@ services:
       replicas: 1
       resources:
         limits:
-          memory: 6g
+          memory: 1g
         reservations:
-          memory: 4g
+          memory: 512m
     healthcheck:
       test: [
         "CMD-SHELL", 
@@ -344,11 +414,12 @@ services:
 
 
 volumes:
-  redis-data:
+  redis_data:
   downloads:
   logs:
-  grobid-tmp:
-  hf-cache:
+  grobid_tmp:
+  hf_cache:
+  onnx_cache:
 
 
 networks:

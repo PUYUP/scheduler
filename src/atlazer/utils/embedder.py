@@ -8,8 +8,9 @@ Usage:
     vectors  = embedder.embed_batch(["text one", "text two"])
 
 Supported providers (set EMBEDDING_PROVIDER in .env):
-  • "openai"  → OpenAI text-embedding-3-small (default, 1536-dim)
-  • "local"   → sentence-transformers BAAI/bge-small-en-v1.5 (384-dim)
+  • "local"   → sentence-transformers BAAI/bge-m3
+  • "onnx"    → sentence-transformers BAAI/bge-m3 ONNX
+  • "tei"     → sentence-transformers BAAI/bge-m3 TEI
 """
 
 from __future__ import annotations
@@ -41,42 +42,6 @@ class BaseEmbedder(ABC):
 
     def embed_one(self, text: str) -> List[float]:
         return self.embed_batch([text])[0]
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# OpenAI provider
-# ─────────────────────────────────────────────────────────────────────────────
-
-class OpenAIEmbedder(BaseEmbedder):
-    def __init__(self):
-        from openai import OpenAI
-        self._client    = OpenAI(api_key=settings.openai_api_key)
-        self.model_name = settings.openai_embedding_model
-
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        if not texts:
-            return []
-
-        # OpenAI embedding endpoint strips newlines poorly — do it here
-        cleaned = [t.replace("\n", " ") for t in texts]
-
-        t0 = time.perf_counter()
-        response = self._client.embeddings.create(
-            input=cleaned,
-            model=self.model_name,
-        )
-        elapsed = time.perf_counter() - t0
-
-        vectors = [item.embedding for item in response.data]
-
-        log.debug(
-            "openai_embedder.batch",
-            count=len(texts),
-            model=self.model_name,
-            elapsed_s=round(elapsed, 3),
-            total_tokens=response.usage.total_tokens,
-        )
-        return vectors
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -245,16 +210,7 @@ def get_embedder() -> BaseEmbedder:
     """
     provider = settings.embedding_provider.lower()
 
-    if provider == "openai":
-        if not settings.openai_api_key:
-            raise ValueError(
-                "OPENAI_API_KEY is not set. "
-                "Set it in .env or switch EMBEDDING_PROVIDER=local"
-            )
-        log.info("embedder.init", provider="openai", model=settings.openai_embedding_model)
-        return OpenAIEmbedder()
-
-    elif provider == "local":
+    if provider == "local":
         log.info("embedder.init", provider="local", model=settings.local_embedding_model)
         return LocalEmbedder()
 
@@ -269,7 +225,7 @@ def get_embedder() -> BaseEmbedder:
     else:
         raise ValueError(
             f"Unknown embedding provider '{provider}'. "
-            "Choose 'openai', 'local', 'tei', or 'onnx'."
+            "Choose 'local', 'tei', or 'onnx'."
         )
 
 

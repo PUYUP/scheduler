@@ -59,5 +59,5 @@ def configure_logging() -> None:
     root_logger.setLevel(log_level)
 
     # Quieten noisy third-party loggers
-    for noisy in ("httpx", "httpcore", "arxiv", "urllib3", "openai._base_client"):
+    for noisy in ("httpx", "httpcore", "arxiv", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)

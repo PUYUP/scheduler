@@ -69,6 +69,7 @@ cp .env.example .env
 # Edit .env — set OPENAI_API_KEY (or switch to EMBEDDING_PROVIDER=local)
 
 # 2. Start everything
+docker compose build builder
 docker compose up -d
 
 # 3. Watch tasks in Flower

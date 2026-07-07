@@ -17,20 +17,16 @@ dependencies = [
     # ─── ArXiv Scraping ───────────────────────────────────────────
     "arxiv==4.0.0",
     "httpx==0.28.1",
-    "feedparser==6.0.12",
     "requests==2.32.3",
 
     # ─── Text Processing & Chunking ───────────────────────────────
     "langchain-text-splitters==1.1.2",
     "tiktoken==0.9.0",
-    "pymupdf==1.27.2.3",
     "grobid-client-python==0.1.4",
 
     # ─── Embeddings ───────────────────────────────────────────────
-    # "openai==1.57.4",
     "sentence_transformers[onnx]==5.6.0",
     "transformers<5.0.0",
-    "openai==2.44.0",
 
     # ─── Observability ────────────────────────────────────────────
     "flower==2.0.1",
@@ -42,11 +38,9 @@ dependencies = [
     "pydantic-settings==2.14.0",
     "python-dotenv==1.0.1",
     "tenacity==9.0.0",
-    "orjson==3.11.9",
     "watchdog[watchmedo]==4.0.2",
 
     # ─── Database ──────────────────────────────────────────────
-    "supabase>=2.31.0",
     "psycopg2-binary>=2.9.12",
     "asyncpg>=0.31.0",
     "pgvector>=0.4.2",
@@ -55,7 +49,6 @@ dependencies = [
     # ─── Web API ──────────────────────────────────────────────
     "fastapi==0.115.0",
     "uvicorn[standard]==0.30.6",
-    "faiss-cpu==1.8.0.post1",
 ]
 
 [project.optional-dependencies]

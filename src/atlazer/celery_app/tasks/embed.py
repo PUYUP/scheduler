@@ -9,8 +9,7 @@ Flow (continued from process.py):
 Design notes:
   • Batching     – chunks are grouped into batches of `embedding_batch_size`
                    before hitting the API to minimise round-trips.
-  • Provider     – "openai"  → text-embedding-3-small (default)
-                   "local"   → sentence-transformers (BAAI/bge-small-en)
+  • Provider     – "local"   → sentence-transformers (BAAI/bge-small-en)
   • Rate limit   – the `rate_limit` annotation (20/m) in celery_config
                    keeps us under the OpenAI embeddings quota.
   • store_paper  – intentionally thin: just attaches the vectors to each

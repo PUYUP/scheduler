@@ -19,7 +19,7 @@ import arxiv
 import httpx
 import structlog
 from celery.exceptions import SoftTimeLimitExceeded
-from celery import group, chord, signature
+from celery import group, signature
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -283,10 +283,9 @@ def scrape_topic_incremental(
     repository: str = "arxiv",
     sort_by: str = "submittedDate",
     start: int = 0,
+    max_results: int = 1,
+    serving_topics: list = [],
 ) -> Dict[str, Any]:
-    serving_topics = settings.arxiv_topics
-    max_results = settings.max_results_per_topic
-
     # redis sudah menyimpan topic & halaman yang sedang diproses
     process = check_increment_process(repository=repository) or None
     if process:
@@ -333,12 +332,12 @@ def scrape_topic_incremental(
         count=len(results),
     )
 
+    next_index = (topic_index + 1) % len(serving_topics)
+    next_topic = serving_topics[next_index]
+
     # tidak ada hasil lagi -> topic ini selesai, lanjut ke topic berikutnya
     # (wrap kembali ke topic pertama kalau sudah di ujung serving_topics)
     if len(results) <= 0:
-        next_index = (topic_index + 1) % len(serving_topics)
-        next_topic = serving_topics[next_index]
-
         # bersihkan process lama untuk topic yang barusan selesai
         clear_increment_process(repository=repository)
 
@@ -383,7 +382,7 @@ def scrape_topic_incremental(
 
     set_increment_process(
         repository=repository,
-        topic=topic,
+        topic=next_topic,
         start=next_start,
     )
 
@@ -415,7 +414,7 @@ def scrape_topic_incremental(
 
     return {
         "start": next_start,
-        "topic": topic,
+        "topic": next_topic,
         "process": process,
     }
 

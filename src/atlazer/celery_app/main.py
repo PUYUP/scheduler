@@ -153,6 +153,7 @@ def _configure_beat_schedule(app: Celery) -> None:
             "args": ["cs.AI", "arxiv"],
             "kwargs": {
                 "max_results": settings.max_results_per_topic,
+                "serving_topics": settings.arxiv_topics,
                 "start": 0,
             },
             "options": {"queue": "scrape"},
