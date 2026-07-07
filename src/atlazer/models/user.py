@@ -15,6 +15,7 @@ class ProfileORM(Base):
     __tablename__ = "profile"
     
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    interest: Mapped[Optional[str]] = mapped_column(default="")
     interest_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=False)
     next_processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=False)
 

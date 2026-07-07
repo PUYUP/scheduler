@@ -36,7 +36,7 @@ class PaperORM(Base):
     __tablename__ = "papers"
 
     id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+      PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
     )
 
     doi: Mapped[str | None] = mapped_column(Text)
@@ -74,6 +74,9 @@ class PaperORM(Base):
     processing_version: Mapped[str | None] = mapped_column(Text)
     processing_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
     error_message: Mapped[str | None] = mapped_column(Text)
+
+    last_scraped_category: Mapped[str | None] = mapped_column(Text)
+    last_scraped_page: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
@@ -163,6 +166,9 @@ class PaperCreate(BaseModel):
   processing_version: str | None = None
   error_message: str | None = None
 
+  last_scraped_category: str | None = None
+  last_scraped_page: str | None = None
+
   @field_validator("doi", mode="before")
   @classmethod
   def empty_doi_to_none(cls, v):
@@ -221,6 +227,9 @@ class PaperUpdate(BaseModel):
   processing_status: ProcessingStatus | None = None
   error_message: str | None = None
 
+  last_scraped_category: str | None = None
+  last_scraped_page: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Read — full row as returned from the DB
@@ -272,3 +281,6 @@ class PaperRead(BaseModel):
   processing_version: str | None = None
   processing_status: ProcessingStatus = "pending"
   error_message: str | None = None
+
+  last_scraped_category: str | None = None
+  last_scraped_page: str | None = None

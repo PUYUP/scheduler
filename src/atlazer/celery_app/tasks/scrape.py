@@ -388,8 +388,11 @@ def scrape_topic_incremental(
 
     if new_ids:
         job = group(
-            scrape_paper_metadata.s(arxiv_id, repository="arxiv").set(queue="scrape")
-            for arxiv_id in new_ids
+            scrape_paper_metadata.s(
+                arxiv_id,
+                repository="arxiv",
+                metadata={"scraped_category": topic, "scraped_page": next_start},
+            ).set(queue="scrape") for arxiv_id in new_ids
         )
         job.apply_async()
 
@@ -436,6 +439,7 @@ def scrape_paper_metadata(
     paper_id: str,
     repository: str,
     topic: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Fetches full metadata for a single paper then triggers PDF download.
@@ -450,7 +454,7 @@ def scrape_paper_metadata(
         log.warning("scrape_paper_metadata.fetch_failed", paper_id=paper_id, repository=repository, error=str(exc))
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
 
-    metadata = PaperMetadata(
+    paper_metadata = PaperMetadata(
         paper_id=paper_id,
         repository=repository,
         title=paper.title.strip().replace("\n", " "),
@@ -469,11 +473,15 @@ def scrape_paper_metadata(
         "scrape_paper_metadata.done",
         paper_id=paper_id,
         repository=repository,
-        title=metadata.title[:60],
+        title=paper_metadata.title[:60],
         paper=paper
     )
 
-    metadata_dict = metadata.model_dump(exclude_none=True)
+    metadata_dict = paper_metadata.model_dump(exclude_none=True)
+
+    # Merge metadata dari scrape topic incremental
+    if metadata:
+        metadata_dict.update(metadata)
 
     # Chain: download_pdf → parse_pdf (process queue)
     (

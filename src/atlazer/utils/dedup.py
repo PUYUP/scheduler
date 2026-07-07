@@ -18,6 +18,8 @@ import structlog
 
 from typing import cast, Dict, Any
 from atlazer.config.settings import settings
+from atlazer.celery_app.main import db_pool
+from atlazer.storage.paper import PaperDepot
 
 log = structlog.get_logger(__name__)
 
@@ -124,7 +126,17 @@ def check_increment_process(repository: str) -> Dict[str, Any] | None:
     key = f"increment:{repository}"
     value = cast(Dict[str, Any], r.hgetall(key))
     if not value:
-        return None
+        # getting from database
+        depot = PaperDepot(db_pool)
+        last = depot.get_last_paper(repository)
+        if not last:
+            return None
+
+        return {
+            "start": int(last.last_scraped_page),
+            "topic": last.last_scraped_category,
+            "repository": repository,
+        }
     return value
 
 

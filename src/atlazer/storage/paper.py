@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import List
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -197,3 +197,26 @@ class PaperDepot:
                 session.rollback()
                 logger.exception("Failed to upsert chunks: %s", e)
                 raise
+
+    def get_last_paper(self, repository: str) -> PaperORM | None:
+        """Return the most recently created paper row for `repository`,
+        or `None` if that repository has no papers yet.
+
+        "Newest" is determined by `created_at`; ties are broken by `id`
+        so the result stays deterministic even if two rows share the
+        same timestamp.
+        """
+        stmt = (
+            select(PaperORM)
+            .where(PaperORM.repository == repository)
+            .order_by(PaperORM.created_at.desc(), PaperORM.id.desc())
+            .limit(1)
+        )
+
+        with self._pool.session() as session:
+            row = session.execute(stmt).scalar_one_or_none()
+            if row is not None:
+                # detach dari session supaya atribut tetap bisa diakses
+                # setelah `with` block ini selesai (session close)
+                session.expunge(row)
+            return row
