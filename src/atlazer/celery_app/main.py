@@ -149,8 +149,8 @@ def _configure_beat_schedule(app: Celery) -> None:
         # ── Incremental ingestion: every 10 minutes per topic ──
         "scrape-topic-incremental": {
             "task": "atlazer.celery_app.tasks.scrape.scrape_topic_incremental",
-            "schedule": 600,
-            "args": ["cs.AI", "arxiv"],
+            "schedule": settings.scrape_increment_interval_seconds,
+            "args": ["cs.AI", "arxiv"],  # for starter only
             "kwargs": {
                 "max_results": settings.max_results_per_topic,
                 "serving_topics": settings.arxiv_topics,
