@@ -203,7 +203,7 @@ class Settings(BaseSettings):
     max_results_per_topic: int = 1
     scrape_interval_seconds: float = 43_200    # 12 hours
     scrape_backfill_interval_seconds: float = 1800 # 30 minutes
-    scrape_increment_interval_seconds: float = 1800 # 30 minutes
+    scrape_increment_interval_seconds: float = 900 # 15 minutes
     download_timeout_seconds: int  = 120
 
     # ── PDF Processing ─────────────────────────────────────────

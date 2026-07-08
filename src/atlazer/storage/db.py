@@ -216,6 +216,99 @@ CREATE INDEX idx_chunks_content_hash
 
 CREATE INDEX idx_chunks_type
     ON document_chunks (chunk_type, paper_id);
+
+
+-- =====================================================================
+-- scrape_progress
+-- Menyimpan progress pagination (offset "start") untuk scraping
+-- incremental per (repository, topic). Berfungsi sebagai source of
+-- truth yang persistent, sebagai fallback/backup kalau state di Redis
+-- hilang (mis. redeploy tanpa persistence, instance Redis baru, dll).
+-- =====================================================================
+
+-- gen_random_uuid() sudah built-in di Postgres 13+ (termasuk semua project
+-- Supabase saat ini), jadi tidak perlu create extension tambahan.
+
+create table if not exists public.scrape_progress (
+    id             uuid primary key default gen_random_uuid(),
+    repository     text not null,
+    topic          text not null,
+    start_offset   integer not null default 0,
+    status         text not null default 'active'
+                       check (status in ('active', 'done', 'paused')),
+    last_result_count integer,           -- jumlah hasil dari fetch terakhir (opsional, untuk observability)
+    last_error     text,                 -- pesan error terakhir kalau ada retry/failure
+    created_at     timestamptz not null default now(),
+    updated_at     timestamptz not null default now(),
+
+    constraint scrape_progress_repo_topic_uniq unique (repository, topic)
+);
+
+-- Index untuk query "ambil semua topic milik repository tertentu"
+-- (mis. saat inisialisasi ulang serving_topics)
+create index if not exists idx_scrape_progress_repository
+    on public.scrape_progress (repository);
+
+-- =====================================================================
+-- Trigger: auto-update kolom updated_at setiap kali row di-UPDATE
+-- =====================================================================
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+    new.updated_at = now();
+    return new;
+end;
+$$;
+
+drop trigger if exists trg_scrape_progress_updated_at on public.scrape_progress;
+
+create trigger trg_scrape_progress_updated_at
+    before update on public.scrape_progress
+    for each row
+    execute function public.set_updated_at();
+
+-- =====================================================================
+-- Upsert helper (opsional): satu statement untuk "insert atau update
+-- start_offset" tanpa perlu SELECT dulu dari sisi aplikasi.
+-- Dipanggil dari Python: select public.upsert_scrape_progress('arxiv','cs.AI', 5);
+-- =====================================================================
+
+create or replace function public.upsert_scrape_progress(
+    p_repository text,
+    p_topic text,
+    p_start_offset integer,
+    p_last_result_count integer default null,
+    p_status text default 'active'
+)
+returns public.scrape_progress
+language sql
+as $$
+    insert into public.scrape_progress (repository, topic, start_offset, last_result_count, status)
+    values (p_repository, p_topic, p_start_offset, p_last_result_count, p_status)
+    on conflict (repository, topic)
+    do update set
+        start_offset = excluded.start_offset,
+        last_result_count = excluded.last_result_count,
+        status = excluded.status
+    returning *;
+$$;
+
+-- =====================================================================
+-- Row Level Security
+-- Supabase mengaktifkan akses publik lewat anon/authenticated key
+-- secara default kalau RLS tidak diaktifkan. Karena tabel ini adalah
+-- state internal untuk Celery worker (biasanya pakai service_role key,
+-- yang otomatis bypass RLS), kita kunci total dari sisi anon/authenticated.
+-- =====================================================================
+
+alter table public.scrape_progress enable row level security;
+
+-- Tidak ada policy untuk anon/authenticated -> akses hanya lewat
+-- service_role key (dipakai backend/Celery worker), sesuai rekomendasi
+-- Supabase untuk tabel yang bukan untuk diakses langsung dari client.
 """
 
 

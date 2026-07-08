@@ -117,16 +117,16 @@ def _configure_beat_schedule(app: Celery) -> None:
 
     app.conf.beat_schedule = {
         # ── Main ingestion: every 6 hours per topic ──
-        **{
-            f"scrape-{topic.replace(' ', '-')}-periodic": {
-                "task": "atlazer.celery_app.tasks.scrape.scrape_topic",
-                "schedule": settings.scrape_interval_seconds,
-                "args": [topic],
-                "kwargs": {"max_results": settings.max_results_per_topic},
-                "options": {"queue": "scrape"},
-            }
-            for topic in settings.arxiv_topics
-        },
+        # **{
+        #     f"scrape-{topic.replace(' ', '-')}-periodic": {
+        #         "task": "atlazer.celery_app.tasks.scrape.scrape_topic",
+        #         "schedule": settings.scrape_interval_seconds,
+        #         "args": [topic],
+        #         "kwargs": {"max_results": settings.max_results_per_topic},
+        #         "options": {"queue": "scrape"},
+        #     }
+        #     for topic in settings.arxiv_topics
+        # },
         # ── Backfill trigger for each topic ──
         # Catatan: beat akan memicu ulang task ini secara periodik dari start=0.
         # Ini AMAN karena task sendiri akan skip kalau backfill sudah selesai

@@ -15,13 +15,22 @@ Mirrors the DDL in `storage/db.py`. Split into three models:
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal, Optional
 from uuid import UUID
 
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
-    TIMESTAMP, Integer, Boolean, ARRAY, Date, SmallInteger, Text, UniqueConstraint, func
+  TIMESTAMP,
+  Integer,
+  Boolean,
+  ARRAY,
+  Date,
+  SmallInteger,
+  Text,
+  UniqueConstraint,
+  func,
+  CheckConstraint
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .base import Base
@@ -33,60 +42,102 @@ from .base import Base
 
 
 class PaperORM(Base):
-    __tablename__ = "papers"
+  __tablename__ = "papers"
 
-    id: Mapped[UUID] = mapped_column(
-      PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
-    )
+  id: Mapped[UUID] = mapped_column(
+    PG_UUID(as_uuid=True),
+    primary_key=True,
+    server_default=func.gen_random_uuid()
+  )
 
-    doi: Mapped[str | None] = mapped_column(Text)
-    repository: Mapped[str] = mapped_column(Text, nullable=False)
-    identifier: Mapped[str] = mapped_column(Text, nullable=False)
-    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+  doi: Mapped[str | None] = mapped_column(Text)
+  repository: Mapped[str] = mapped_column(Text, nullable=False)
+  identifier: Mapped[str] = mapped_column(Text, nullable=False)
+  attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    abstract: Mapped[str | None] = mapped_column(Text)
-    year: Mapped[int | None] = mapped_column(SmallInteger)
-    date_published: Mapped[Date | None] = mapped_column(Date)
+  title: Mapped[str] = mapped_column(Text, nullable=False)
+  abstract: Mapped[str | None] = mapped_column(Text)
+  year: Mapped[int | None] = mapped_column(SmallInteger)
+  date_published: Mapped[Date | None] = mapped_column(Date)
 
-    authors: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
-    affiliations: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+  authors: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+  affiliations: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
 
-    venue: Mapped[str | None] = mapped_column(Text)
-    venue_type: Mapped[str | None] = mapped_column(Text)
-    publisher: Mapped[str | None] = mapped_column(Text)
-    volume: Mapped[str | None] = mapped_column(Text)
-    issue: Mapped[str | None] = mapped_column(Text)
-    pages: Mapped[str | None] = mapped_column(Text)
+  venue: Mapped[str | None] = mapped_column(Text)
+  venue_type: Mapped[str | None] = mapped_column(Text)
+  publisher: Mapped[str | None] = mapped_column(Text)
+  volume: Mapped[str | None] = mapped_column(Text)
+  issue: Mapped[str | None] = mapped_column(Text)
+  pages: Mapped[str | None] = mapped_column(Text)
 
-    keywords: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
-    fields_of_study: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
-    language: Mapped[str] = mapped_column(Text, nullable=False, server_default="en")
+  keywords: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+  fields_of_study: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+  language: Mapped[str] = mapped_column(Text, nullable=False, server_default="en")
 
-    pdf_url: Mapped[str | None] = mapped_column(Text)
-    open_access: Mapped[bool | None] = mapped_column(Boolean)
-    license: Mapped[str | None] = mapped_column(Text)
+  pdf_url: Mapped[str | None] = mapped_column(Text)
+  open_access: Mapped[bool | None] = mapped_column(Boolean)
+  license: Mapped[str | None] = mapped_column(Text)
 
-    references_count: Mapped[int | None] = mapped_column(Integer)
-    citations_count: Mapped[int | None] = mapped_column(Integer)
+  references_count: Mapped[int | None] = mapped_column(Integer)
+  citations_count: Mapped[int | None] = mapped_column(Integer)
 
-    processing_tool: Mapped[str | None] = mapped_column(Text)
-    processing_version: Mapped[str | None] = mapped_column(Text)
-    processing_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
-    error_message: Mapped[str | None] = mapped_column(Text)
+  processing_tool: Mapped[str | None] = mapped_column(Text)
+  processing_version: Mapped[str | None] = mapped_column(Text)
+  processing_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+  error_message: Mapped[str | None] = mapped_column(Text)
 
-    last_scraped_category: Mapped[str | None] = mapped_column(Text)
-    last_scraped_page: Mapped[str | None] = mapped_column(Text)
+  created_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
+  updated_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
 
-    created_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
-    updated_at: Mapped[TIMESTAMP] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
+  __table_args__ = (
+    UniqueConstraint("repository", "identifier", name="idx_papers_repo_identifier"),
+    # If a unique index on `doi` exists in the live DB (required for the
+    # doi-arbiter upsert below), declare it here too, e.g.:
+    # Index("idx_papers_doi_unique", "doi", unique=True,
+    #       postgresql_where=text("doi IS NOT NULL")),
+  )
 
-    __table_args__ = (
-        UniqueConstraint("repository", "identifier", name="idx_papers_repo_identifier"),
-        # If a unique index on `doi` exists in the live DB (required for the
-        # doi-arbiter upsert below), declare it here too, e.g.:
-        # Index("idx_papers_doi_unique", "doi", unique=True,
-        #       postgresql_where=text("doi IS NOT NULL")),
+
+class ScrapeProgressORM(Base):
+  """Persistent pagination progress per (repository, topic).
+
+  Dipakai sebagai fallback/backup kalau state di Redis hilang —
+  lihat `scrape_progress.sql` untuk skema DB & upsert function-nya.
+  """
+
+  __tablename__ = "scrape_progress"
+
+  id: Mapped[UUID] = mapped_column(
+    PG_UUID(as_uuid=True),
+    primary_key=True,
+    server_default=func.gen_random_uuid()
+  )
+  repository: Mapped[str] = mapped_column(Text, nullable=False)
+  topic: Mapped[str] = mapped_column(Text, nullable=False)
+  start_offset: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+  status: Mapped[str] = mapped_column(Text, nullable=False, server_default="active")
+  last_result_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+  last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+  created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+  # NOTE: DB punya trigger BEFORE UPDATE yang selalu men-set updated_at = now(),
+  # jadi ini akan ketimpa nilai trigger saat commit — tidak masalah kalau
+  # ORM juga kirim onupdate, tapi kalau mau jadi source of truth tunggal,
+  # cukup andalkan trigger dan hapus onupdate= di bawah.
+  updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+  __table_args__ = (
+    UniqueConstraint("repository", "topic", name="scrape_progress_repo_topic_uniq"),
+    CheckConstraint(
+      "status in ('active', 'done', 'paused')",
+      name="scrape_progress_status_check",
+    ),
+  )
+
+  def __repr__(self) -> str:  # pragma: no cover
+    return (
+      f"<ScrapeProgressORM repository={self.repository!r} "
+      f"topic={self.topic!r} start_offset={self.start_offset} status={self.status!r}>"
     )
 
 
@@ -166,9 +217,6 @@ class PaperCreate(BaseModel):
   processing_version: str | None = None
   error_message: str | None = None
 
-  last_scraped_category: str | None = None
-  last_scraped_page: str | None = None
-
   @field_validator("doi", mode="before")
   @classmethod
   def empty_doi_to_none(cls, v):
@@ -227,9 +275,6 @@ class PaperUpdate(BaseModel):
   processing_status: ProcessingStatus | None = None
   error_message: str | None = None
 
-  last_scraped_category: str | None = None
-  last_scraped_page: str | None = None
-
 
 # ---------------------------------------------------------------------------
 # Read — full row as returned from the DB
@@ -281,6 +326,3 @@ class PaperRead(BaseModel):
   processing_version: str | None = None
   processing_status: ProcessingStatus = "pending"
   error_message: str | None = None
-
-  last_scraped_category: str | None = None
-  last_scraped_page: str | None = None

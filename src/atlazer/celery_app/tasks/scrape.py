@@ -12,6 +12,7 @@ Flow:
 """
 
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -35,7 +36,9 @@ from atlazer.utils.dedup import (
     mark_as_queued,
     check_increment_process,
     set_increment_process,
-    clear_increment_process
+    set_topic_start,
+    reset_topic_start,
+    get_topic_start,
 )
 from atlazer.models.paper_schema import PaperMetadata
 from atlazer.config.settings import settings
@@ -286,20 +289,19 @@ def scrape_topic_incremental(
     max_results: int = 1,
     serving_topics: list = [],
 ) -> Dict[str, Any]:
-    # redis sudah menyimpan topic & halaman yang sedang diproses
+    # redis hanya menyimpan topic mana yang giliran diproses (pointer round-robin)
     process = check_increment_process(repository=repository) or None
     if process:
         topic = process.get("topic", '')
-        start = int(process.get("start", 1))
 
-    # safety net: kalau topic dari redis ternyata sudah tidak valid lagi
-    # (mis. config serving_topics berubah), reset ke topic pertama
+    # safety net: topic dari redis sudah tidak valid lagi -> reset ke topic pertama
     if topic not in serving_topics:
         topic = serving_topics[0]
-        start = 0
 
-    # topic_index dihitung ULANG setelah topic final diketahui
     topic_index = serving_topics.index(topic)
+
+    # start diambil dari state MILIK TOPIC INI SENDIRI, bukan dari 'process'
+    start = get_topic_start(repository=repository, topic=topic)
 
     log.info(
         "scrape_topic_incremental.start",
@@ -312,7 +314,7 @@ def scrape_topic_incremental(
         results = list(_query_arxiv(
             topic,
             sort_by=sort_by,
-            max_results=max_results + start,
+            max_results=max_results,
             start=start,
         ))
     except Exception as exc:
@@ -323,7 +325,7 @@ def scrape_topic_incremental(
             error=str(exc),
         )
         raise self.retry(exc=exc)
-    
+
     log.info(
         "scrape_topic_incremental.results_count",
         topic=topic,
@@ -335,28 +337,16 @@ def scrape_topic_incremental(
     next_index = (topic_index + 1) % len(serving_topics)
     next_topic = serving_topics[next_index]
 
-    # tidak ada hasil lagi -> topic ini selesai, lanjut ke topic berikutnya
-    # (wrap kembali ke topic pertama kalau sudah di ujung serving_topics)
+    # tidak ada hasil lagi -> topic ini selesai untuk sekarang, reset start-nya sendiri,
+    # lanjut ke topic berikutnya (yang start-nya juga diambil dari slotnya sendiri, bukan 0 paksa)
     if len(results) <= 0:
-        # bersihkan process lama untuk topic yang barusan selesai
-        clear_increment_process(repository=repository)
+        reset_topic_start(repository=repository, topic=topic)
+        set_increment_process(repository=repository, topic=next_topic, start=0)
 
         log.info(
             "scrape_topic_increment.next_topic",
-            start=0,
             topic=next_topic,
             process=process,
-        )
-
-        # scrape_topic_incremental.apply_async(
-        #     kwargs={"topic": next_topic, "sort_by": sort_by, "start": 0},
-        #     queue="scrape"
-        # )
-
-        set_increment_process(
-            repository=repository,
-            topic=next_topic,
-            start=0,
         )
 
         return {
@@ -365,55 +355,30 @@ def scrape_topic_incremental(
             "process": process,
         }
 
-    # ambil id baru dan tandai sebagai queued
     new_ids: List[str] = []
-    page_skipped = 0
-
     for result in results:
         arxiv_id = result.entry_id.split("/")[-1]
         if is_already_processed(arxiv_id, repository="arxiv"):
-            page_skipped += 1
             continue
         mark_as_queued(arxiv_id, repository="arxiv")
         new_ids.append(arxiv_id)
 
-    # halaman berikutnya untuk topic yang sama
+    # next_start ini MILIK topic yang barusan diproses, bukan untuk next_topic
     next_start = start + len(results)
+    set_topic_start(repository=repository, topic=topic, start=next_start)
 
-    set_increment_process(
-        repository=repository,
-        topic=next_topic,
-        start=next_start,
-    )
+    # pointer round-robin pindah ke topic berikutnya (start-nya nanti diambil dari slotnya sendiri saat gilirannya)
+    set_increment_process(repository=repository, topic=next_topic, start=next_start)
 
     if new_ids:
         job = group(
             scrape_paper_metadata.s(
                 arxiv_id,
                 repository="arxiv",
-                metadata={"scraped_category": topic, "scraped_page": next_start},
+                metadata={"scraped_category": topic, "scraped_page": str(next_start)},
             ).set(queue="scrape") for arxiv_id in new_ids
         )
         job.apply_async()
-
-        # trigger lagi task ini untuk lanjut ke halaman berikutnya di topic yang sama
-        # setelah semua task dalam job selesai
-        # chord(job)(
-        #     scrape_topic_incremental.apply_async(
-        #         kwargs={"topic": topic, "sort_by": sort_by, "start": next_start},
-        #         queue="scrape"
-        #     )
-        # )
-
-    else:
-        # Jika semua item di halaman ini sudah ada di DB, 
-        # kita HARUS men-trigger halaman berikutnya agar loop tidak putus.
-        # scrape_topic_incremental.si(
-        #     topic=topic,
-        #     sort_by=sort_by,
-        #     start=next_start,
-        # ).apply_async(queue="scrape")
-        pass
 
     return {
         "start": next_start,

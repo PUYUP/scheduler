@@ -119,8 +119,6 @@ def _write_paper(metadata: Dict[str, Any]) -> str:
         open_access=True,
         processing_tool='grobid',
         processing_version='0.9.0',
-        last_scraped_page=metadata.get('scraped_page', None),
-        last_scraped_category=metadata.get('scraped_category', None)
     )
 
     paper_depot = PaperDepot(db_pool)

@@ -19,7 +19,7 @@ import structlog
 from typing import cast, Dict, Any
 from atlazer.config.settings import settings
 from atlazer.celery_app.main import db_pool
-from atlazer.storage.paper import PaperDepot
+from atlazer.storage.progress import ScrapeProgressDepot
 
 log = structlog.get_logger(__name__)
 
@@ -126,17 +126,7 @@ def check_increment_process(repository: str) -> Dict[str, Any] | None:
     key = f"increment:{repository}"
     value = cast(Dict[str, Any], r.hgetall(key))
     if not value:
-        # getting from database
-        depot = PaperDepot(db_pool)
-        last = depot.get_last_paper(repository)
-        if not last:
-            return None
-
-        return {
-            "start": int(last.last_scraped_page),
-            "topic": last.last_scraped_category,
-            "repository": repository,
-        }
+        return None
     return value
 
 
@@ -171,3 +161,58 @@ def clear_increment_process(repository: str) -> None:
         repository=repository
     )
     return None
+
+
+def get_topic_start(repository: str, topic: str) -> int:
+    """Ambil offset paging untuk topic ini. Default 0 kalau belum pernah diproses."""
+    r = _get_redis()
+    value = cast(str, r.hget(f"scrape_topic_start:{repository}", topic))
+    if value is None:
+        # try getting from db
+        try:
+            depot = ScrapeProgressDepot(db_pool)
+            value = str(depot.get_start_offset(repository, topic, 0))
+        except Exception as e:
+            log.error("dedup.failed_to_get_topic_start_from_db",
+                repository=repository,
+                topic=topic,
+                error=str(e)
+            )
+            return 0
+    
+    return int(value) if value is not None else 0
+
+
+def set_topic_start(repository: str, topic: str, start: int) -> None:
+    r = _get_redis()
+    r.hset(f"scrape_topic_start:{repository}", topic, str(start))
+
+    # set in db too
+    try:
+        depot = ScrapeProgressDepot(db_pool)
+        depot.set_progress(repository, topic, start)
+    except Exception as e:
+        log.error("dedup.failed_to_set_topic_start_in_db",
+            repository=repository,
+            topic=topic,
+            start=start,
+            error=str(e)
+        )
+        return
+
+
+def reset_topic_start(repository: str, topic: str) -> None:
+    r = _get_redis()
+    r.hdel(f"scrape_topic_start:{repository}", topic)
+
+    # reset in db too
+    try:
+        depot = ScrapeProgressDepot(db_pool)
+        depot.set_progress(repository, topic, 0)
+    except Exception as e:
+        log.error("dedup.failed_to_reset_topic_start_in_db",
+            repository=repository,
+            topic=topic,
+            error=str(e)
+        )
+        return
