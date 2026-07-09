@@ -8,9 +8,6 @@ def main():
             "arxiv",
             1,
         ],
-        kwargs={
-            "serving_topics": settings.arxiv_topics
-        },
         queue="scrape"
     )
     print(f"Task ID: {result}")

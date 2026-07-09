@@ -16,6 +16,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import arxiv
 import httpx
 import structlog
@@ -43,6 +46,12 @@ from atlazer.models.paper_schema import PaperMetadata
 from atlazer.config.settings import settings
 
 log = structlog.get_logger(__name__)
+
+
+class TimeoutSession(requests.Session):
+    def request(self, *args, **kwargs):
+        kwargs.setdefault("timeout", 30.0)
+        return super().request(*args, **kwargs)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -573,6 +582,7 @@ def _query_arxiv(topic: str, max_results: int, sort_by: str, start: int = 0):
         delay_seconds=10,          # respect ArXiv rate limit
         num_retries=5,
     )
+    client._session = TimeoutSession()
     search = arxiv.Search(
         query=f"cat:{topic}",
         max_results=max_results,
@@ -582,8 +592,10 @@ def _query_arxiv(topic: str, max_results: int, sort_by: str, start: int = 0):
     return list(client.results(search, offset=start))
 
 
+
 def _fetch_single_paper(paper_id: str, repository: str):
     client = arxiv.Client(num_retries=3, delay_seconds=5)
+    client._session = TimeoutSession()
     search = arxiv.Search(id_list=[paper_id])
     results = list(client.results(search))
     if not results:
