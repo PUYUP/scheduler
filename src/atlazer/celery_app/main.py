@@ -151,11 +151,7 @@ def _configure_beat_schedule(app: Celery) -> None:
             "task": "atlazer.celery_app.tasks.scrape.scrape_topic_incremental",
             "schedule": settings.scrape_increment_interval_seconds,
             "args": ["cs.AI", "arxiv"],  # for starter only
-            "kwargs": {
-                "max_results": settings.max_results_per_topic,
-                "serving_topics": settings.arxiv_topics,
-                "start": 0,
-            },
+            "kwargs": { "start": 0 },
             "options": {"queue": "scrape"},
         },
         # ── Retry dead-letter queue items every hour ──

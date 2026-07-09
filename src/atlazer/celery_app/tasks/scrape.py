@@ -34,8 +34,7 @@ from atlazer.utils.dedup import (
     is_backfill_complete,
     mark_backfill_complete,
     mark_as_queued,
-    check_increment_process,
-    set_increment_process,
+    claim_next_topic,
     set_topic_start,
     reset_topic_start,
     get_topic_start,
@@ -286,30 +285,56 @@ def scrape_topic_incremental(
     repository: str = "arxiv",
     sort_by: str = "submittedDate",
     start: int = 0,
-    max_results: int = 1,
-    serving_topics: list = [],
 ) -> Dict[str, Any]:
-    # redis hanya menyimpan topic mana yang giliran diproses (pointer round-robin)
-    process = check_increment_process(repository=repository) or None
-    if process:
-        topic = process.get("topic", '')
+    serving_topics = settings.arxiv_topics
+    max_results = settings.max_results_per_topic
 
-    # safety net: topic dari redis sudah tidak valid lagi -> reset ke topic pertama
-    if topic not in serving_topics:
-        topic = serving_topics[0]
+    # FIX #1: hindari mutable default argument (`serving_topics: list = []`).
+    # Materialisasi list baru di setiap call.
+    serving_topics = list(serving_topics) if serving_topics else []
 
-    topic_index = serving_topics.index(topic)
-
+    # FIX #4: dedupe sambil menjaga urutan, biar `.index()` di bawah tidak
+    # salah menghitung posisi kalau ada topic yang ke-duplikat di list.
+    serving_topics = list(dict.fromkeys(serving_topics))
+ 
+    # FIX #2 (bug utama): validasi wajib di paling awal.
+    # Tanpa ini, `serving_topics[0]` di bawah bisa IndexError kalau list
+    # kosong, dan `len(serving_topics)` di modulo round-robin bisa
+    # ZeroDivisionError. Ini error konfigurasi (bukan error transient dari
+    # network/API), jadi tidak perlu di-retry -- langsung fail dengan pesan
+    # yang jelas supaya cepat ketahuan di monitoring/log, bukan stacktrace
+    # IndexError yang membingungkan.
+    if not serving_topics:
+        log.error(
+            "scrape_topic_incremental.empty_serving_topics",
+            repository=repository,
+        )
+        raise ValueError(
+            f"serving_topics cant be empty for {repository}"
+        )
+ 
+    # FIX #6 (race condition): dulu ini "baca pointer -> (nanti, lama setelah
+    # query arxiv) tulis pointer lagi" -- dua worker yang jalan bersamaan bisa
+    # baca pointer yang sama dan memproses topic yang sama dua kali.
+    # claim_next_topic() melakukan baca+tulis pointer dalam SATU critical
+    # section pendek yang dilindungi lock, lalu lock langsung dilepas SEBELUM
+    # query arxiv yang lambat dijalankan -- jadi tidak ada worker lain yang
+    # ikut menunggu network call, tapi klaim topic-nya tetap atomic.
+    claim = claim_next_topic(repository=repository, serving_topics=serving_topics)
+    topic = claim["topic"]
+    next_topic = claim["next_topic"]
+    process = claim["process"]
+ 
     # start diambil dari state MILIK TOPIC INI SENDIRI, bukan dari 'process'
     start = get_topic_start(repository=repository, topic=topic)
-
+ 
     log.info(
         "scrape_topic_incremental.start",
         topic=topic,
         start=start,
         process=process,
     )
-
+ 
     try:
         results = list(_query_arxiv(
             topic,
@@ -318,43 +343,48 @@ def scrape_topic_incremental(
             start=start,
         ))
     except Exception as exc:
+        # FIX #3: tambahkan exc_info supaya stacktrace asli tetap tercatat,
+        # tidak cuma str(exc). except Exception tetap luas karena client
+        # arxiv bisa lempar bermacam-macam error (network, parsing, dll),
+        # tapi minimal traceback lengkap ada di log untuk debugging.
         log.error(
             "scrape_topic_incremental.query_failed",
             topic=topic,
             start=start,
             error=str(exc),
+            exc_info=True,
         )
         raise self.retry(exc=exc)
-
+ 
     log.info(
         "scrape_topic_incremental.results_count",
         topic=topic,
         start=start,
-        results=results,
+        # FIX #5: jangan log objek `results` mentah (bisa besar / berisi
+        # data yang tidak perlu masuk log). Cukup id-nya saja.
+        result_ids=[r.entry_id.split("/")[-1] for r in results],
         count=len(results),
     )
-
-    next_index = (topic_index + 1) % len(serving_topics)
-    next_topic = serving_topics[next_index]
-
-    # tidak ada hasil lagi -> topic ini selesai untuk sekarang, reset start-nya sendiri,
-    # lanjut ke topic berikutnya (yang start-nya juga diambil dari slotnya sendiri, bukan 0 paksa)
+ 
+    # tidak ada hasil lagi -> topic ini selesai untuk sekarang, reset start-nya sendiri.
+    # Pointer round-robin (topic -> next_topic) sudah diklaim & dipindah secara
+    # atomic di claim_next_topic() di atas, jadi tidak perlu set_increment_process
+    # lagi di sini.
     if len(results) <= 0:
         reset_topic_start(repository=repository, topic=topic)
-        set_increment_process(repository=repository, topic=next_topic, start=0)
-
+ 
         log.info(
             "scrape_topic_increment.next_topic",
             topic=next_topic,
             process=process,
         )
-
+ 
         return {
             "start": 0,
             "topic": next_topic,
             "process": process,
         }
-
+ 
     new_ids: List[str] = []
     for result in results:
         arxiv_id = result.entry_id.split("/")[-1]
@@ -362,14 +392,16 @@ def scrape_topic_incremental(
             continue
         mark_as_queued(arxiv_id, repository="arxiv")
         new_ids.append(arxiv_id)
-
+ 
     # next_start ini MILIK topic yang barusan diproses, bukan untuk next_topic
     next_start = start + len(results)
     set_topic_start(repository=repository, topic=topic, start=next_start)
-
-    # pointer round-robin pindah ke topic berikutnya (start-nya nanti diambil dari slotnya sendiri saat gilirannya)
-    set_increment_process(repository=repository, topic=next_topic, start=next_start)
-
+ 
+    # Pointer round-robin (topic -> next_topic) sudah dipindah secara atomic
+    # oleh claim_next_topic() di awal function -- tidak perlu set_increment_process
+    # lagi di sini. start-nya sendiri per-topic tetap disimpan lewat set_topic_start
+    # di atas, dibaca lagi lewat get_topic_start() saat gilirannya next_topic tiba.
+ 
     if new_ids:
         job = group(
             scrape_paper_metadata.s(
@@ -379,7 +411,7 @@ def scrape_topic_incremental(
             ).set(queue="scrape") for arxiv_id in new_ids
         )
         job.apply_async()
-
+ 
     return {
         "start": next_start,
         "topic": next_topic,

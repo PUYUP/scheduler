@@ -5,6 +5,7 @@ from atlazer.models.user import ProfileUpdate
 from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.matcher import paper_for_user
 from atlazer.storage.user import UserDepot
+from atlazer.storage.matcher import MatcherDepot
 
 import random
 
@@ -14,8 +15,12 @@ def generate_placeholder_embedding(dim=1024, low=-1.0, high=1.0):
 
 
 def main():
-    results = paper_for_user()
-    print(f"Profiles: {results}")
+    paper_for_user()
+    
+    # user_a = results[0]
+    # embedding_a = user_a.intereset_embedding
+
+    # print(embedding_a)
 
     # embedding = generate_placeholder_embedding()
     # profile_id = "6461c0b8-aede-49ee-a4db-93ae6de988ce"

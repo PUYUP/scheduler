@@ -9,6 +9,7 @@ from sqlalchemy import select, or_
 from atlazer.celery_app.main import app
 from atlazer.models.user import ProfileORM
 from atlazer.celery_app.main import db_pool
+from atlazer.storage.matcher import MatcherDepot
 
 log = structlog.get_logger(__name__)
 
@@ -25,7 +26,14 @@ def paper_for_user(self) -> Dict[str, Any]:
     log.info("matcher.paper_for_user.start")
     
     profiles = _get_profiles(self)
-    print(profiles)
+    prof_a = profiles[1]
+    print(prof_a.get("id", None))
+    embed = prof_a.get("interest_embedding", None)
+    
+    depot = MatcherDepot(db_pool)
+    results = depot.match_papers_by_interest(embed)
+    for r in results:
+        print(r.pdf_url, ':', r.title)
     return {}
 
 
