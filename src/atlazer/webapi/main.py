@@ -5,12 +5,14 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 
 from atlazer.celery_app.tasks.webapi import generate_embeddings
+from atlazer.celery_app.tasks.matcher import paper_for_user
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
     EmbedChunksRequest,
     EmbedChunksResponse,
     EmbedParallelResponse,
     HealthResponse,
+    PaperMatcherRequest,
 )
 
 log = structlog.get_logger(__name__)
@@ -72,4 +74,22 @@ def embed_parallel(payload: EmbedChunksRequest):
         return EmbedParallelResponse(task_id=job.id)
     except Exception as e:
         log.error("webapi.embed-parallel.error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/paper-matcher", response_model=EmbedParallelResponse)
+def embed_parallel(payload: PaperMatcherRequest):
+    if embedder_service is None:
+        raise HTTPException(status_code=503, detail="Service is not ready yet.")
+    
+    try:
+        log.info("webapi.paper-matcher.start", profile_id=payload.profile_id)
+        job = paper_for_user.apply_async(
+            kwargs={"profile_id": payload.profile_id},
+            queue="webapi",
+        )
+        log.info("webapi.paper-matcher.success", task_id=job.id)
+        return EmbedParallelResponse(task_id=job.id)
+    except Exception as e:
+        log.error("webapi.paper-matcher.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

@@ -7,6 +7,10 @@ class EmbedChunksRequest(BaseModel):
     provision: Dict[str, Any] | None = None
 
 
+class PaperMatcherRequest(BaseModel):
+    profile_id: str
+
+
 class EmbedChunksResponse(BaseModel):
     chunks: List[Dict[str, Any]]
 

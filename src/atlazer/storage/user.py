@@ -1,10 +1,12 @@
 import logging
 import uuid
+from datetime import datetime, timezone
+from typing import List, Dict, Any
 
 from uuid import UUID
-from sqlalchemy import update, cast
+from sqlalchemy import select, update, cast, or_
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from atlazer.storage.db import DatabasePool
 from atlazer.models.user import ProfileUpdate, ProfileORM
@@ -28,6 +30,61 @@ class UserDepot:
             "next_processed_at": payload.next_processed_at
         }
 
+    def get_profiles_for_paper_matching(self) -> List[Dict[str, Any]]:
+        """Get profiles that are ready for paper matching."""
+        current_time = datetime.now(timezone.utc).isoformat()
+        
+        # Gunakan .is_(None) yang merupakan standar SQLAlchemy untuk perbandingan NULL
+        stmt = select(ProfileORM).where(
+            or_(
+                ProfileORM.next_processed_at.is_(None),
+                ProfileORM.next_processed_at < current_time
+            )
+        ).limit(10)
+
+        with self._pool.session() as session:
+            try:
+                profiles = session.execute(stmt).scalars().all()
+
+                return [
+                    {
+                        "id": p.id,
+                        "interest": p.interest,
+                        "interest_embedding": p.interest_embedding,
+                        "next_processed_at": p.next_processed_at.isoformat() if p.next_processed_at else None,
+                    }
+                    for p in profiles
+                ]
+            except Exception as e:
+                # Menggunakan logger.exception agar merekam stack-trace penuh
+                logger.exception("matcher.paper_for_user.failed: %s", str(e))
+                raise
+
+    def get_profile(self, uuid_str: str) -> ProfileORM:
+        """Mengambil data profile berdasarkan UUID string."""
+        try:
+            profile_uuid: UUID = uuid.UUID(uuid_str)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {uuid_str}")
+
+        stmt = select(ProfileORM).where(ProfileORM.id == profile_uuid)
+
+        try:
+            with self._pool.session() as session:
+                result = session.execute(stmt)
+                profile = result.scalar_one_or_none()
+
+                if profile is None:
+                    raise ProfileNotFoundError(
+                        f"Could not find profile "
+                        f"profile_id={profile_uuid!r}"
+                    )
+
+                return profile
+        except SQLAlchemyError:
+            logger.exception("Failed to fetch profile id=%s", profile_uuid)
+            raise
+
     def update_profile(self, uuid_str: str, payload: ProfileUpdate) -> None:
         values = self._values(payload)
         if not values:
@@ -36,14 +93,14 @@ class UserDepot:
         try:
             profile_uuid: UUID = uuid.UUID(uuid_str)
         except ValueError:
-            raise ValueError(f"Invalid UUID string format: {profile_uuid}")
+            raise ValueError(f"Invalid UUID string format: {uuid_str}")
 
         stmt = (
-            update(ProfileORM) \
-                .where(ProfileORM.id == profile_uuid) \
-                .values(**values) \
-                .returning(ProfileORM.id) \
-                .execution_options(synchronize_session="fetch")
+            update(ProfileORM)
+            .where(ProfileORM.id == profile_uuid)
+            .values(**values)
+            .returning(ProfileORM.id)
+            .execution_options(synchronize_session="fetch")
         )
 
         try:
