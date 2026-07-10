@@ -50,7 +50,7 @@ class ScrapeProgressDepot:
 
     def get_start_offset(self, repository: str, topic: str, default: int = 0) -> int:
         """Convenience wrapper around `get_progress` for callers that only
-        need the numeric offset (e.g. `scrape_topic_incremental`), without
+        need the numeric offset (e.g. `scrape_topic_increment`), without
         having to handle the `None` / detached-ORM-object case themselves.
         """
         row = self.get_progress(repository, topic)

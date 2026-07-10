@@ -91,7 +91,7 @@ task_routes = {
     # ── Scrape tier ──
     "atlazer.celery_app.tasks.scrape.scrape_topic":          {"queue": "scrape"},
     "atlazer.celery_app.tasks.scrape.scrape_topic_backfill": {"queue": "scrape"},
-    "atlazer.celery_app.tasks.scrape.scrape_topic_incremental": {"queue": "scrape"},
+    "atlazer.celery_app.tasks.scrape.scrape_topic_increment": {"queue": "scrape"},
     "atlazer.celery_app.tasks.scrape.scrape_paper_metadata": {"queue": "scrape"},
     "atlazer.celery_app.tasks.scrape.download_pdf":          {"queue": "scrape"},
 

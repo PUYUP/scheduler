@@ -277,20 +277,19 @@ def scrape_topic_backfill(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 1c of 5 — scrape_topic_incremental
+# Task 1c of 5 — scrape_topic_increment
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.scrape.scrape_topic_incremental",
+    name="atlazer.celery_app.tasks.scrape.scrape_topic_increment",
     bind=True,
     max_retries=3,
     default_retry_delay=300,
     queue="scrape",
     ignore_result=False,
 )
-def scrape_topic_incremental(
+def scrape_topic_increment(
     self,
-    topic: str,
     repository: str = "arxiv",
     sort_by: str = "submittedDate",
     start: int = 0,
@@ -315,7 +314,7 @@ def scrape_topic_incremental(
     # IndexError yang membingungkan.
     if not serving_topics:
         log.error(
-            "scrape_topic_incremental.empty_serving_topics",
+            "scrape_topic_increment.empty_serving_topics",
             repository=repository,
         )
         raise ValueError(
@@ -338,9 +337,11 @@ def scrape_topic_incremental(
     start = get_topic_start(repository=repository, topic=topic)
  
     log.info(
-        "scrape_topic_incremental.start",
+        "scrape_topic_increment.start",
         topic=topic,
         start=start,
+        repository=repository,
+        max_results=max_results,
         process=process,
     )
  
@@ -348,7 +349,7 @@ def scrape_topic_incremental(
         results = list(_query_arxiv(
             topic,
             sort_by=sort_by,
-            max_results=max_results,
+            max_results=max_results + start,
             start=start,
         ))
     except Exception as exc:
@@ -357,16 +358,17 @@ def scrape_topic_incremental(
         # arxiv bisa lempar bermacam-macam error (network, parsing, dll),
         # tapi minimal traceback lengkap ada di log untuk debugging.
         log.error(
-            "scrape_topic_incremental.query_failed",
+            "scrape_topic_increment.query_failed",
             topic=topic,
             start=start,
+            repository=repository,
             error=str(exc),
             exc_info=True,
         )
         raise self.retry(exc=exc)
  
     log.info(
-        "scrape_topic_incremental.results_count",
+        "scrape_topic_increment.results_count",
         topic=topic,
         start=start,
         # FIX #5: jangan log objek `results` mentah (bisa besar / berisi
@@ -386,31 +388,32 @@ def scrape_topic_incremental(
         # exception, jadi kita tidak bisa mengandalkan try/except untuk
         # mendeteksinya -- harus dicurigai manual, terutama di start=0.
         if start == 0:
-            log.warning("scrape_topic_incremental.suspicious_empty_first_page", topic=topic)
+            log.warning("scrape_topic_increment.suspicious_empty_first_page", topic=topic)
             # percobaan berikutnya dimulai dari 1
             set_topic_start(repository=repository, topic=topic, start=1)
-            raise self.retry(countdown=30)
 
         # reset_topic_start(repository=repository, topic=topic)
  
         log.info(
             "scrape_topic_increment.next_topic",
             topic=next_topic,
+            repository=repository,
             process=process,
         )
  
         return {
             "start": 0,
             "topic": next_topic,
+            "repository": repository,
             "process": process,
         }
  
     new_ids: List[str] = []
     for result in results:
         arxiv_id = result.entry_id.split("/")[-1]
-        if is_already_processed(arxiv_id, repository="arxiv"):
+        if is_already_processed(arxiv_id, repository=repository):
             continue
-        mark_as_queued(arxiv_id, repository="arxiv")
+        mark_as_queued(arxiv_id, repository=repository)
         new_ids.append(arxiv_id)
  
     # next_start ini MILIK topic yang barusan diproses, bukan untuk next_topic
@@ -426,7 +429,7 @@ def scrape_topic_incremental(
         job = group(
             scrape_paper_metadata.s(
                 arxiv_id,
-                repository="arxiv",
+                repository=repository,
                 metadata={"scraped_category": topic, "scraped_page": str(next_start)},
             ).set(queue="scrape") for arxiv_id in new_ids
         )
@@ -435,6 +438,7 @@ def scrape_topic_incremental(
     return {
         "start": next_start,
         "topic": next_topic,
+        "repository": repository,
         "process": process,
     }
 
@@ -496,7 +500,7 @@ def scrape_paper_metadata(
 
     metadata_dict = paper_metadata.model_dump(exclude_none=True)
 
-    # Merge metadata dari scrape topic incremental
+    # Merge metadata dari scrape topic increment
     if metadata:
         metadata_dict.update(metadata)
 

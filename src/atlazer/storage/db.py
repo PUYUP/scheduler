@@ -221,7 +221,7 @@ CREATE INDEX idx_chunks_type
 -- =====================================================================
 -- scrape_progress
 -- Menyimpan progress pagination (offset "start") untuk scraping
--- incremental per (repository, topic). Berfungsi sebagai source of
+-- increment per (repository, topic). Berfungsi sebagai source of
 -- truth yang persistent, sebagai fallback/backup kalau state di Redis
 -- hilang (mis. redeploy tanpa persistence, instance Redis baru, dll).
 -- =====================================================================
