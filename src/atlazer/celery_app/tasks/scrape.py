@@ -380,7 +380,18 @@ def scrape_topic_incremental(
     # atomic di claim_next_topic() di atas, jadi tidak perlu set_increment_process
     # lagi di sini.
     if len(results) <= 0:
-        reset_topic_start(repository=repository, topic=topic)
+        # ArXiv API dikenal kadang balas feed kosong dengan status sukses
+        # meskipun sebenarnya ada data (lihat: github.com/lukasschwab/arxiv.py/issues/43, #129).
+        # arxiv.py versi terbaru MENERIMA ini sebagai "tidak ada hasil" tanpa
+        # exception, jadi kita tidak bisa mengandalkan try/except untuk
+        # mendeteksinya -- harus dicurigai manual, terutama di start=0.
+        if start == 0:
+            log.warning("scrape_topic_incremental.suspicious_empty_first_page", topic=topic)
+            # percobaan berikutnya dimulai dari 1
+            set_topic_start(repository=repository, topic=topic, start=1)
+            raise self.retry(countdown=30)
+
+        # reset_topic_start(repository=repository, topic=topic)
  
         log.info(
             "scrape_topic_increment.next_topic",
@@ -590,7 +601,6 @@ def _query_arxiv(topic: str, max_results: int, sort_by: str, start: int = 0):
         sort_order=arxiv.SortOrder.Descending,
     )
     return list(client.results(search, offset=start))
-
 
 
 def _fetch_single_paper(paper_id: str, repository: str):
