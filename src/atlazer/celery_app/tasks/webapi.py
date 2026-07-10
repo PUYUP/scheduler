@@ -84,6 +84,7 @@ def generate_embeddings(
                 log.info("webapi.generate_embeddings.profile_interest.success", profile_id=profile_id, embedding=embedding)
             except Exception as e:
                 log.error("webapi.generate_embeddings.profile_interest.failed", error=str(e))
+                raise self.retry(exc=e)
 
     return {
         "chunks": embedded_chunks

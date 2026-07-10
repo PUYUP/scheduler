@@ -110,7 +110,8 @@ task_routes = {
     "atlazer.celery_app.tasks.webapi.generate_embeddings":   {"queue": "webapi"},
 
     # ── Matcher tier ──
-    "atlazer.celery_app.tasks.matcher.paper_fitter":         {"queue": "matcher"},
+    "atlazer.celery_app.tasks.matcher.single_user":          {"queue": "matcher"},
+    "atlazer.celery_app.tasks.matcher.batch_user":           {"queue": "matcher"},
 
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":                {"queue": "default"},

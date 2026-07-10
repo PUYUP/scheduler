@@ -3,7 +3,7 @@ from celery.utils.time import timezone
 from datetime import datetime
 from atlazer.models.user import ProfileUpdate
 from atlazer.celery_app.main import db_pool
-from atlazer.celery_app.tasks.matcher import paper_for_users, paper_for_user
+from atlazer.celery_app.tasks.matcher import single_user, batch_user
 from atlazer.storage.user import UserDepot
 from atlazer.storage.matcher import MatcherDepot
 
@@ -15,8 +15,8 @@ def generate_placeholder_embedding(dim=1024, low=-1.0, high=1.0):
 
 
 def main():
-    # paper_for_users()
-    paper_for_user('dc84e2fb-6c6d-4719-af12-1d792f136ed1')
+    # batch_user()
+    single_user('dc84e2fb-6c6d-4719-af12-1d792f136ed1')
     
     # user_a = results[0]
     # embedding_a = user_a.intereset_embedding
