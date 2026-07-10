@@ -25,7 +25,7 @@ log = structlog.get_logger(__name__)
     queue="matcher",
     ignore_result=False,
 )
-def single_user(self, profile_id: str) -> Dict[str, Any]:
+def single_user(self, profile_id: str) -> List[Dict[str, Any]]:
     log.info("matcher.single_user.start", profile_id=profile_id)
 
     try:
@@ -57,7 +57,15 @@ def single_user(self, profile_id: str) -> Dict[str, Any]:
             profile_id=profile_id,
             matches_count=len(results),
         )
-        return {}
+
+        return [
+            {
+                "id": r.id,
+                "pdf_url": r.pdf_url,
+                "title": r.title,
+            }
+            for r in results
+        ]
 
     except Exception as e:
         log.error("matcher.single_user.failed", profile_id=profile_id, error=str(e))

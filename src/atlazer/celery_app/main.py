@@ -150,7 +150,7 @@ def _configure_beat_schedule(app: Celery) -> None:
         "scrape-topic-increment": {
             "task": "atlazer.celery_app.tasks.scrape.scrape_topic_increment",
             "schedule": settings.scrape_increment_interval_seconds,
-            "args": ["cs.AI", "arxiv"],  # for starter only
+            "args": ["arxiv"],
             "kwargs": { "start": 0 },
             "options": {"queue": "scrape"},
         },
