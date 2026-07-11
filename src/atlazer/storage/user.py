@@ -84,6 +84,31 @@ class UserDepot:
         except SQLAlchemyError:
             logger.exception("Failed to fetch profile id=%s", profile_uuid)
             raise
+    
+    def get_profile_by_user_id(self, user_id: str) -> ProfileORM:
+        """Mengambil data profile berdasarkan User ID string."""
+        try:
+            user_uuid: UUID = uuid.UUID(user_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {user_id}")
+
+        stmt = select(ProfileORM).where(ProfileORM.user_id == user_uuid)
+
+        try:
+            with self._pool.session() as session:
+                result = session.execute(stmt)
+                profile = result.scalar_one_or_none()
+
+                if profile is None:
+                    raise ProfileNotFoundError(
+                        f"Could not find profile "
+                        f"user_id={user_uuid!r}"
+                    )
+
+                return profile
+        except SQLAlchemyError:
+            logger.exception("Failed to fetch profile from user_id=%s", user_uuid)
+            raise
 
     def update_profile(self, uuid_str: str, payload: ProfileUpdate) -> None:
         values = self._values(payload)

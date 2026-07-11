@@ -70,7 +70,12 @@ class DocumentChunkORM(Base):
     """
     __tablename__ = "document_chunks"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+
     paper_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
     )

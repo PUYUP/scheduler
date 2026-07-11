@@ -16,7 +16,8 @@ def generate_placeholder_embedding(dim=1024, low=-1.0, high=1.0):
 
 def main():
     # batch_user()
-    single_user('dc84e2fb-6c6d-4719-af12-1d792f136ed1')
+    papers = single_user('dc84e2fb-6c6d-4719-af12-1d792f136ed1')
+    print(papers)
     
     # user_a = results[0]
     # embedding_a = user_a.intereset_embedding
