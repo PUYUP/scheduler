@@ -86,6 +86,23 @@ class MatcherDepot:
                 farthest_paper = farthest_row[0] if farthest_row is not None else None
                 farthest_distance = farthest_row[1] if farthest_row is not None else None
 
+                # Ambil semua chunk untuk paper_id yang relevan dalam SATU query,
+                # lalu kelompokkan per paper_id di sisi Python.
+                paper_ids = {p.id for p in (closest_paper, farthest_paper) if p is not None}
+
+                chunks_by_paper_id: Dict[Any, List[DocumentChunkORM]] = {}
+                if paper_ids:
+                    chunks_stmt = (
+                        select(DocumentChunkORM)
+                        .where(DocumentChunkORM.paper_id.in_(paper_ids))
+                        .order_by(
+                            DocumentChunkORM.paper_id.asc(),
+                            DocumentChunkORM.id.asc(),  # ganti ke chunk_index jika ada
+                        )
+                    )
+                    for chunk in session.execute(chunks_stmt).scalars().all():
+                        chunks_by_paper_id.setdefault(chunk.paper_id, []).append(chunk)
+
                 result: Dict[str, List[Dict[str, Any]]] = {
                     "closest": [],
                     "farthest": [],
@@ -97,6 +114,7 @@ class MatcherDepot:
                             "paper": closest_paper,
                             "distance": closest_distance,
                             "relevance_score": 1 - closest_distance,
+                            "chunks": chunks_by_paper_id.get(closest_paper.id, []),
                         }
                     )
 
@@ -108,6 +126,7 @@ class MatcherDepot:
                             "paper": farthest_paper,
                             "distance": farthest_distance,
                             "relevance_score": 1 - farthest_distance,
+                            "chunks": chunks_by_paper_id.get(farthest_paper.id, []),
                         }
                     )
 

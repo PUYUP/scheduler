@@ -1,6 +1,6 @@
 import structlog
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import FastAPI, HTTPException
 
@@ -83,9 +83,9 @@ def paper_matcher(payload: PaperMatcherRequest):
         raise HTTPException(status_code=503, detail="Service is not ready yet.")
     
     try:
-        log.info("webapi.paper-matcher.start", profile_id=payload.profile_id)
+        log.info("webapi.paper-matcher.start", user_id=payload.user_id)
         job = single_user.apply_async(
-            kwargs={"profile_id": payload.profile_id},
+            kwargs={"metadata": {"user_id": payload.user_id}},
             queue="webapi",
         )
         log.info("webapi.paper-matcher.success", task_id=job.id)
@@ -93,3 +93,9 @@ def paper_matcher(payload: PaperMatcherRequest):
     except Exception as e:
         log.error("webapi.paper-matcher.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/gemini-batch-webhook")
+def gemini_batch_webhook(payload: Any):
+    log.info("webapi.gemini-batch-webhook.start", payload=payload)
+    return {"status": "ok"}

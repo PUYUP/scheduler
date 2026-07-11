@@ -7,11 +7,12 @@ from datetime import date
 def main():
     try:
         user_id = "a1ffa462-1595-4373-92ff-2d422cbef153"
-        user_papers = single_user(user_id)
+        user_papers = single_user({"user_id": user_id})
         target_date = date(2022, 1, 1)
         depot = ChallengeDepot(db_pool)
         challenge = depot.insert_challenge(user_id=user_id, target_date=target_date, papers=user_papers)
         print(f"Challenge created with ID: {challenge.id}")
+
     except Exception as e:
         print(e)
 

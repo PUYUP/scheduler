@@ -16,7 +16,7 @@ def generate_placeholder_embedding(dim=1024, low=-1.0, high=1.0):
 
 def main():
     # batch_user()
-    papers = single_user('dc84e2fb-6c6d-4719-af12-1d792f136ed1')
+    papers = single_user({'user_id': 'a1ffa462-1595-4373-92ff-2d422cbef153'})
     print(papers)
     
     # user_a = results[0]

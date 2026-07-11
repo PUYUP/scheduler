@@ -8,7 +8,7 @@ class EmbedChunksRequest(BaseModel):
 
 
 class PaperMatcherRequest(BaseModel):
-    profile_id: str
+    user_id: str
 
 
 class EmbedChunksResponse(BaseModel):

@@ -15,7 +15,7 @@ from sqlalchemy import (
     CheckConstraint
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB, DateTime
 from atlazer.models.base import Base
 
 
@@ -66,7 +66,17 @@ class ChallengePaperORM(Base):
         index=True,
         nullable=False
     )
-    
+
+    # Processing
+    processing_type: Mapped[Optional[str]] = mapped_column(String(255))
+    processing_tool: Mapped[Optional[str]] = mapped_column(String(255))
+    processing_status: Mapped[Optional[str]] = mapped_column(String(255))
+    processing_model: Mapped[Optional[str]] = mapped_column(String(255))
+    processing_result: Mapped[Optional[JSONB]] = mapped_column(JSONB)
+    processing_job_id: Mapped[Optional[str]] = mapped_column(String(255))
+    processing_created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    processing_finished_at: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+
     # Optional[Decimal] karena mungkin ada kasus nilai ini kosong sementara, 
     # hapus Optional jika wajib diisi dari awal.
     relevance_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(3, 2))

@@ -1,38 +1,38 @@
 from __future__ import annotations
 
 import structlog
-
-from datetime import datetime, timezone
 from typing import List, Dict, Any
-from sqlalchemy import select, or_
 
-from atlazer.celery_app.main import app
+from celery import group
+from atlazer.celery_app.main import app, db_pool
 from atlazer.models.user import ProfileORM
-from atlazer.celery_app.main import db_pool
 from atlazer.storage.matcher import MatcherDepot
 from atlazer.storage.user import UserDepot
+from atlazer.storage.paper import PaperDepot
+from atlazer.utils.gemini_batch import create_batch_job
 
 log = structlog.get_logger(__name__)
 
 
 def _serialize_matches(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Ubah list match (dict berisi paper + distance + relevance_score) menjadi
-    list dict yang siap dikirim/di-log.
+    Convert a list of matches into a serialized list of dictionaries.
     """
-    serialized = []
-    for m in matches:
-        paper = m["paper"]
-        serialized.append(
-            {
-                "id": paper.id,
-                "pdf_url": paper.pdf_url,
-                "title": paper.title,
-                "distance": m["distance"],
-                "relevance_score": m["relevance_score"],
-            }
-        )
-    return serialized
+    return [
+        {
+            "id": m["paper"].id,
+            "pdf_url": m["paper"].pdf_url,
+            "title": m["paper"].title,
+            "distance": m["distance"],
+            "relevance_score": m["relevance_score"],
+        }
+        for m in matches
+    ]
+
+
+def _get_profiles() -> List[Dict[str, Any]]:
+    """Get profiles that are ready for matching."""
+    return UserDepot(db_pool).get_profiles_for_paper_matching()
 
 
 @app.task(
@@ -45,26 +45,30 @@ def _serialize_matches(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     queue="matcher",
     ignore_result=False,
 )
-def single_user(self, user_id: str) -> Dict[str, List[Dict[str, Any]]]:
+def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    user_id = metadata.get("user_id")
     log.info("matcher.single_user.start", user_id=user_id)
 
     empty_result: Dict[str, List[Dict[str, Any]]] = {"closest": [], "farthest": []}
 
+    if not user_id:
+        log.error("matcher.single_user.missing_user_id")
+        return {**metadata, **empty_result}
+
     try:
-        depot = UserDepot(db_pool)
-        profile = depot.get_profile_by_user_id(user_id)
+        profile = UserDepot(db_pool).get_profile_by_user_id(user_id)
+        
+        # Guard clause: check profile and embedding simultaneously
+        if not profile or not profile.interest_embedding:
+            log.error(
+                "matcher.single_user.no_profile_or_embedding", 
+                user_id=user_id, 
+                has_profile=bool(profile)
+            )
+            return {**metadata, **empty_result}
 
-        if not profile:
-            log.error("matcher.single_user.no_profile", user_id=user_id)
-            return empty_result
-
-        embed = profile.interest_embedding
-        if embed is None:
-            log.error("matcher.single_user.no_embedding", user_id=user_id)
-            return empty_result
-
-        matcher_depot = MatcherDepot(db_pool)
-        results = matcher_depot.match_papers_by_interest(embed)
+        results = MatcherDepot(db_pool).match_papers_by_interest(profile.interest_embedding)
+        tasks = []
 
         for label, matches in results.items():
             for m in matches:
@@ -78,21 +82,32 @@ def single_user(self, user_id: str) -> Dict[str, List[Dict[str, Any]]]:
                     relevance_score=m["relevance_score"],
                 )
 
-        matches_count = len(results["closest"]) + len(results["farthest"])
+                tasks.append(
+                    summarizing_paper.s(
+                        metadata={
+                            "user_id": user_id,
+                            "paper_id": str(paper.id),
+                        },
+                    ).set(queue="matcher")
+                )
 
-        log.info(
-            "matcher.single_user.success",
-            user_id=user_id,
-            matches_count=matches_count,
-        )
+        if tasks:
+            group(tasks).apply_async()
+    
+        # Use .get() defensively in case the depot returns varying keys
+        matches_count = len(results.get("closest", [])) + len(results.get("farthest", []))
 
-        return {
-            "closest": _serialize_matches(results["closest"]),
-            "farthest": _serialize_matches(results["farthest"]),
-        }
+        log.info("matcher.single_user.success", user_id=user_id, matches_count=matches_count)
+
+        metadata.update({
+            "closest": _serialize_matches(results.get("closest", [])),
+            "farthest": _serialize_matches(results.get("farthest", [])),
+        })
+        return metadata
 
     except Exception as e:
-        log.error("matcher.single_user.failed", user_id=user_id, error=str(e))
+        # Added exc_info=True for better stack traces in your logs
+        log.error("matcher.single_user.failed", user_id=user_id, error=str(e), exc_info=True)
         raise self.retry(exc=e)
 
 
@@ -106,12 +121,11 @@ def single_user(self, user_id: str) -> Dict[str, List[Dict[str, Any]]]:
     queue="matcher",
     ignore_result=False,
 )
-def batch_user(self) -> Dict[str, Any]:
+def batch_user(self) -> Dict[str, int]:
     log.info("matcher.batch_user.start")
 
     try:
-        profiles = _get_profiles(self)
-
+        profiles = _get_profiles()
         if not profiles:
             log.info("matcher.batch_user.no_profiles")
             return {"processed_count": 0, "skipped_count": 0}
@@ -124,11 +138,8 @@ def batch_user(self) -> Dict[str, Any]:
             profile_id = prof.get("id")
             embed = prof.get("interest_embedding")
 
-            if embed is None:
-                log.error(
-                    "matcher.batch_user.no_embedding",
-                    profile_id=profile_id,
-                )
+            if not embed:
+                log.error("matcher.batch_user.no_embedding", profile_id=profile_id)
                 skipped_count += 1
                 continue
 
@@ -153,17 +164,49 @@ def batch_user(self) -> Dict[str, Any]:
             processed_count=processed_count,
             skipped_count=skipped_count,
         )
-        return {
-            "processed_count": processed_count,
-            "skipped_count": skipped_count,
-        }
+        return {"processed_count": processed_count, "skipped_count": skipped_count}
 
     except Exception as e:
-        log.error("matcher.batch_user.failed", error=str(e))
+        log.error("matcher.batch_user.failed", error=str(e), exc_info=True)
         raise self.retry(exc=e)
 
 
-def _get_profiles(self) -> List[Dict[str, Any]]:
-    """Get profiles that are ready for matching"""
-    depot = UserDepot(db_pool)
-    return depot.get_profiles_for_paper_matching()
+@app.task(
+    name="atlazer.celery_app.tasks.matcher.summarizing_paper",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=300,
+    soft_time_limit=300,
+    time_limit=360,
+    queue="matcher",
+    ignore_result=False,
+)
+def summarizing_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    user_id = metadata.get("user_id")
+    paper_id = metadata.get("paper_id")
+    
+    log.info("matcher.summarizing_paper.start", user_id=user_id, paper_id=paper_id)
+    
+    try:
+        chunks = PaperDepot(db_pool).get_chunks_by_paper_id(paper_id)
+        if not chunks:
+            log.error("matcher.summarizing_paper.no_chunks", paper_id=paper_id)
+            return metadata
+
+        # Send to Gemini
+        chunk_contents = [c.content for c in chunks]
+        job = create_batch_job(
+            documents=[chunk_contents], 
+            display_name=f"paper-summary-{user_id}-{paper_id}"
+        )
+        
+        metadata.update({
+            "chunks_count": len(chunk_contents),
+            "gemini_job_id": job.name
+        })
+        
+        return metadata
+        
+    except Exception as e:
+        log.error("matcher.summarizing_paper.failed", user_id=user_id, paper_id=paper_id, error=str(e), exc_info=True)
+        raise self.retry(exc=e)

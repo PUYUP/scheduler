@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import uuid
+
 from typing import List
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -220,3 +223,20 @@ class PaperDepot:
                 # setelah `with` block ini selesai (session close)
                 session.expunge(row)
             return row
+
+    def get_chunks_by_paper_id(self, paper_id: str) -> List[DocumentChunkORM] | None:
+        """Return chunks of a paper."""
+        try:
+            paper_uuid: UUID = uuid.UUID(paper_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {paper_id}")
+
+        stmt = (
+            select(DocumentChunkORM)
+            .where(DocumentChunkORM.paper_id == paper_uuid)
+        )
+
+        with self._pool.session() as session:
+            rows = session.execute(stmt).scalars().all()
+            return rows
+    
