@@ -22,7 +22,7 @@ def main():
     # papers = single_user({'user_id': user_id})
     # print(papers)
 
-    sss = summarize_paper({"user_id": user_id, "paper_id": paper_id, "language_code": "it"})
+    sss = summarize_paper({"user_id": user_id, "paper_id": paper_id, "language_code": "id"})
     print(sss)
 
     tasks = []

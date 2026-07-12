@@ -98,6 +98,14 @@ def _build_inline_request(
                     "conclusions": {
                         "type": "STRING",
                         "description": "Kesimpulan dari paper"
+                    },
+                    "limitations": {
+                        "type": "STRING",
+                        "description": "Keterbatasan, perdebatan, atau kelemahan dari metode maupun hasil penelitian dalam paper"
+                    },
+                    "future_works": {
+                        "type": "STRING",
+                        "description": "Potensi improvisasi, pengembangan, atau rekomendasi untuk penelitian selanjutnya"
                     }
                 },
                 "required": ["background", "methods", "results", "conclusions"]
@@ -108,9 +116,10 @@ def _build_inline_request(
 
 def create_batch_job(
     documents: Sequence[Sequence[str]],
-    model: str = "gemini-2.5-flash-lite",
+    model: str = "gemini-3.5-flash",
     display_name: Optional[str] = None,
-    language_code: str = 'en'
+    language_code: str = 'en',
+    user_id: Optional[str] = None
 ) -> Any:
     """
     Membuat batch processing job dari chunks langsung (inline), tanpa file/GCS.
@@ -138,8 +147,15 @@ def create_batch_job(
     ]
 
     config: dict[str, Any] = {}
+
     if display_name:
         config["display_name"] = display_name
+
+    if user_id:
+        config["webhook_config"] = {
+            "uris": ["https://tunnel.atlanize.com/gemini-batch-webhook"],
+            "user_metadata": {"user_id": user_id}
+        }
 
     try:
         job = client.batches.create(

@@ -207,7 +207,8 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         job = create_batch_job(
             documents=[chunk_contents], 
             display_name=f"paper-summary-{user_id}-{paper_id}",
-            language_code=language_code
+            language_code=language_code,
+            user_id=user_id
         )
         
         metadata.update({

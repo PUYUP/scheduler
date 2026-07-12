@@ -2,7 +2,7 @@ import structlog
 from contextlib import asynccontextmanager
 from typing import Optional, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
@@ -101,6 +101,7 @@ def paper_matcher(payload: PaperMatcherRequest):
 
 
 @app.post("/gemini-batch-webhook")
-def gemini_batch_webhook(payload: Any):
-    log.info("webapi.gemini-batch-webhook.start", payload=payload)
-    return {"status": "ok"}
+async def gemini_batch_webhook(request: Request):
+    body = await request.json()
+    log.info("webapi.gemini-batch-webhook.start", body=body)
+    return {"ok": True}
