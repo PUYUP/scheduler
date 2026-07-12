@@ -1,9 +1,11 @@
 import structlog
 from contextlib import asynccontextmanager
 from typing import Optional, Any
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request
 
+from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
@@ -14,6 +16,8 @@ from atlazer.webapi.schemas import (
     HealthResponse,
     PaperMatcherRequest,
 )
+from atlazer.utils.gemini_batch import get_batch_results
+from atlazer.storage.challenge import ChallengeDepot
 
 log = structlog.get_logger(__name__)
 embedder_service: Optional[BaseEmbedder] = None
@@ -104,4 +108,44 @@ def paper_matcher(payload: PaperMatcherRequest):
 async def gemini_batch_webhook(request: Request):
     body = await request.json()
     log.info("webapi.gemini-batch-webhook.start", body=body)
+
+    data = body.get("data")
+    user_metadata = body.get("user_metadata")
+    batch_type = body.get("type")
+
+    if data and user_metadata and batch_type == "batch.succeeded":
+        # getting batch result
+        log.info(
+            "webapi.gemini-batch-webhook.succeeded",
+            data=data,
+            user_metadata=user_metadata
+        )
+
+        batch_id = data.get("id")
+        user_id = user_metadata.get("user_id")
+        challenge_paper_id = user_metadata.get('challenge_paper_id')
+
+        if batch_id and user_id and challenge_paper_id:
+            try:
+                result = get_batch_results(batch_id)
+                log.info("webapi.gemini-batch-webhook.result", result=result)
+
+                # store result in database
+                depot = ChallengeDepot(db_pool)
+                depot.update_challenge_paper(
+                    challenge_paper_id=challenge_paper_id,
+                    update_data={
+                        "processing_result": result,
+                        "processing_tool": "google-gemini",
+                        "processing_model": "gemini-3.1-flash-lite",
+                        "processing_type": "summary_generation",
+                        "processing_status": "completed",
+                        "processing_job_id": batch_id,
+                        "processing_finished_at": datetime.now()
+                    }
+                )
+            except Exception as e:
+                log.error("webapi.gemini-batch-webhook.error", error=str(e))
+                raise HTTPException(status_code=500, detail=str(e))
+            
     return {"ok": True}

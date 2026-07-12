@@ -19,11 +19,11 @@ def main():
     # batch_user()
     user_id = 'a1ffa462-1595-4373-92ff-2d422cbef153'
     paper_id = '00d5fcce-dc7d-4dc1-9270-455528288465'
-    # papers = single_user({'user_id': user_id})
-    # print(papers)
+    papers = single_user({'user_id': user_id})
+    print(papers)
 
-    sss = summarize_paper({"user_id": user_id, "paper_id": paper_id, "language_code": "id"})
-    print(sss)
+    # sss = summarize_paper({"user_id": user_id, "paper_id": paper_id, "language_code": "id"})
+    # print(sss)
 
     tasks = []
 

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import structlog
 from typing import List, Dict, Any
+from datetime import datetime, timedelta
 
-from celery import group
+from celery import group, signature
 from atlazer.celery_app.main import app, db_pool
 from atlazer.models.user import ProfileORM
 from atlazer.storage.matcher import MatcherDepot
 from atlazer.storage.user import UserDepot
 from atlazer.storage.paper import PaperDepot
+from atlazer.storage.challenge import ChallengeDepot
 from atlazer.utils.gemini_batch import create_batch_job
 
 log = structlog.get_logger(__name__)
@@ -70,15 +72,46 @@ def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             return {**metadata, **empty_result}
 
         results = MatcherDepot(db_pool).match_papers_by_interest(profile.interest_embedding)
+        metadata.update({
+            "closest": _serialize_matches(results.get("closest", [])),
+            "farthest": _serialize_matches(results.get("farthest", [])),
+        })
+
+        # create challenge
+        target_date = datetime.now() + timedelta(days=2)
+        challenge_depot = ChallengeDepot(db_pool)
+        challenge = challenge_depot.insert_challenge(
+            user_id=user_id,
+            target_date=target_date,
+            papers=metadata,
+        )
+        challenge_id = str(challenge.id)
+
+        # map papers with challenge
+        # {"paper_id": "challenge_id"}
+        paper_to_challenge: Dict[str, str] = {}
+        for item in challenge.challenge_papers:
+            paper_id = str(item.paper_id)
+            paper_to_challenge[paper_id] = str(item.id)
+
+        metadata.update({
+            "challenge_id": challenge_id,
+        })
+
         tasks = []
 
         for label, matches in results.items():
             for m in matches:
                 paper = m["paper"]
+                paper_id = str(paper.id)
+                challenge_paper_id = paper_to_challenge.get(paper_id)
+
                 log.info(
                     "matcher.single_user.match",
                     user_id=user_id,
-                    category=label,
+                    label=label,
+                    paper_id=paper_id,
+                    challenge_paper_id=challenge_paper_id,
                     pdf_url=paper.pdf_url,
                     title=paper.title,
                     relevance_score=m["relevance_score"],
@@ -88,7 +121,9 @@ def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                     summarize_paper.s(
                         metadata={
                             "user_id": user_id,
-                            "paper_id": str(paper.id),
+                            "paper_id": paper_id,
+                            "challenge_id": challenge_id,
+                            "challenge_paper_id": challenge_paper_id,
                             "language_code": language_code,
                         },
                     ).set(queue="matcher")
@@ -102,10 +137,6 @@ def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
         log.info("matcher.single_user.success", user_id=user_id, matches_count=matches_count)
 
-        metadata.update({
-            "closest": _serialize_matches(results.get("closest", [])),
-            "farthest": _serialize_matches(results.get("farthest", [])),
-        })
         return metadata
 
     except Exception as e:
@@ -187,12 +218,16 @@ def batch_user(self) -> Dict[str, int]:
 def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     user_id = metadata.get("user_id")
     paper_id = metadata.get("paper_id")
+    challenge_id = metadata.get("challenge_id")
+    challenge_paper_id = metadata.get("challenge_paper_id")
     language_code = metadata.get("language_code", "en")
     
     log.info(
         "matcher.summarize_paper.start",
         user_id=user_id,
         paper_id=paper_id,
+        challenge_id=challenge_id,
+        challenge_paper_id=challenge_paper_id,
         language_code=language_code
     )
     
@@ -208,7 +243,10 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             documents=[chunk_contents], 
             display_name=f"paper-summary-{user_id}-{paper_id}",
             language_code=language_code,
-            user_id=user_id
+            user_id=user_id,
+            paper_id=paper_id,
+            challenge_id=challenge_id,
+            challenge_paper_id=challenge_paper_id,
         )
         
         metadata.update({

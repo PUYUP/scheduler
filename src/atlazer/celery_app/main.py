@@ -75,6 +75,7 @@ def _configure_queues(app: Celery) -> None:
     store_exchange   = Exchange("store",   type="direct")
     webapi_exchange  = Exchange("webapi",  type="direct")
     matcher_exchange = Exchange("matcher", type="direct")
+    challenge_exchange = Exchange("challenge", type="direct")
     dlx_exchange     = Exchange("dlx",     type="direct")   # dead-letter (nama saja; tidak ada semantik khusus di Redis)
 
     app.conf.task_queues = (
@@ -91,6 +92,8 @@ def _configure_queues(app: Celery) -> None:
         Queue("webapi",  webapi_exchange,  routing_key="webapi"),
         # ── Matcher ──
         Queue("matcher", matcher_exchange, routing_key="matcher"),
+        # ── Challenge ──
+        Queue("challenge", challenge_exchange, routing_key="challenge"),
         # ── Dead-letter sinks (diisi manual via on_task_failure, dikuras via
         #     tasks.maintenance.retry_dead_letters) ──
         Queue("dlx.scrape",   dlx_exchange, routing_key="dlx.scrape"),
@@ -99,6 +102,7 @@ def _configure_queues(app: Celery) -> None:
         Queue("dlx.store",    dlx_exchange, routing_key="dlx.store"),
         Queue("dlx.webapi",   dlx_exchange, routing_key="dlx.webapi"),
         Queue("dlx.matcher",  dlx_exchange, routing_key="dlx.matcher"),
+        Queue("dlx.challenge",  dlx_exchange, routing_key="dlx.challenge"),
     )
 
     app.conf.task_default_queue    = "default"
@@ -248,6 +252,7 @@ _TIER_PREFIXES = {
     "atlazer.celery_app.tasks.store.":   "store",
     "atlazer.celery_app.tasks.webapi.":  "webapi",
     "atlazer.celery_app.tasks.matcher.": "matcher",
+    "atlazer.celery_app.tasks.challenge.": "challenge",
 }
 
 

@@ -41,9 +41,14 @@ def get_batch_prompt(language_code: str) -> str:
         "ini, dipisahkan dengan marker '--- CHUNK BREAK ---'. Baca seluruh chunks "
         "sampai selesai sebelum menjawab, lalu buat SATU ringkasan utuh untuk "
         "keseluruhan paper (bukan ringkasan per chunk) dalam format JSON.\n\n"
-        f"CRITICAL INSTRUCTION: Translate and write all the values in the JSON output "
-        f"strictly in the language corresponding to this language code/name: '{language_code}'. "
-        "Only translate the values, keep the JSON keys strictly as defined in the schema."
+        "CRITICAL INSTRUCTIONS:\n"
+        f"1. Translate and write all the values in the JSON output strictly in the "
+        f"language corresponding to this language code/name: '{language_code}'. "
+        "Only translate the values, keep the JSON keys strictly as defined in the schema.\n"
+        "2. DO NOT use phrases like 'this paper', 'this study', 'the authors', 'artikel ini', "
+        "or any equivalent meta-phrases in the target language. Write the summary directly as "
+        "factual statements or explanations, completely removing any fluff or context indicating "
+        "that this is a summary of an academic paper."
     )
 
 
@@ -116,10 +121,13 @@ def _build_inline_request(
 
 def create_batch_job(
     documents: Sequence[Sequence[str]],
-    model: str = "gemini-3.5-flash",
+    model: str = "gemini-3.1-flash-lite",
     display_name: Optional[str] = None,
     language_code: str = 'en',
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    paper_id: Optional[str] = None,
+    challenge_id: Optional[str] = None,
+    challenge_paper_id: Optional[str] = None
 ) -> Any:
     """
     Membuat batch processing job dari chunks langsung (inline), tanpa file/GCS.
@@ -154,7 +162,13 @@ def create_batch_job(
     if user_id:
         config["webhook_config"] = {
             "uris": ["https://tunnel.atlanize.com/gemini-batch-webhook"],
-            "user_metadata": {"user_id": user_id}
+            "user_metadata": {
+                "user_id": user_id,
+                "paper_id": paper_id,
+                # this will be use for updating challenge paper processing
+                "challenge_id": challenge_id,
+                "challenge_paper_id": challenge_paper_id
+            }
         }
 
     try:

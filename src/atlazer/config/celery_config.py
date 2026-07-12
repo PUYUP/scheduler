@@ -17,6 +17,7 @@ imports = (
     "atlazer.celery_app.tasks.store",
     "atlazer.celery_app.tasks.webapi",
     "atlazer.celery_app.tasks.matcher",
+    "atlazer.celery_app.tasks.challenge",
     "atlazer.celery_app.tasks.maintenance",
 )
 
@@ -84,6 +85,12 @@ task_annotations = {
         "time_limit": 3600,
         "soft_time_limit": 3300,
     },
+    "atlazer.celery_app.tasks.challenge.*": {
+        "max_retries": 3,
+        "default_retry_delay": 60,
+        "time_limit": 3600,
+        "soft_time_limit": 3300,
+    },
 }
 
 # ─── Task Routing ─────────────────────────────────────────────────────────────
@@ -113,6 +120,9 @@ task_routes = {
     "atlazer.celery_app.tasks.matcher.single_user":          {"queue": "matcher"},
     "atlazer.celery_app.tasks.matcher.batch_user":           {"queue": "matcher"},
     "atlazer.celery_app.tasks.matcher.summarize_paper":      {"queue": "matcher"},
+
+    # ── Challenge tier ──
+    "atlazer.celery_app.tasks.challenge.generate_challenge": {"queue": "challenge"},
 
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":                {"queue": "default"},

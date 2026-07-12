@@ -75,6 +75,70 @@ class ChallengeDepot:
                 )
                 raise e
 
+
+    def update_challenge_paper(
+        self,
+        challenge_paper_id: str,
+        update_data: Dict[str, Any]
+    ) -> Optional[ChallengePaperORM]:
+        """
+        Memperbarui data ChallengePaperORM berdasarkan ID.
+        Mendukung partial update (PATCH). Hanya field yang ada di `update_data`
+        yang akan diubah.
+        
+        Args:
+            challenge_paper_id: UUID string dari challenge_paper yang ingin diubah.
+            update_data: Dictionary berisi field yang akan di-update, 
+                         contoh: {"relevance_label": "closest", "relevance_score": 0.85}
+        """
+        log.info("challenge_paper.start_update", id=challenge_paper_id, payload=update_data)
+
+        try:
+            cp_uuid: UUID = uuid.UUID(challenge_paper_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {challenge_paper_id}")
+
+        with self._db_pool.session() as session:
+            try:
+                # 1. Cari record yang ada
+                record = session.query(ChallengePaperORM).filter(
+                    ChallengePaperORM.id == cp_uuid
+                ).first()
+
+                if not record:
+                    log.warning("challenge_paper.not_found", id=challenge_paper_id)
+                    return None
+
+                # 2. Lakukan iterasi update_data dan lakukan patch (partial update)
+                for key, value in update_data.items():
+                    # Format nilai khusus agar konsisten dengan DB (jika field ada di payload)
+                    if key == "relevance_score":
+                        value = _to_decimal_score(value)
+
+                    # Update atribut secara dinamis jika properti tersebut ada di model
+                    if hasattr(record, key):
+                        setattr(record, key, value)
+                    else:
+                        log.debug("challenge_paper.ignore_unknown_field", field=key)
+
+                # 3. Simpan perubahan
+                session.commit()
+                session.refresh(record)
+                
+                log.info("challenge_paper.finish_update", id=challenge_paper_id)
+                return record
+
+            except Exception as e:
+                session.rollback()
+                log.error(
+                    "challenge_paper.error_update",
+                    id=challenge_paper_id,
+                    payload=update_data,
+                    error=str(e),
+                )
+                raise e
+    
+    
     @staticmethod
     def _build_challenge_paper_rows(
         challenge_id: UUID,

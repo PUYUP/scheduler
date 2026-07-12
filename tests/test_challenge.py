@@ -11,7 +11,10 @@ def main():
         target_date = date(2022, 1, 1)
         depot = ChallengeDepot(db_pool)
         challenge = depot.insert_challenge(user_id=user_id, target_date=target_date, papers=user_papers)
+        challenge_papers = challenge.challenge_papers
+
         print(f"Challenge created with ID: {challenge.id}")
+        print(f"Challenge papers: {challenge_papers}")
 
     except Exception as e:
         print(e)

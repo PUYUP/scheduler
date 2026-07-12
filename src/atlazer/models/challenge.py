@@ -39,7 +39,8 @@ class ChallengeORM(Base):
     # cascade="all, delete-orphan" memastikan konsistensi object di memory saat parent dihapus
     challenge_papers: Mapped[List["ChallengePaperORM"]] = relationship(
         back_populates="challenge", 
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        lazy="selectin"
     )
 
 
