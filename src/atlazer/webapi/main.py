@@ -85,7 +85,12 @@ def paper_matcher(payload: PaperMatcherRequest):
     try:
         log.info("webapi.paper-matcher.start", user_id=payload.user_id)
         job = single_user.apply_async(
-            kwargs={"metadata": {"user_id": payload.user_id}},
+            kwargs={
+                "metadata": {
+                    "user_id": payload.user_id,
+                    "language_code": payload.language_code
+                }
+            },
             queue="webapi",
         )
         log.info("webapi.paper-matcher.success", task_id=job.id)

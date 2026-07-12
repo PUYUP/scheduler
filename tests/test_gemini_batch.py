@@ -1,10 +1,13 @@
 from google import genai
+from atlazer.utils.gemini_batch import get_batch_results
 
 
 def batching_check():
     client = genai.Client()
-    job_name = "batches/08o8sddz5i075rdee26yt2cah22plpiv2s48"
+    job_name = "batches/a5meyu1fmpwpn37c2pwvknctvf4q1isgpjbl"
     batch_job = client.batches.get(name=job_name)
+    xxxxx = get_batch_results(job_name)
+    print(xxxxx)
     
     if batch_job.state.name == 'JOB_STATE_SUCCEEDED':
 

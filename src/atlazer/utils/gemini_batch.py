@@ -1,6 +1,7 @@
 import logging
-from typing import Any, Optional, Sequence
+import json
 
+from typing import Any, Optional, Sequence
 from dotenv import load_dotenv
 from google import genai
 
@@ -29,8 +30,26 @@ BATCH_PROMPT = (
 CHUNK_SEPARATOR = "\n\n--- CHUNK BREAK ---\n\n"
 
 
+def get_batch_prompt(language_code: str) -> str:
+    """
+    Menghasilkan prompt dinamis yang memaksa output ke bahasa target apa pun
+    (bisa berupa kode bahasa seperti 'en', 'es', 'ja', atau nama bahasa).
+    """
+    return (
+        "Berikut adalah isi lengkap sebuah paper akademik, yang dipecah menjadi "
+        "beberapa bagian (chunks) berurutan dan digabung jadi satu teks di bawah "
+        "ini, dipisahkan dengan marker '--- CHUNK BREAK ---'. Baca seluruh chunks "
+        "sampai selesai sebelum menjawab, lalu buat SATU ringkasan utuh untuk "
+        "keseluruhan paper (bukan ringkasan per chunk) dalam format JSON.\n\n"
+        f"CRITICAL INSTRUCTION: Translate and write all the values in the JSON output "
+        f"strictly in the language corresponding to this language code/name: '{language_code}'. "
+        "Only translate the values, keep the JSON keys strictly as defined in the schema."
+    )
+
+
 def _build_inline_request(
-    chunks: Sequence[str], prompt: str = BATCH_PROMPT
+    chunks: Sequence[str],
+    prompt: str = BATCH_PROMPT,
 ) -> dict[str, Any]:
     """
     Menyusun satu inline request dari SEMUA chunks milik satu dokumen.
@@ -58,15 +77,40 @@ def _build_inline_request(
                 "role": "user",
                 "parts": [{"text": combined}],
             }
-        ]
+        ],
+        "config": {
+            "response_mime_type": "application/json",
+            "response_schema": {
+                "type": "OBJECT",
+                "properties": {
+                    "background": {
+                        "type": "STRING",
+                        "description": "Latar belakang atau masalah dari paper"
+                    },
+                    "methods": {
+                        "type": "STRING",
+                        "description": "Metode penelitian yang digunakan"
+                    },
+                    "results": {
+                        "type": "STRING",
+                        "description": "Temuan utama dari paper"
+                    },
+                    "conclusions": {
+                        "type": "STRING",
+                        "description": "Kesimpulan dari paper"
+                    }
+                },
+                "required": ["background", "methods", "results", "conclusions"]
+            }
+        }
     }
 
 
 def create_batch_job(
     documents: Sequence[Sequence[str]],
-    model: str = "gemini-3.5-flash",
-    prompt: str = BATCH_PROMPT,
+    model: str = "gemini-2.5-flash-lite",
     display_name: Optional[str] = None,
+    language_code: str = 'en'
 ) -> Any:
     """
     Membuat batch processing job dari chunks langsung (inline), tanpa file/GCS.
@@ -86,6 +130,8 @@ def create_batch_job(
     """
     if not documents:
         raise ValueError("documents tidak boleh kosong")
+
+    prompt = get_batch_prompt(language_code)
 
     inline_requests = [
         _build_inline_request(chunks, prompt) for chunks in documents
@@ -126,26 +172,28 @@ def list_batch_jobs() -> Any:
     return client.batches.list()
 
 
-def get_batch_results(job_name: str) -> list[str]:
+def get_batch_results(job_name: str) -> list[Any]:
     """
-    Mengambil hasil dari batch job yang sudah selesai (JOB_STATE_SUCCEEDED).
-
-    Karena request-nya inline (bukan file GCS), hasilnya juga otomatis
-    balik inline lewat job.dest.inlined_responses, urut sesuai urutan
-    texts yang dikirim ke create_batch_job.
-
-    Args:
-        job_name: Nama batch job.
+    Mengambil hasil dari batch job yang sudah selesai (JOB_STATE_SUCCEEDED)
+    dan mengonversi teks JSON-nya menjadi Python dictionary.
 
     Returns:
-        List teks hasil generate. Kalau ada request yang gagal, elemen
-        yang bersangkutan diisi string error-nya.
+        List berisi dictionary hasil ringkasan. Kalau ada request yang gagal 
+        atau tidak bisa diparse, elemen tersebut diisi string error-nya.
     """
     job = client.batches.get(name=job_name)
-    results: list[str] = []
+    results: list[Any] = []
+    
     for inline_response in job.dest.inlined_responses:
         if inline_response.response:
-            results.append(inline_response.response.text)
+            response_text = inline_response.response.text
+            try:
+                # Mem-parsing teks JSON langsung jadi dict
+                parsed_json = json.loads(response_text)
+                results.append(parsed_json)
+            except json.JSONDecodeError:
+                results.append(f"JSON_ERROR: Gagal melakukan parse -> {response_text}")
         else:
             results.append(f"ERROR: {inline_response.error}")
+            
     return results

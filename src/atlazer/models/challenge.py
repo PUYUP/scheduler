@@ -7,7 +7,8 @@ from sqlalchemy import (
     event, 
     func, 
     String, 
-    Date, 
+    Date,
+    DateTime,
     Numeric, 
     Text, 
     ForeignKey, 
@@ -15,7 +16,7 @@ from sqlalchemy import (
     CheckConstraint
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB, DateTime
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from atlazer.models.base import Base
 
 

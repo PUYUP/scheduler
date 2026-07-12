@@ -9,6 +9,7 @@ class EmbedChunksRequest(BaseModel):
 
 class PaperMatcherRequest(BaseModel):
     user_id: str
+    language_code: str = 'en'
 
 
 class EmbedChunksResponse(BaseModel):

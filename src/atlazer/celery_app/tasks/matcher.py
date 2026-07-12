@@ -47,7 +47,9 @@ def _get_profiles() -> List[Dict[str, Any]]:
 )
 def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     user_id = metadata.get("user_id")
-    log.info("matcher.single_user.start", user_id=user_id)
+    language_code = metadata.get("language_code", "en")
+
+    log.info("matcher.single_user.start", user_id=user_id, language_code=language_code)
 
     empty_result: Dict[str, List[Dict[str, Any]]] = {"closest": [], "farthest": []}
 
@@ -59,7 +61,7 @@ def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         profile = UserDepot(db_pool).get_profile_by_user_id(user_id)
         
         # Guard clause: check profile and embedding simultaneously
-        if not profile or not profile.interest_embedding:
+        if profile is None or profile.interest_embedding is None:
             log.error(
                 "matcher.single_user.no_profile_or_embedding", 
                 user_id=user_id, 
@@ -83,10 +85,11 @@ def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 )
 
                 tasks.append(
-                    summarizing_paper.s(
+                    summarize_paper.s(
                         metadata={
                             "user_id": user_id,
                             "paper_id": str(paper.id),
+                            "language_code": language_code,
                         },
                     ).set(queue="matcher")
                 )
@@ -172,7 +175,7 @@ def batch_user(self) -> Dict[str, int]:
 
 
 @app.task(
-    name="atlazer.celery_app.tasks.matcher.summarizing_paper",
+    name="atlazer.celery_app.tasks.matcher.summarize_paper",
     bind=True,
     max_retries=3,
     default_retry_delay=300,
@@ -181,23 +184,30 @@ def batch_user(self) -> Dict[str, int]:
     queue="matcher",
     ignore_result=False,
 )
-def summarizing_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     user_id = metadata.get("user_id")
     paper_id = metadata.get("paper_id")
+    language_code = metadata.get("language_code", "en")
     
-    log.info("matcher.summarizing_paper.start", user_id=user_id, paper_id=paper_id)
+    log.info(
+        "matcher.summarize_paper.start",
+        user_id=user_id,
+        paper_id=paper_id,
+        language_code=language_code
+    )
     
     try:
         chunks = PaperDepot(db_pool).get_chunks_by_paper_id(paper_id)
         if not chunks:
-            log.error("matcher.summarizing_paper.no_chunks", paper_id=paper_id)
+            log.error("matcher.summarize_paper.no_chunks", paper_id=paper_id)
             return metadata
 
         # Send to Gemini
         chunk_contents = [c.content for c in chunks]
         job = create_batch_job(
             documents=[chunk_contents], 
-            display_name=f"paper-summary-{user_id}-{paper_id}"
+            display_name=f"paper-summary-{user_id}-{paper_id}",
+            language_code=language_code
         )
         
         metadata.update({
@@ -208,5 +218,5 @@ def summarizing_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         return metadata
         
     except Exception as e:
-        log.error("matcher.summarizing_paper.failed", user_id=user_id, paper_id=paper_id, error=str(e), exc_info=True)
+        log.error("matcher.summarize_paper.failed", user_id=user_id, paper_id=paper_id, error=str(e), exc_info=True)
         raise self.retry(exc=e)

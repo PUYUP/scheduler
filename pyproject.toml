@@ -73,6 +73,7 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "--cov=executor --cov-report=term-missing"
 
 [tool.setuptools]
