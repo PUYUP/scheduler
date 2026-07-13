@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from atlazer.storage.db import DatabasePool
 from atlazer.models.paper import PaperCreate, PaperORM
 from atlazer.models.document import DocumentChunkCreate, DocumentChunkORM
-from atlazer.models.challenge import ChallengePaperORM
+from atlazer.models.challenge import ChallengePaperORM, ChallengeORM
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,8 @@ class MatcherDepot:
                 # Subquery untuk paper yang sudah dichallenge user
                 challenged_subq = (
                     select(ChallengePaperORM.paper_id)
-                    .where(ChallengePaperORM.user_id == user_id)
+                    .join(ChallengeORM, ChallengeORM.id == ChallengePaperORM.challenge_id)
+                    .where(ChallengeORM.user_id == user_id)
                 )
 
                 # Query untuk mencari paper yang paling mirip, mengecualikan yang sudah ada

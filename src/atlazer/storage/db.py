@@ -309,6 +309,42 @@ alter table public.scrape_progress enable row level security;
 -- Tidak ada policy untuk anon/authenticated -> akses hanya lewat
 -- service_role key (dipakai backend/Celery worker), sesuai rekomendasi
 -- Supabase untuk tabel yang bukan untuk diakses langsung dari client.
+
+
+-- 1. Tipe data ENUM untuk status
+CREATE TYPE answer_status AS ENUM ('DRAFT', 'SUBMITTED', 'EVALUATED');
+
+-- 2. Tabel respons
+CREATE TABLE IF NOT EXISTS challenge_responses (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    challenge_id    UUID NOT NULL,
+    user_id         UUID NOT NULL, 
+    answer_text     TEXT, -- Diubah menjadi TEXT
+    embedding       VECTOR(1536), -- Dimensi vektor (contoh 1536 untuk OpenAI text-embedding-3-small)
+    status          answer_status NOT NULL DEFAULT 'DRAFT',
+    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    submitted_at    TIMESTAMPTZ,
+    
+    CONSTRAINT unique_user_challenge UNIQUE (challenge_id, user_id)
+);
+
+-- 3. Trigger untuk update waktu secara otomatis (sama seperti sebelumnya)
+CREATE OR REPLACE FUNCTION update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_challenge_responses_modtime
+BEFORE UPDATE ON challenge_responses
+FOR EACH ROW
+EXECUTE FUNCTION update_modified_column();
+
+-- 4. (Opsional) Buat Index HNSW untuk mempercepat pencarian semantik (Similarity Search)
+CREATE INDEX ON challenge_responses USING hnsw (embedding vector_cosine_ops);
 """
 
 
