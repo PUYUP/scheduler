@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from atlazer.storage.db import DatabasePool
 from atlazer.models.paper import PaperCreate, PaperORM
 from atlazer.models.document import DocumentChunkCreate, DocumentChunkORM
+from atlazer.models.challenge import ChallengePaperORM
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +38,16 @@ class MatcherDepot:
 
     def match_papers_by_interest(
         self,
-        interest_embedder: List[float],
+        user_id: str,
+        intereset_embedding: List[float],
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Mencari paper yang embedding chunk-nya paling MIRIP dan paling TIDAK
         MIRIP dengan embedding minat user, beserta relevance score-nya.
 
         Args:
-            interest_embedder: vector embedding minat user (dari profile user).
+            user_id: UUID dari user yang sedang dicarikan paper (dalam bentuk string).
+            intereset_embedding: vector embedding minat user (dari profile user).
 
         Returns:
             Dict[str, List[Dict[str, Any]]]: dict dengan 2 key -> "closest" dan
@@ -61,18 +64,28 @@ class MatcherDepot:
         """
         try:
             with self._db_pool.session() as session:
-                distance = DocumentChunkORM.embedding.cosine_distance(interest_embedder)
+                distance = DocumentChunkORM.embedding.cosine_distance(intereset_embedding)
 
+                # Subquery untuk paper yang sudah dichallenge user
+                challenged_subq = (
+                    select(ChallengePaperORM.paper_id)
+                    .where(ChallengePaperORM.user_id == user_id)
+                )
+
+                # Query untuk mencari paper yang paling mirip, mengecualikan yang sudah ada
                 closest_stmt = (
                     select(PaperORM, distance.label("distance"))
                     .join(DocumentChunkORM, DocumentChunkORM.paper_id == PaperORM.id)
+                    .where(PaperORM.id.not_in(challenged_subq))
                     .order_by(distance.asc())
                     .limit(1)
                 )
 
+                # Query untuk mencari paper yang paling tidak mirip, mengecualikan yang sudah ada
                 farthest_stmt = (
                     select(PaperORM, distance.label("distance"))
                     .join(DocumentChunkORM, DocumentChunkORM.paper_id == PaperORM.id)
+                    .where(PaperORM.id.not_in(challenged_subq))
                     .order_by(distance.desc())
                     .limit(1)
                 )

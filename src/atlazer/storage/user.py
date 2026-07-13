@@ -49,8 +49,10 @@ class UserDepot:
                 return [
                     {
                         "id": p.id,
+                        "user_id": p.user_id,
                         "interest": p.interest,
                         "interest_embedding": p.interest_embedding,
+                        "language_code": p.language_code,
                         "next_processed_at": p.next_processed_at.isoformat() if p.next_processed_at else None,
                     }
                     for p in profiles
@@ -144,4 +146,49 @@ class UserDepot:
                 session.commit()
         except SQLAlchemyError:
             logger.exception("Failed to update profile id=%s", profile_uuid)
+            raise
+
+    def bulk_update_profiles(self, uuid_strs: List[str], payload: ProfileUpdate) -> int:
+        """
+        Melakukan bulk update pada beberapa profile sekaligus berdasarkan list ID.
+        Mengembalikan jumlah baris (rowcount) yang berhasil di-update.
+        """
+        if not uuid_strs:
+            return 0
+
+        # Ambil dictionary dari payload
+        raw_values = self._values(payload)
+        
+        # FILTERING: Hanya simpan field yang TIDAK None
+        values = {k: v for k, v in raw_values.items() if v is not None}
+
+        # Jika setelah difilter ternyata kosong (tidak ada yang perlu diupdate), hentikan
+        if not values:
+            return 0
+
+        profile_uuids: List[UUID] = []
+        for uuid_str in uuid_strs:
+            try:
+                profile_uuids.append(uuid.UUID(uuid_str))
+            except ValueError:
+                raise ValueError(f"Invalid UUID string format in list: {uuid_str}")
+
+        stmt = (
+            update(ProfileORM)
+            .where(ProfileORM.id.in_(profile_uuids))
+            .values(**values) # Sekarang hanya berisi field yang benar-benar ada nilainya
+            .execution_options(synchronize_session="fetch")
+        )
+
+        try:
+            with self._pool.session() as session:
+                result = session.execute(stmt)
+                session.commit()
+                
+                updated_count = result.rowcount
+                logger.info("Bulk updated %d profiles", updated_count)
+                
+                return updated_count
+        except SQLAlchemyError:
+            logger.exception("Failed to bulk update profiles for %d IDs", len(uuid_strs))
             raise

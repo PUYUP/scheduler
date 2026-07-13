@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from celery import group, signature
 from atlazer.celery_app.main import app, db_pool
-from atlazer.models.user import ProfileORM
+from atlazer.models.user import ProfileORM, ProfileUpdate
 from atlazer.storage.matcher import MatcherDepot
 from atlazer.storage.user import UserDepot
 from atlazer.storage.paper import PaperDepot
@@ -50,6 +50,7 @@ def _get_profiles() -> List[Dict[str, Any]]:
 def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     user_id = metadata.get("user_id")
     language_code = metadata.get("language_code", "en")
+    intereset_embedding = metadata.get("intereset_embedding")
 
     log.info("matcher.single_user.start", user_id=user_id, language_code=language_code)
 
@@ -60,18 +61,26 @@ def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         return {**metadata, **empty_result}
 
     try:
-        profile = UserDepot(db_pool).get_profile_by_user_id(user_id)
-        
-        # Guard clause: check profile and embedding simultaneously
-        if profile is None or profile.interest_embedding is None:
-            log.error(
-                "matcher.single_user.no_profile_or_embedding", 
-                user_id=user_id, 
-                has_profile=bool(profile)
-            )
-            return {**metadata, **empty_result}
+        # getting interest from profile
+        if intereset_embedding is None:
+            profile = UserDepot(db_pool).get_profile_by_user_id(user_id)
+            
+            # Guard clause: check profile and embedding simultaneously
+            if profile is None or profile.interest_embedding is None:
+                log.error(
+                    "matcher.single_user.no_profile_or_embedding", 
+                    user_id=user_id, 
+                    has_profile=bool(profile)
+                )
+                return {**metadata, **empty_result}
+            intereset_embedding = profile.interest_embedding
 
-        results = MatcherDepot(db_pool).match_papers_by_interest(profile.interest_embedding)
+        # process with intereset embedding
+        results = MatcherDepot(db_pool).match_papers_by_interest(
+            user_id=user_id,
+            intereset_embedding=intereset_embedding
+        )
+
         metadata.update({
             "closest": _serialize_matches(results.get("closest", [])),
             "farthest": _serialize_matches(results.get("farthest", [])),
@@ -157,6 +166,7 @@ def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 )
 def batch_user(self) -> Dict[str, int]:
     log.info("matcher.batch_user.start")
+    user_depot = UserDepot(db_pool)
 
     try:
         profiles = _get_profiles()
@@ -165,33 +175,62 @@ def batch_user(self) -> Dict[str, int]:
             return {"processed_count": 0, "skipped_count": 0}
 
         matcher_depot = MatcherDepot(db_pool)
-        processed_count = 0
         skipped_count = 0
+        tasks_to_run = []
+        profile_ids = []
 
         for prof in profiles:
-            profile_id = prof.get("id")
+            profile_id = str(prof.get("id"))
+            user_id = str(prof.get("user_id"))
             embed = prof.get("interest_embedding")
+            language_code = prof.get("language_code", "en")
 
-            if not embed:
+            if embed is None or len(embed) == 0:
                 log.error("matcher.batch_user.no_embedding", profile_id=profile_id)
                 skipped_count += 1
                 continue
 
-            results = matcher_depot.match_papers_by_interest(embed)
+            # 1. Pastikan ID menjadi string (karena JSON tidak mendukung objek UUID natively)
+            # 2. Konversi NumPy array (embed) ke list python biasa
+            
+            payload = {
+                "user_id": user_id, 
+                "language_code": language_code,
+            }
+            
+            # Jika Anda mengirimkan embedding ke dalam payload:
+            if embed is not None:
+                # Cek apakah itu numpy array, lalu konversi
+                payload["interest_embedding"] = embed.tolist() if hasattr(embed, 'tolist') else embed
 
-            for label, matches in results.items():
-                for m in matches:
-                    paper = m["paper"]
-                    log.info(
-                        "matcher.batch_user.match",
-                        profile_id=profile_id,
-                        category=label,
-                        pdf_url=paper.pdf_url,
-                        title=paper.title,
-                        relevance_score=m["relevance_score"],
-                    )
+            tasks_to_run.append(single_user.s(payload).set(queue="matcher"))
 
-            processed_count += 1
+            # collect profile id for bulk update
+            profile_ids.append(profile_id)
+
+        processed_count = len(tasks_to_run)
+
+        # process user in parallel
+        if tasks_to_run:
+            # Bungkus semua task dalam group dan eksekusi secara paralel (asynchronous)
+            job_group = group(tasks_to_run)
+            result = job_group.apply_async()
+            
+            # PENTING: Jika Anda TIDAK butuh hasil return (metadata) di dalam task ini, 
+            # hindari menggunakan `result.get()` agar tidak terjadi deadlock pada worker.
+            # Biarkan task berjalan di background.
+            
+            # Namun, jika Anda SANGAT perlu menunggunya (misal untuk menghitung yang sukses), 
+            # Anda bisa memanggil `result.get()`. (Gunakan dengan hati-hati).
+            # metadata_list = result.get()
+
+            # update profile match result
+            user_depot.bulk_update_profiles(
+                profile_ids,
+                ProfileUpdate(
+                    next_processed_at=datetime.now() + timedelta(days=2)
+                )
+            )
 
         log.info(
             "matcher.batch_user.success",

@@ -158,6 +158,14 @@ def _configure_beat_schedule(app: Celery) -> None:
             "kwargs": { "start": 0 },
             "options": {"queue": "scrape"},
         },
+        # ── Matcher: batch user processing every 6 hours ──
+        "matcher-batch": {
+            "task": "atlazer.celery_app.tasks.matcher.batch_user",
+            "schedule": 300,
+            "args": [],
+            "kwargs": {},
+            "options": {"queue": "matcher"},
+        },
         # ── Retry dead-letter queue items every hour ──
         "retry-failed-scrape": {
             "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
