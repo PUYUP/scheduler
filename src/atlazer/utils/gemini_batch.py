@@ -48,7 +48,12 @@ def get_batch_prompt(language_code: str) -> str:
         "2. DO NOT use phrases like 'this paper', 'this study', 'the authors', 'artikel ini', "
         "or any equivalent meta-phrases in the target language. Write the summary directly as "
         "factual statements or explanations, completely removing any fluff or context indicating "
-        "that this is a summary of an academic paper."
+        "that this is a summary of an academic paper.\n"
+        "3. PRESERVE TECHNICAL JARGON & INDUSTRY TERMS: Do not translate standard technical terms, "
+        "academic jargon, widely accepted acronyms, or domain-specific nomenclature (for example: "
+        "'machine learning', 'zero-shot learning', 'overfitting', 'framework', etc.) if translating "
+        "them would make the text sound awkward, forced, or lose its precise scientific meaning "
+        "in the target language. Keep these terms in their original English/technical form."
     )
 
 
