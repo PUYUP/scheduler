@@ -117,13 +117,13 @@ class MatcherDepot:
                     for chunk in session.execute(chunks_stmt).scalars().all():
                         chunks_by_paper_id.setdefault(chunk.paper_id, []).append(chunk)
 
-                result: Dict[str, List[Dict[str, Any]]] = {
+                results: Dict[str, List[Dict[str, Any]]] = {
                     "closest": [],
                     "farthest": [],
                 }
 
                 if closest_paper is not None:
-                    result["closest"].append(
+                    results["closest"].append(
                         {
                             "paper": closest_paper,
                             "distance": closest_distance,
@@ -135,7 +135,7 @@ class MatcherDepot:
                 if farthest_paper is not None and (
                     closest_paper is None or farthest_paper.id != closest_paper.id
                 ):
-                    result["farthest"].append(
+                    results["farthest"].append(
                         {
                             "paper": farthest_paper,
                             "distance": farthest_distance,
@@ -146,10 +146,10 @@ class MatcherDepot:
 
                 logger.info(
                     "match_papers_by_interest -> closest=%d farthest=%d",
-                    len(result["closest"]),
-                    len(result["farthest"]),
+                    len(results["closest"]),
+                    len(results["farthest"]),
                 )
-                return result
+                return results
 
         except SQLAlchemyError:
             logger.exception(

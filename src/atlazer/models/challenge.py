@@ -120,7 +120,7 @@ class ChallengePaperSummaryORM(Base):
     tool: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     status: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    result: Mapped[Optional[JSONB]] = mapped_column(JSONB, nullable=True)
+    results: Mapped[Optional[JSONB]] = mapped_column(JSONB, nullable=True)
     job_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[TIMESTAMP] = mapped_column(

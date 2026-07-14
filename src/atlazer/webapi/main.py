@@ -130,7 +130,7 @@ async def gemini_batch_webhook(request: Request):
 
         if batch_id and user_id and challenge_paper_id:
             try:
-                result = get_batch_results(batch_id)
+                results = get_batch_results(batch_id)
                 log.info("webapi.gemini-batch-webhook.result", batch_id=batch_id)
 
                 # store result in database
@@ -138,7 +138,7 @@ async def gemini_batch_webhook(request: Request):
                 depot.update_challenge_paper_summary(
                     challenge_paper_summary_id=challenge_paper_summary_id,
                     update_data={
-                        "result": result,
+                        "results": results,
                         "tool": "google-gemini",
                         "model": "gemini-3.1-flash-lite",
                         "status": "completed",
