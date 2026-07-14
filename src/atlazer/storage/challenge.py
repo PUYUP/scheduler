@@ -7,7 +7,11 @@ from typing import List, Dict, Optional, Any
 from uuid import UUID
 
 from atlazer.storage.db import DatabasePool
-from atlazer.models.challenge import ChallengeORM, ChallengePaperORM
+from atlazer.models.challenge import (
+    ChallengeORM,
+    ChallengePaperORM,
+    ChallengePaperSummaryORM,
+)
 from atlazer.models.paper import PaperORM
 from sqlalchemy import insert
 
@@ -137,8 +141,101 @@ class ChallengeDepot:
                     error=str(e),
                 )
                 raise e
+
+
+    def insert_challenge_paper_summary(
+        self, 
+        data: Dict[str, Any],
+    ) -> Optional[ChallengePaperSummaryORM]:
+        """
+        Simpan ChallengePaperSummaryORM ke database. Datanya berasal dari pemprosesan summary
+        di ChallengePaper.
+
+        Args:
+            data: Dictionary berisi data ChallengePaperSummaryORM.
+        
+        Returns:
+            ChallengePaperSummaryORM yang sudah disimpan.
+        """
+        with self._db_pool.session() as session:
+            try:
+                record = ChallengePaperSummaryORM(**data)
+                session.add(record)
+                session.commit()
+                session.refresh(record)
+
+                log.info("challenge_paper_summary.finish_insert", id=record.id)
+                return record
+
+            except Exception as e:
+                session.rollback()
+                log.error(
+                    "challenge_paper_summary.error_insert",
+                    payload=data,
+                    error=str(e),
+                )
+                raise e
     
     
+    def update_challenge_paper_summary(
+        self,
+        challenge_paper_summary_id: str,
+        update_data: Dict[str, Any]
+    ) -> Optional[ChallengePaperSummaryORM]:
+        """
+        Memperbarui data ChallengePaperORM berdasarkan ID.
+        Mendukung partial update (PATCH). Hanya field yang ada di `update_data`
+        yang akan diubah.
+        
+        Args:
+            challenge_paper_summary_id: UUID string dari challenge_paper_summary yang ingin diubah.
+            update_data: Dictionary berisi field yang akan di-update, 
+                         contoh: {"relevance_label": "closest", "relevance_score": 0.85}
+        """
+        log.info("challenge_paper_summary.start_update", id=challenge_paper_summary_id, payload=update_data)
+
+        try:
+            cps_uuid: UUID = uuid.UUID(challenge_paper_summary_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {challenge_paper_summary_id}")
+
+        with self._db_pool.session() as session:
+            try:
+                # 1. Cari record yang ada
+                record = session.query(ChallengePaperSummaryORM).filter(
+                    ChallengePaperSummaryORM.id == cps_uuid
+                ).first()
+
+                if not record:
+                    log.warning("challenge_paper_summary.not_found", id=challenge_paper_summary_id)
+                    return None
+
+                # 2. Lakukan iterasi update_data dan lakukan patch (partial update)
+                for key, value in update_data.items():
+                    # Update atribut secara dinamis jika properti tersebut ada di model
+                    if hasattr(record, key):
+                        setattr(record, key, value)
+                    else:
+                        log.debug("challenge_paper_summary.ignore_unknown_field", field=key)
+
+                # 3. Simpan perubahan
+                session.commit()
+                session.refresh(record)
+                
+                log.info("challenge_paper_summary.finish_update", id=challenge_paper_summary_id)
+                return record
+
+            except Exception as e:
+                session.rollback()
+                log.error(
+                    "challenge_paper_summary.error_update",
+                    id=challenge_paper_summary_id,
+                    payload=update_data,
+                    error=str(e),
+                )
+                raise e
+
+
     @staticmethod
     def _build_challenge_paper_rows(
         challenge_id: UUID,

@@ -123,25 +123,27 @@ async def gemini_batch_webhook(request: Request):
 
         batch_id = data.get("id")
         user_id = user_metadata.get("user_id")
-        challenge_paper_id = user_metadata.get('challenge_paper_id')
+        challenge_paper_id = user_metadata.get("challenge_paper_id")
+        challenge_paper_summary_id = user_metadata.get("challenge_paper_summary_id")
+        paper_id = user_metadata.get("paper_id")
+        challenge_id = user_metadata.get("challenge_id")
 
         if batch_id and user_id and challenge_paper_id:
             try:
                 result = get_batch_results(batch_id)
-                log.info("webapi.gemini-batch-webhook.result", result=result)
+                log.info("webapi.gemini-batch-webhook.result", batch_id=batch_id)
 
                 # store result in database
                 depot = ChallengeDepot(db_pool)
-                depot.update_challenge_paper(
-                    challenge_paper_id=challenge_paper_id,
+                depot.update_challenge_paper_summary(
+                    challenge_paper_summary_id=challenge_paper_summary_id,
                     update_data={
-                        "processing_result": result,
-                        "processing_tool": "google-gemini",
-                        "processing_model": "gemini-3.1-flash-lite",
-                        "processing_type": "summary_generation",
-                        "processing_status": "completed",
-                        "processing_job_id": batch_id,
-                        "processing_finished_at": datetime.now()
+                        "result": result,
+                        "tool": "google-gemini",
+                        "model": "gemini-3.1-flash-lite",
+                        "status": "completed",
+                        "job_id": batch_id,
+                        "finished_at": datetime.now(),
                     }
                 )
             except Exception as e:

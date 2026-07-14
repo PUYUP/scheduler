@@ -320,7 +320,7 @@ CREATE TABLE IF NOT EXISTS challenge_responses (
     challenge_id    UUID NOT NULL,
     user_id         UUID NOT NULL, 
     answer_text     TEXT, -- Diubah menjadi TEXT
-    embedding       VECTOR(1536), -- Dimensi vektor (contoh 1536 untuk OpenAI text-embedding-3-small)
+    embedding       VECTOR(1024), -- Dimensi vektor (contoh 1536 untuk OpenAI text-embedding-3-small)
     status          answer_status NOT NULL DEFAULT 'DRAFT',
     started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

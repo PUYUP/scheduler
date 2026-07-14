@@ -276,6 +276,17 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             log.error("matcher.summarize_paper.no_chunks", paper_id=paper_id)
             return metadata
 
+        # create challenge paper summary
+        challenge_depot = ChallengeDepot(db_pool)
+        summary = challenge_depot.insert_challenge_paper_summary(
+            data={
+                "paper_id": paper_id,
+                "challenge_id": challenge_id,
+                "challenge_paper_id": challenge_paper_id,
+                "status": "pending",
+            }
+        )
+
         # Send to Gemini
         chunk_contents = [c.content for c in chunks]
         job = create_batch_job(
@@ -286,8 +297,9 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             paper_id=paper_id,
             challenge_id=challenge_id,
             challenge_paper_id=challenge_paper_id,
+            challenge_paper_summary_id=str(summary.id)
         )
-        
+
         metadata.update({
             "chunks_count": len(chunk_contents),
             "gemini_job_id": job.name

@@ -11,9 +11,10 @@ from sqlalchemy import (
     DateTime,
     Numeric, 
     Text, 
-    ForeignKey, 
+    ForeignKey,
     UniqueConstraint, 
-    CheckConstraint
+    CheckConstraint,
+    TIMESTAMP
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
@@ -69,16 +70,6 @@ class ChallengePaperORM(Base):
         nullable=False
     )
 
-    # Processing
-    processing_type: Mapped[Optional[str]] = mapped_column(String(255))
-    processing_tool: Mapped[Optional[str]] = mapped_column(String(255))
-    processing_status: Mapped[Optional[str]] = mapped_column(String(255))
-    processing_model: Mapped[Optional[str]] = mapped_column(String(255))
-    processing_result: Mapped[Optional[JSONB]] = mapped_column(JSONB)
-    processing_job_id: Mapped[Optional[str]] = mapped_column(String(255))
-    processing_created_at: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-    processing_finished_at: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-
     # Optional[Decimal] karena mungkin ada kasus nilai ini kosong sementara, 
     # hapus Optional jika wajib diisi dari awal.
     relevance_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(3, 2))
@@ -95,6 +86,61 @@ class ChallengePaperORM(Base):
         UniqueConstraint("challenge_id", "paper_id", name="unique_challenge_paper"),
         CheckConstraint("relevance_score >= 0 AND relevance_score <= 1", name="check_relevance_score"),
         CheckConstraint("relevance_label IN ('closest', 'farthest')", name="check_relevance_label"),
+    )
+
+
+class ChallengePaperSummaryORM(Base):
+    __tablename__ = "challenge_paper_summaries"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+    challenge_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("challenges.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False
+    )
+    paper_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("papers.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False
+    )
+    challenge_paper_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("challenge_papers.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+        unique=True
+    )
+    
+    tool: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    status: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    result: Mapped[Optional[JSONB]] = mapped_column(JSONB, nullable=True)
+    job_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    created_at: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    finished_at: Mapped[Optional[TIMESTAMP]] = mapped_column(
+        TIMESTAMP(timezone=True)
+        # tidak ada default -> tetap NULL sampai di-set eksplisit
+    )
+    updated_at: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+    
+    __table_args__ = (
+        UniqueConstraint("challenge_id", "paper_id", name="unique_challenge_paper"),
     )
 
 
