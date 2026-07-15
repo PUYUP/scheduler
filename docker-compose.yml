@@ -11,11 +11,14 @@ x-celery-common: &celery-common
     # model-init di bawah), jadi aman cegah network call ke HF Hub sama sekali.
     HF_HUB_OFFLINE: "1"
     TRANSFORMERS_OFFLINE: "1"
+    STANZA_RESOURCES_DIR: "/home/atlazer/.cache/resources"
+    HF_HOME: "/home/atlazer/.cache/huggingface"
   volumes:
     - downloads:/app/downloads
     - logs:/app/logs
     - hf_cache:/home/atlazer/.cache/huggingface
     - onnx_cache:/app/data/onnx_cache
+    - stanza_cache:/home/atlazer/.cache/resources
   depends_on:
     redis:
       condition: service_healthy
@@ -88,13 +91,14 @@ services:
       HF_HUB_OFFLINE: "0"
       TRANSFORMERS_OFFLINE: "0"
       STANZA_LANGS: "id,en"
-      EMBED_MODEL: "paraphrase-multilingual-MiniLM-L12-v2"
+      LOCAL_EMBEDDING_MODEL: "BAAI/bge-m3"
     volumes:
       - hf_cache:/home/atlazer/.cache/huggingface
+      - stanza_cache:/home/atlazer/.cache/resources
     depends_on:
       model-init:
         condition: service_completed_successfully
-    command: ["python", "src/atlazer/scripts/stanza_warmup.py"]
+    command: ["python", "src/atlazer/scripts/stanza_warmup.py", "--skip-embedder"]
     networks:
       - atlazer-net
     restart: "no"
@@ -470,6 +474,7 @@ volumes:
   grobid_tmp:
   hf_cache:
   onnx_cache:
+  stanza_cache:
 
 
 networks:

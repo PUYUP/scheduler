@@ -51,14 +51,14 @@ def main():
 
     langs = args.lang if args.lang else _get_langs_from_env()
 
-    cache_root = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
-    hf_home = os.environ.get("HF_HOME", os.path.join(cache_root, "huggingface"))
+    cache_root = os.environ.get("CACHE_HOME", os.path.expanduser("~/.cache"))
+    stanza_home = os.environ.get("STANZA_RESOURCES_DIR", os.path.join(cache_root, "resources"))
 
     print("=== warmup config ===")
-    print(f"  Bahasa Stanza     : {langs}")
-    print(f"  Model embedding   : {'(dilewati)' if args.skip_embedder else args.embed_model}")
-    print(f"  XDG_CACHE_HOME    : {cache_root}")
-    print(f"  HF_HOME           : {hf_home}")
+    print(f"  Bahasa Stanza         : {langs}")
+    print(f"  Model embedding       : {'(dilewati)' if args.skip_embedder else args.embed_model}")
+    print(f"  CACHE_HOME            : {cache_root}")
+    print(f"  STANZA_RESOURCES_DIR  : {stanza_home}")
     print("======================")
 
     if args.dry_run:

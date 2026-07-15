@@ -166,7 +166,6 @@ class ChunkAnswerMetadata(BaseModel):
     challenge_id: str
     content: str
     language_code: str = "en"
-    content: str
     chunks: Optional[list[str]] = None
 
 

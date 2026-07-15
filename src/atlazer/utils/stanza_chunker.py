@@ -28,6 +28,8 @@ from __future__ import annotations
 import numpy as np
 import stanza
 from stanza.pipeline.multilingual import MultilingualPipeline
+from stanza.pipeline.core import DownloadMethod
+from atlazer.config.settings import settings
 
 _PIPELINE_CACHE: dict = {}
 _EMBEDDER_CACHE: dict = {}
@@ -48,9 +50,18 @@ def _get_pipeline(lang: str | None = None, download_models: bool = False):
         stanza.download(lang if lang else "multilingual", verbose=False)
 
     if lang:
-        nlp = stanza.Pipeline(lang=lang, processors="tokenize", verbose=False)
+        nlp = stanza.Pipeline(
+            lang=lang,
+            processors="tokenize",
+            verbose=False,
+            dir=settings.stanza_resources_dir,
+            download_method=DownloadMethod.REUSE_RESOURCES
+        )
     else:
-        nlp = MultilingualPipeline()
+        nlp = MultilingualPipeline(
+            dir=settings.stanza_resources_dir,
+            download_method=DownloadMethod.REUSE_RESOURCES
+        )
 
     _PIPELINE_CACHE[cache_key] = nlp
     return nlp
@@ -261,23 +272,3 @@ def chunk_answer(
     if semantic:
         return _group_sentences_by_topic(sentences, min_words, max_words, embed_model_name)
     return _group_sentences_by_wordcount(sentences, min_words, max_words)
-
-
-if __name__ == "__main__":
-    contoh_teks = """
-    Tulis teks panjang di sini (jawaban user, artikel, transkrip, dsb).
-    """
-
-    hasil = chunk_answer(
-        contoh_teks,
-        lang="id",
-        min_words=500,
-        max_words=2000,
-        semantic=True,          # topic-aware
-        download_models=True,   # cukup sekali di awal
-    )
-
-    print(f"Jumlah chunk: {len(hasil)}")
-    for i, c in enumerate(hasil, 1):
-        print(f"--- Chunk {i} ({len(c.split())} kata) ---")
-        print(c[:200], "...\n")

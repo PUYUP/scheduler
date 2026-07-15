@@ -203,6 +203,12 @@ def _configure_beat_schedule(app: Celery) -> None:
             "args": ["dlx.matcher"],
             "options": {"queue": "default"},
         },
+        "retry-failed-challenge": {
+            "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
+            "schedule": 3600,
+            "args": ["dlx.challenge"],
+            "options": {"queue": "default"},
+        },
         # ── Housekeeping (purge_old_pdfs, pipeline_health) ──
         **MAINTENANCE_BEAT_SCHEDULE,
     }

@@ -221,6 +221,7 @@ class Settings(BaseSettings):
     worker_proc_alive_timeout: int = 60              # seconds
     hf_token: str               = ""
     hf_home: str                = "/home/atlazer/.cache/huggingface"
+    stanza_resources_dir: str   = "/home/atlazer/.cache/resources"
     embedding_provider: str     = "onnx"       # "local" | "tei" | "onnx"
     onnx_provider: str          = "CPUExecutionProvider"  # "CUDAExecutionProvider" / "CPUExecutionProvider"
     truncate_dim: int           = 1024

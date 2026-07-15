@@ -8,13 +8,15 @@ from fastapi import FastAPI, HTTPException, Request
 from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
+from atlazer.celery_app.tasks.challenge import chunk_answer as chunk_answer_task
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
     EmbedChunksRequest,
     EmbedChunksResponse,
-    EmbedParallelResponse,
+    TaskExecutionResponse,
     HealthResponse,
     PaperMatcherRequest,
+    ChunkAnswerRequest,
 )
 from atlazer.utils.gemini_batch import get_batch_results
 from atlazer.storage.challenge import ChallengeDepot
@@ -62,7 +64,7 @@ def embed(payload: EmbedChunksRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/embed-parallel", response_model=EmbedParallelResponse)
+@app.post("/embed-parallel", response_model=TaskExecutionResponse)
 def embed_parallel(payload: EmbedChunksRequest):
     if embedder_service is None:
         raise HTTPException(status_code=503, detail="Service is not ready yet.")
@@ -75,13 +77,13 @@ def embed_parallel(payload: EmbedChunksRequest):
             queue="webapi",
         )
         log.info("webapi.embed-parallel.success", task_id=job.id)
-        return EmbedParallelResponse(task_id=job.id)
+        return TaskExecutionResponse(task_id=job.id)
     except Exception as e:
         log.error("webapi.embed-parallel.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/paper-matcher", response_model=EmbedParallelResponse)
+@app.post("/paper-matcher", response_model=TaskExecutionResponse)
 def paper_matcher(payload: PaperMatcherRequest):
     if embedder_service is None:
         raise HTTPException(status_code=503, detail="Service is not ready yet.")
@@ -98,7 +100,7 @@ def paper_matcher(payload: PaperMatcherRequest):
             queue="webapi",
         )
         log.info("webapi.paper-matcher.success", task_id=job.id)
-        return EmbedParallelResponse(task_id=job.id)
+        return TaskExecutionResponse(task_id=job.id)
     except Exception as e:
         log.error("webapi.paper-matcher.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -151,3 +153,21 @@ async def gemini_batch_webhook(request: Request):
                 raise HTTPException(status_code=500, detail=str(e))
             
     return {"ok": True}
+
+
+@app.post("/chunk-answer")
+def chunk_answer(payload: ChunkAnswerRequest):
+    if embedder_service is None:
+        raise HTTPException(status_code=503, detail="Service is not ready yet.")
+    
+    try:
+        log.info("webapi.chunk-answer.start", payload=payload.model_dump())
+        job = chunk_answer_task.apply_async(
+            kwargs={"metadata": payload.model_dump()},
+            queue="challenge",
+        )
+        log.info("webapi.chunk-answer.success", task_id=job.id)
+        return TaskExecutionResponse(task_id=job.id)
+    except Exception as e:
+        log.error("webapi.chunk-answer.error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
