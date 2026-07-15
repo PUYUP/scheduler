@@ -89,19 +89,13 @@ class ChallengePaperORM(Base):
     )
 
 
-class ChallengePaperSummaryORM(Base):
-    __tablename__ = "challenge_paper_summaries"
+class PaperSummaryORM(Base):
+    __tablename__ = "paper_summaries"
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
         server_default=func.gen_random_uuid()
-    )
-    challenge_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("challenges.id", ondelete="CASCADE"),
-        index=True,
-        nullable=False
     )
     paper_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -109,11 +103,19 @@ class ChallengePaperSummaryORM(Base):
         index=True,
         nullable=False
     )
+
+    # optional relation to the challenge entity
+    challenge_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("challenges.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True
+    )
     challenge_paper_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("challenge_papers.id", ondelete="CASCADE"),
         index=True,
-        nullable=False,
+        nullable=True,
         unique=True
     )
     

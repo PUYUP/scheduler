@@ -10,7 +10,7 @@ from atlazer.storage.db import DatabasePool
 from atlazer.models.challenge import (
     ChallengeORM,
     ChallengePaperORM,
-    ChallengePaperSummaryORM,
+    PaperSummaryORM,
 )
 from atlazer.models.paper import PaperORM
 from sqlalchemy import insert
@@ -146,20 +146,20 @@ class ChallengeDepot:
     def insert_challenge_paper_summary(
         self, 
         data: Dict[str, Any],
-    ) -> Optional[ChallengePaperSummaryORM]:
+    ) -> Optional[PaperSummaryORM]:
         """
-        Simpan ChallengePaperSummaryORM ke database. Datanya berasal dari pemprosesan summary
+        Simpan PaperSummaryORM ke database. Datanya berasal dari pemprosesan summary
         di ChallengePaper.
 
         Args:
-            data: Dictionary berisi data ChallengePaperSummaryORM.
+            data: Dictionary berisi data PaperSummaryORM.
         
         Returns:
-            ChallengePaperSummaryORM yang sudah disimpan.
+            PaperSummaryORM yang sudah disimpan.
         """
         with self._db_pool.session() as session:
             try:
-                record = ChallengePaperSummaryORM(**data)
+                record = PaperSummaryORM(**data)
                 session.add(record)
                 session.commit()
                 session.refresh(record)
@@ -181,7 +181,7 @@ class ChallengeDepot:
         self,
         challenge_paper_summary_id: str,
         update_data: Dict[str, Any]
-    ) -> Optional[ChallengePaperSummaryORM]:
+    ) -> Optional[PaperSummaryORM]:
         """
         Memperbarui data ChallengePaperORM berdasarkan ID.
         Mendukung partial update (PATCH). Hanya field yang ada di `update_data`
@@ -202,8 +202,8 @@ class ChallengeDepot:
         with self._db_pool.session() as session:
             try:
                 # 1. Cari record yang ada
-                record = session.query(ChallengePaperSummaryORM).filter(
-                    ChallengePaperSummaryORM.id == cps_uuid
+                record = session.query(PaperSummaryORM).filter(
+                    PaperSummaryORM.id == cps_uuid
                 ).first()
 
                 if not record:
