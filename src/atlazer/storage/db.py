@@ -315,7 +315,7 @@ alter table public.scrape_progress enable row level security;
 CREATE TYPE answer_status AS ENUM ('DRAFT', 'SUBMITTED', 'EVALUATED');
 
 -- 2. Tabel respons
-CREATE TABLE IF NOT EXISTS challenge_responses (
+CREATE TABLE IF NOT EXISTS answers (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     challenge_id    UUID NOT NULL,
     user_id         UUID NOT NULL, 
@@ -338,13 +338,13 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-CREATE TRIGGER update_challenge_responses_modtime
-BEFORE UPDATE ON challenge_responses
+CREATE TRIGGER update_answers_modtime
+BEFORE UPDATE ON answers
 FOR EACH ROW
 EXECUTE FUNCTION update_modified_column();
 
 -- 4. (Opsional) Buat Index HNSW untuk mempercepat pencarian semantik (Similarity Search)
-CREATE INDEX ON challenge_responses USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX ON answers USING hnsw (embedding vector_cosine_ops);
 """
 
 
