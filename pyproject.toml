@@ -24,6 +24,7 @@ dependencies = [
     "tiktoken==0.9.0",
     "grobid-client-python==0.1.4",
     "google-genai==2.11.0",
+    "stanza==1.14.0",
 
     # ─── Embeddings ───────────────────────────────────────────────
     "sentence_transformers[onnx]==5.6.0",

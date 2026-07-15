@@ -122,7 +122,7 @@ task_routes = {
     "atlazer.celery_app.tasks.matcher.summarize_paper":      {"queue": "matcher"},
 
     # ── Challenge tier ──
-    "atlazer.celery_app.tasks.challenge.generate_challenge": {"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.chunk_answer":       {"queue": "challenge"},
 
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":                {"queue": "default"},

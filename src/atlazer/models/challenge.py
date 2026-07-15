@@ -2,6 +2,7 @@ import secrets
 from uuid import UUID
 from decimal import Decimal
 from typing import Optional, List
+from pydantic import BaseModel, conint, field_validator
 
 from sqlalchemy import (
     event, 
@@ -158,3 +159,37 @@ def generate_code_before_insert(mapper, connection, target: ChallengeORM):
     prefix = uuid_chars[random_index:random_index + 2]
     random_part = secrets.token_hex(4).upper()
     target.code = f"{first_three}-{prefix}-{random_part}"
+
+
+class ChunkAnswerMetadata(BaseModel):
+    user_id: str
+    challenge_id: str
+    content: str
+    language_code: str = "en"
+    content: str
+    chunks: Optional[list[str]] = None
+
+
+class AnswerChunkSchema(BaseModel):
+    user_id:        str
+    challenge_id:   str
+    content:        str
+    
+    embedding: Optional[List[float]] = None
+    embedding_model: Optional[str] = None
+    embedding_adapter: Optional[str] = None
+    embedding_normalized: bool = True
+    token_count: Optional[conint(gt=0)] = None
+    word_count: Optional[conint(gt=0)] = None
+
+    @field_validator('embedding')
+    def check_embedding_length(cls, v):
+        if v is not None and len(v) != 1024:
+            raise ValueError('Embedding must have exactly 1024 dimensions (vector(1024))')
+        return v
+
+    @field_validator('content')
+    def check_content_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError('Content cannot be empty')
+        return v

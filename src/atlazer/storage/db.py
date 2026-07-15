@@ -316,14 +316,14 @@ CREATE TYPE answer_status AS ENUM ('DRAFT', 'SUBMITTED', 'EVALUATED');
 
 -- 2. Tabel respons
 CREATE TABLE IF NOT EXISTS answers (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    challenge_id    UUID NOT NULL,
-    user_id         UUID NOT NULL, 
-    answer_text     TEXT, -- Diubah menjadi TEXT
-    embedding       VECTOR(1024), -- Dimensi vektor (contoh 1536 untuk OpenAI text-embedding-3-small)
-    status          answer_status NOT NULL DEFAULT 'DRAFT',
-    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    id              UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+    challenge_id    UUID    NOT NULL,
+    user_id         UUID    NOT NULL, 
+    content         TEXT    NOT NULL,
+    chunks          JSONB   DEFAULT '[]'::jsonb,
+    status          answer_status   NOT NULL DEFAULT 'DRAFT',
+    started_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     submitted_at    TIMESTAMPTZ,
     
     CONSTRAINT unique_user_challenge UNIQUE (challenge_id, user_id)
@@ -342,9 +342,6 @@ CREATE TRIGGER update_answers_modtime
 BEFORE UPDATE ON answers
 FOR EACH ROW
 EXECUTE FUNCTION update_modified_column();
-
--- 4. (Opsional) Buat Index HNSW untuk mempercepat pencarian semantik (Similarity Search)
-CREATE INDEX ON answers USING hnsw (embedding vector_cosine_ops);
 """
 
 

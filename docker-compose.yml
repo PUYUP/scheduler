@@ -23,6 +23,8 @@ x-celery-common: &celery-common
       condition: service_healthy
     model-init:
       condition: service_completed_successfully
+    stanza-init:
+      condition: service_completed_successfully
     onnx-export:
       condition: service_completed_successfully
   restart: unless-stopped
@@ -54,7 +56,7 @@ services:
     restart: "no"
 
 
-  # ─── Model Cache Warmer ──────────────────────────────────────
+  # ─── 1. Model Cache Warmer ──────────────────────────────────────
   # Jalan sekali sebelum semua worker start, download model embedding
   # ke shared volume `hf_cache`. Container ini perlu akses internet;
   # worker/beat/flower TIDAK (HF_HUB_OFFLINE=1 di x-celery-common).
@@ -74,8 +76,31 @@ services:
       - atlazer-net
     restart: "no"
 
+  
+  # ─── 2. Stanza Cache Warmer ─────────────────────────────────────
+  # Jalan sekali sebelum semua worker start, download model stanza
+  # ke shared volume `hf_cache`. Container ini perlu akses internet;
+  # worker/beat/flower TIDAK (HF_HUB_OFFLINE=1 di x-celery-common).
+  stanza-init:
+    image: atlanize/paper-miner:${IMAGE_TAG:-latest}
+    env_file: .env
+    environment:
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+      STANZA_LANGS: "id,en"
+      EMBED_MODEL: "paraphrase-multilingual-MiniLM-L12-v2"
+    volumes:
+      - hf_cache:/home/atlazer/.cache/huggingface
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+    command: ["python", "src/atlazer/scripts/stanza_warmup.py"]
+    networks:
+      - atlazer-net
+    restart: "no"
 
-  # ─── ONNX Export Container ─────────────────────────────────
+
+  # ─── 3. ONNX Export Container ─────────────────────────────────
   onnx-export:
     image: atlanize/paper-miner:${IMAGE_TAG:-latest}
     env_file: .env
@@ -88,7 +113,7 @@ services:
       - hf_cache:/home/atlazer/.cache/huggingface
       - onnx_cache:/app/data/onnx_cache
     depends_on:
-      model-init:
+      stanza-init:
         condition: service_completed_successfully
     command: ["python", "src/atlazer/scripts/export_onnx.py"]
     networks:
