@@ -174,7 +174,7 @@ class ChunkAnswerMetadata(BaseModel):
 
 class AnswerChunkORM(Base):
     __tablename__ = "answer_chunks"
-    
+
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,

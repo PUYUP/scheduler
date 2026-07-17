@@ -53,8 +53,8 @@ class PaperDepot:
         "error_message",
     )
 
-    def __init__(self, pool: DatabasePool) -> None:
-        self._pool = pool
+    def __init__(self, db_pool: DatabasePool) -> None:
+        self._db_pool = db_pool
 
     def _values(self, paper: PaperCreate) -> dict:
         return {
@@ -108,7 +108,7 @@ class PaperDepot:
         last_exc: Exception | None = None
 
         for attempt in range(1, max_attempts + 1):
-            with self._pool.session() as session:
+            with self._db_pool.session() as session:
                 try:
                     row = session.execute(
                         self._upsert_stmt(values, self._REPO_IDENTIFIER_COLUMNS)
@@ -188,7 +188,7 @@ class PaperDepot:
             set_=update_cols,
         )
 
-        with self._pool.session() as session:
+        with self._db_pool.session() as session:
             try:
                 session.execute(stmt)
                 session.commit()
@@ -216,7 +216,7 @@ class PaperDepot:
             .limit(1)
         )
 
-        with self._pool.session() as session:
+        with self._db_pool.session() as session:
             row = session.execute(stmt).scalar_one_or_none()
             if row is not None:
                 # detach dari session supaya atribut tetap bisa diakses
@@ -236,7 +236,7 @@ class PaperDepot:
             .where(DocumentChunkORM.paper_id == paper_uuid)
         )
 
-        with self._pool.session() as session:
+        with self._db_pool.session() as session:
             rows = session.execute(stmt).scalars().all()
             return rows
     

@@ -3,12 +3,13 @@ from contextlib import asynccontextmanager
 from typing import Optional, Any
 from datetime import datetime
 
+from celery import signature
 from fastapi import FastAPI, HTTPException, Request
 
 from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
-from atlazer.celery_app.tasks.challenge import chunk_answer as chunk_answer_task
+from atlazer.celery_app.tasks.challenge import chunk_answer
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
     EmbedChunksRequest,
@@ -16,7 +17,7 @@ from atlazer.webapi.schemas import (
     TaskExecutionResponse,
     HealthResponse,
     PaperMatcherRequest,
-    ChunkAnswerRequest,
+    EmbedAnswerRequest,
 )
 from atlazer.utils.gemini_batch import get_batch_results
 from atlazer.storage.challenge import ChallengeDepot
@@ -155,19 +156,30 @@ async def gemini_batch_webhook(request: Request):
     return {"ok": True}
 
 
-@app.post("/chunk-answer")
-def chunk_answer(payload: ChunkAnswerRequest):
+@app.post("/embed-answer")
+def embed_answer(payload: EmbedAnswerRequest):
     if embedder_service is None:
         raise HTTPException(status_code=503, detail="Service is not ready yet.")
     
     try:
-        log.info("webapi.chunk-answer.start", payload=payload.model_dump())
-        job = chunk_answer_task.apply_async(
-            kwargs={"metadata": payload.model_dump()},
-            queue="challenge",
-        )
-        log.info("webapi.chunk-answer.success", task_id=job.id)
+        log.info("webapi.embed-answer.start", payload=payload.model_dump())
+
+        job = (
+            chunk_answer.s(payload.model_dump()).set(queue="challenge")
+            | signature(
+                "atlazer.celery_app.tasks.challenge.embed_answer",
+                queue="challenge",
+                immutable=False,
+            )
+            | signature(
+                "atlazer.celery_app.tasks.challenge.save_embedding_answer",
+                queue="challenge",
+                immutable=False,
+            )
+        ).apply_async()
+
+        log.info("webapi.embed-answer.success", task_id=job.id)
         return TaskExecutionResponse(task_id=job.id)
     except Exception as e:
-        log.error("webapi.chunk-answer.error", error=str(e))
+        log.error("webapi.embed-answer.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

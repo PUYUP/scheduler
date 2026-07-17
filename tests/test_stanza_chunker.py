@@ -8,13 +8,21 @@ from atlazer.celery_app.tasks.challenge import (
 LONG_TEXT = """
 Efek Unruh dalam gerak melingkar pada dimensi ruang-waktu 2+1 untuk medan skalar tak bermassa menunjukkan diskrepansi suhu efektif yang jauh lebih rendah dibandingkan prediksi percepatan linear ketika celah energi detektor kecil dan durasi interaksi panjang. Fenomena ini relevan bagi simulasi sistem ruang-waktu analog pada kondensat Bose-Einstein dan film tipis superfluida helium, di mana pemahaman akurat tentang suhu efektif sangat penting untuk verifikasi eksperimental.
 Model uplift dalam ekosistem e-commerce skala besar seringkali melanggar asumsi SUTVA, yang menyebabkan ketidakakuratan dalam mengestimasi Individual Treatment Effect (ITE). Terdapat dua masalah utama: kanibalisasi tingkat penjual (seller-level cannibalization), di mana insentif hanya mengalihkan pengeluaran antar toko, dan kanibalisasi tingkat insentif (incentive-level cannibalization), di mana konversi organik atau insentif lain yang bersamaan disalahartikan sebagai dampak dari treatment.
+Ah oke, itu penting. Karena user dan profile dikelola oleh Better Auth (bukan Supabase Auth), berarti:
+
+auth.uid() di Postgres tidak akan pernah cocok dengan user_id/user.id versi Better Auth, karena Better Auth tidak mengisi sesi JWT Supabase. Jadi RLS berbasis auth.uid() memang tidak akan pernah bisa "melihat" data ini — pakai ctx.supabaseAdmin (service role) itu sudah benar dan sebenarnya wajib di sini, bukan cuma karena konteks webhook.
+Tabel profile biasanya adalah tabel custom terpisah yang di-foreign-key ke tabel user milik Better Auth lewat kolom seperti user_id/userId — bukan id yang sama seperti pola Supabase Auth (profile.id = auth.users.id). Jadi asumsi saya sebelumnya (.eq("id", userId)) kemungkinan salah.
+
+Saya update ke .eq("user_id", userId), mengikuti konvensi snake_case yang sudah dipakai di tabel answers:Update profile lookup to use user_id foreign key column (Better Auth pattern) instead of id, and update the doc commentUpdate profile lookup to use user_id foreign key column (Better Auth pattern) instead of id, and update the doc commentYang perlu kamu cek langsung ke skema DB kamu:
+
+Nama kolom FK di profile — saya asumsikan user_id (snake_case, ikut konvensi tabel answers). Kalau tabel profile dibuat lewat migration Better Auth sendiri atau ORM lain yang pakai camelCase, kemungkinan namanya userId.
 """
 
 
 def main():
     result = chunk_answer(
         LONG_TEXT,
-        lang="id",
+        lang="zh",
         semantic=True,          # aktifkan topic-aware chunking
         download_models=False,   # cukup sekali di awal
         min_words=10,

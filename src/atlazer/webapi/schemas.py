@@ -11,7 +11,7 @@ class EmbedChunksRequest(BaseModel):
     provision: Dict[str, Any] | None = None
 
 
-class ChunkAnswerRequest(BaseModel):
+class EmbedAnswerRequest(BaseModel):
     user_id: str
     challenge_id: str
     content: str

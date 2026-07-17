@@ -14,7 +14,9 @@ from atlazer.models.challenge import (
     AnswerChunkORM,
 )
 from atlazer.models.paper import PaperORM
-from sqlalchemy import insert
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import insert, func, tuple_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 log = structlog.get_logger(__name__)
 
@@ -257,6 +259,60 @@ class ChallengeDepot:
                 session.rollback()
                 log.error(
                     "answer_chunk.error_insert",
+                    error=str(e),
+                )
+                raise e
+
+    def bulk_insert_answer_chunks(self, values: List[AnswerChunkORM]) -> None:
+        if not values:
+            log.info("answer_chunk.empty_list")
+            return
+
+        # 1. Ambil kombinasi unik dari (user_id, challenge_id)
+        # Menggunakan Set {} agar jika ada kombinasi yang berulang tidak duplikat
+        user_challenge_pairs = list({(chunk.user_id, chunk.challenge_id) for chunk in values})
+
+        # 2. Siapkan data baru untuk di-insert
+        rows = [
+            {
+                "user_id": chunk.user_id,
+                "challenge_id": chunk.challenge_id,
+                "content": chunk.content,
+                "embedding": chunk.embedding,
+                "embedding_model": chunk.embedding_model,
+                "embedding_adapter": chunk.embedding_adapter,
+                "embedding_normalized": chunk.embedding_normalized,
+                "token_count": chunk.token_count,
+                "word_count": chunk.word_count,
+            }
+            for chunk in values
+        ]
+
+        with self._db_pool.session() as session:
+            try:
+                # 3. HAPUS chunk lama berdasarkan kombinasi (user_id DAN challenge_id)
+                session.query(AnswerChunkORM).filter(
+                    tuple_(
+                        AnswerChunkORM.user_id, 
+                        AnswerChunkORM.challenge_id
+                    ).in_(user_challenge_pairs)
+                ).delete(synchronize_session=False)
+
+                # 4. INSERT data baru secara massal
+                session.execute(insert(AnswerChunkORM), rows)
+                
+                session.commit()
+                
+                log.info(
+                    "challenge_answer.finish_reindex",
+                    user_challenge_pairs=str(user_challenge_pairs),
+                    count=len(values)
+                )
+                
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "challenge_answer.error_reindex",
                     error=str(e),
                 )
                 raise e

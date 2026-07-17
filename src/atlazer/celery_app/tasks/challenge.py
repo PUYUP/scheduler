@@ -44,6 +44,7 @@ def chunk_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         download_models=False,
         embed_model_name=settings.local_embedding_model,
         min_words=15,
+        max_words=5000,
     )
 
     metadata.chunks = [{"text": chunk} for chunk in chunks]
@@ -55,15 +56,6 @@ def chunk_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     metadata_dump = metadata.model_dump()
-
-    # Chain: chunk_answer → embed_answer
-    signature(
-        "atlazer.celery_app.tasks.challenge.embed_answer",
-        kwargs=({"metadata": metadata_dump}),
-        queue="challenge",
-        immutable=False,
-    ).apply_async()
-
     return metadata_dump
 
 
@@ -124,7 +116,6 @@ def embed_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     metadata["chunks"] = embedded_chunks
-
     return metadata
 
 
@@ -143,6 +134,8 @@ def embed_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     ignore_result=False,
 )
 def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("challenge.save_embedding_answer.start")
+
     chunks = metadata.get('chunks')
     user_id = metadata.get('user_id')
     challenge_id = metadata.get('challenge_id')
@@ -165,31 +158,35 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         log.error("challenge.save_embedding_answer.invalid_uuid", metadata=metadata, error=str(exc))
         raise ValueError("Invalid UUID string format for user_id or challenge_id")
 
-    for chunk in chunks:
-        answer_chunk = AnswerChunkORM(
-            user_id=user_uuid,
-            challenge_id=challenge_uuid,
-            content=chunk.get("text"),
-            embedding=chunk.get("embedding"),
-            embedding_model=chunk.get("embedding_model"),
-            embedding_adapter=chunk.get("embedding_adapter"),
-            embedding_normalized=chunk.get("embedding_normalized", True),
-            token_count=chunk.get("token_count"),
-            word_count=chunk.get("word_count"),
-        )
-        try:
-            res = depot.save_embedding_answer(answer_chunk)
-            saved_results.append(res)
-        except Exception as exc:
-            log.error(
-                "challenge.save_embedding_answer.failed",
-                metadata=metadata,
-                error=str(exc),
-                attempt=self.request.retries,
-            )
-            raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
+    log.info("challenge.save_embedding_answer.mapping_payloads")
+    payloads: List[AnswerChunkORM] = []
 
-    metadata["saved_chunks"] = saved_results
-    log.info("challenge.save_embedding_answer.done", metadata=metadata)
+    for chunk in chunks:
+        payloads.append(
+            AnswerChunkORM(
+                user_id=user_uuid,
+                challenge_id=challenge_uuid,
+                content=chunk.get("text"),
+                embedding=chunk.get("embedding"),
+                embedding_model=chunk.get("embedding_model"),
+                embedding_adapter=chunk.get("embedding_adapter"),
+                embedding_normalized=chunk.get("embedding_normalized", True),
+                token_count=chunk.get("token_count"),
+                word_count=chunk.get("word_count"),
+            )
+        )
+
+    try:
+        depot.bulk_insert_answer_chunks(payloads)
+    except Exception as exc:
+        log.error(
+            "challenge.save_embedding_answer.failed",
+            metadata=metadata,
+            error=str(exc),
+            attempt=self.request.retries,
+        )
+        raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
+
+    log.info("challenge.save_embedding_answer.done")
 
     return metadata
