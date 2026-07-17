@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 
@@ -15,6 +15,7 @@ class ChunkAnswerRequest(BaseModel):
     user_id: str
     challenge_id: str
     content: str
+    language_code: Optional[str] = None
 
 
 class PaperMatcherRequest(BaseModel):

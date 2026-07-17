@@ -1,7 +1,7 @@
 import secrets
 from uuid import UUID
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, conint, field_validator
 
 from sqlalchemy import (
@@ -11,12 +11,15 @@ from sqlalchemy import (
     Date,
     DateTime,
     Numeric, 
+    Boolean,
+    Integer,
     Text, 
     ForeignKey,
     UniqueConstraint, 
     CheckConstraint,
     TIMESTAMP
 )
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from atlazer.models.base import Base
@@ -165,21 +168,28 @@ class ChunkAnswerMetadata(BaseModel):
     user_id: str
     challenge_id: str
     content: str
-    language_code: str = "en"
-    chunks: Optional[list[str]] = None
+    language_code: Optional[str] = None
+    chunks: Optional[list[Dict[str, Any]]] = None
 
 
-class AnswerChunkSchema(BaseModel):
-    user_id:        str
-    challenge_id:   str
-    content:        str
+class AnswerChunkORM(Base):
+    __tablename__ = "answer_chunks"
     
-    embedding: Optional[List[float]] = None
-    embedding_model: Optional[str] = None
-    embedding_adapter: Optional[str] = None
-    embedding_normalized: bool = True
-    token_count: Optional[conint(gt=0)] = None
-    word_count: Optional[conint(gt=0)] = None
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+    user_id:        Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    challenge_id:   Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    content:        Mapped[str] = mapped_column(Text, nullable=False)
+    
+    embedding:      Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
+    embedding_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    embedding_adapter: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    embedding_normalized: Mapped[bool] = mapped_column(Boolean, default=True)
+    token_count: Mapped[Optional[conint(gt=0)]] = mapped_column(Integer, nullable=True)
+    word_count: Mapped[Optional[conint(gt=0)]] = mapped_column(Integer, nullable=True)
 
     @field_validator('embedding')
     def check_embedding_length(cls, v):

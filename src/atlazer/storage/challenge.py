@@ -11,6 +11,7 @@ from atlazer.models.challenge import (
     ChallengeORM,
     ChallengePaperORM,
     PaperSummaryORM,
+    AnswerChunkORM,
 )
 from atlazer.models.paper import PaperORM
 from sqlalchemy import insert
@@ -79,7 +80,6 @@ class ChallengeDepot:
                 )
                 raise e
 
-
     def update_challenge_paper(
         self,
         challenge_paper_id: str,
@@ -142,7 +142,6 @@ class ChallengeDepot:
                 )
                 raise e
 
-
     def insert_challenge_paper_summary(
         self, 
         data: Dict[str, Any],
@@ -174,8 +173,7 @@ class ChallengeDepot:
                     payload=data,
                     error=str(e),
                 )
-                raise e
-    
+                raise e    
     
     def update_challenge_paper_summary(
         self,
@@ -235,6 +233,33 @@ class ChallengeDepot:
                 )
                 raise e
 
+    def save_embedding_answer(
+        self, 
+        data: AnswerChunkORM
+    ) -> Dict[str, Any]:
+        """
+        Simpan embedding answer ke database.
+        """
+        with self._db_pool.session() as session:
+            try:
+                session.add(data)
+                session.commit()
+                session.refresh(data)
+
+                log.info("answer_chunk.finish_insert", id=str(data.id))
+                return {
+                    "id": str(data.id),
+                    "user_id": str(data.user_id),
+                    "challenge_id": str(data.challenge_id),
+                }
+
+            except Exception as e:
+                session.rollback()
+                log.error(
+                    "answer_chunk.error_insert",
+                    error=str(e),
+                )
+                raise e
 
     @staticmethod
     def _build_challenge_paper_rows(

@@ -11,12 +11,11 @@ x-celery-common: &celery-common
     # model-init di bawah), jadi aman cegah network call ke HF Hub sama sekali.
     HF_HUB_OFFLINE: "1"
     TRANSFORMERS_OFFLINE: "1"
-    STANZA_RESOURCES_DIR: "/home/atlazer/.cache/resources"
     HF_HOME: "/home/atlazer/.cache/huggingface"
   volumes:
     - downloads:/app/downloads
     - logs:/app/logs
-    - hf_cache:/home/atlazer/.cache/huggingface
+    - hf_home:/home/atlazer/.cache/huggingface
     - onnx_cache:/app/data/onnx_cache
     - stanza_cache:/home/atlazer/.cache/resources
   depends_on:
@@ -61,7 +60,7 @@ services:
 
   # ─── 1. Model Cache Warmer ──────────────────────────────────────
   # Jalan sekali sebelum semua worker start, download model embedding
-  # ke shared volume `hf_cache`. Container ini perlu akses internet;
+  # ke shared volume `hf_home`. Container ini perlu akses internet;
   # worker/beat/flower TIDAK (HF_HUB_OFFLINE=1 di x-celery-common).
   model-init:
     image: atlanize/paper-miner:${IMAGE_TAG:-latest}
@@ -70,10 +69,10 @@ services:
       # Override eksplisit — container ini WAJIB online untuk download.
       # Mencegah kebocoran HF_HUB_OFFLINE=1 dari .env atau image lama yang
       # belum di-rebuild dari Dockerfile versi terbaru.
-      HF_HUB_OFFLINE: "0"
-      TRANSFORMERS_OFFLINE: "0"
+      - HF_HUB_OFFLINE=0
+      - TRANSFORMERS_OFFLINE=0
     volumes:
-      - hf_cache:/home/atlazer/.cache/huggingface
+      - hf_home:/home/atlazer/.cache/huggingface
     command: ["python", "src/atlazer/scripts/warm_model_cache.py"]
     networks:
       - atlazer-net
@@ -82,23 +81,22 @@ services:
   
   # ─── 2. Stanza Cache Warmer ─────────────────────────────────────
   # Jalan sekali sebelum semua worker start, download model stanza
-  # ke shared volume `hf_cache`. Container ini perlu akses internet;
+  # ke shared volume `hf_home`. Container ini perlu akses internet;
   # worker/beat/flower TIDAK (HF_HUB_OFFLINE=1 di x-celery-common).
   stanza-init:
     image: atlanize/paper-miner:${IMAGE_TAG:-latest}
     env_file: .env
     environment:
-      HF_HUB_OFFLINE: "0"
-      TRANSFORMERS_OFFLINE: "0"
-      STANZA_LANGS: "id,en"
-      LOCAL_EMBEDDING_MODEL: "BAAI/bge-m3"
+      - HF_HUB_OFFLINE=0
+      - TRANSFORMERS_OFFLINE=0
+      - STANZA_LANGS=en,id
     volumes:
-      - hf_cache:/home/atlazer/.cache/huggingface
+      - hf_home:/home/atlazer/.cache/huggingface
       - stanza_cache:/home/atlazer/.cache/resources
     depends_on:
       model-init:
         condition: service_completed_successfully
-    command: ["python", "src/atlazer/scripts/stanza_warmup.py", "--skip-embedder"]
+    command: ["python", "src/atlazer/scripts/stanza_warmup.py"]
     networks:
       - atlazer-net
     restart: "no"
@@ -114,7 +112,7 @@ services:
       - TRANSFORMERS_OFFLINE=0
       - HF_TOKEN=${HF_TOKEN}
     volumes:
-      - hf_cache:/home/atlazer/.cache/huggingface
+      - hf_home:/home/atlazer/.cache/huggingface
       - onnx_cache:/app/data/onnx_cache
     depends_on:
       stanza-init:
@@ -472,7 +470,7 @@ volumes:
   downloads:
   logs:
   grobid_tmp:
-  hf_cache:
+  hf_home:
   onnx_cache:
   stanza_cache:
 

@@ -43,6 +43,18 @@ class BaseEmbedder(ABC):
     def embed_one(self, text: str) -> List[float]:
         return self.embed_batch([text])[0]
 
+    def count_tokens(self, texts: List[str]) -> List[int]:
+        """
+        Return the real tokenizer-based token count for each input text.
+
+        Default implementation raises NotImplementedError; subclasses that
+        can access a tokenizer (local, onnx) or a tokenize endpoint (tei)
+        should override this.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement count_tokens()"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Local / offline provider (sentence-transformers)
@@ -79,6 +91,21 @@ class LocalEmbedder(BaseEmbedder):
             elapsed_s=round(elapsed, 3),
         )
         return vectors
+
+    def count_tokens(self, texts: List[str]) -> List[int]:
+        """
+        Real token count using the model's own HuggingFace tokenizer,
+        respecting the same max_seq_length/truncation the model itself
+        applies during encode().
+        """
+        if not texts:
+            return []
+        encoded = self._model.tokenizer(
+            texts,
+            truncation=True,
+            max_length=self._model.max_seq_length,
+        )
+        return [len(ids) for ids in encoded["input_ids"]]
 
 
 class TEIEmbedder(BaseEmbedder):
@@ -134,6 +161,45 @@ class TEIEmbedder(BaseEmbedder):
         log.error("tei_embedder.request_failed_final", max_retries=self.max_retries)
         raise RuntimeError(
             f"TEI embed request failed after {self.max_retries} attempts"
+        ) from last_exc
+
+    def count_tokens(self, texts: List[str]) -> List[int]:
+        """
+        Real token count via TEI's own /tokenize endpoint, so it reflects
+        exactly what the server used for embedding (same tokenizer,
+        same truncation behavior).
+        """
+        if not texts:
+            return []
+
+        payload = {"inputs": texts, "add_special_tokens": True}
+
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = requests.post(
+                    f"{self.base_url}/tokenize",
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                # TEI returns a list (per input) of lists of token objects
+                return [len(tokens) for tokens in response.json()]
+            except requests.exceptions.RequestException as e:
+                last_exc = e
+                log.warning(
+                    "tei_embedder.tokenize_failed",
+                    attempt=attempt,
+                    max_retries=self.max_retries,
+                    error=str(e),
+                )
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+
+        log.error("tei_embedder.tokenize_failed_final", max_retries=self.max_retries)
+        raise RuntimeError(
+            f"TEI tokenize request failed after {self.max_retries} attempts"
         ) from last_exc
 
 
@@ -196,7 +262,21 @@ class LocalONNXEmbedder(BaseEmbedder):
             elapsed_s=round(time.perf_counter() - t0, 3),
         )
         return vectors
-        
+
+    def count_tokens(self, texts: List[str]) -> List[int]:
+        """
+        Real token count using the same HuggingFace tokenizer bundled
+        with the ONNX-backed SentenceTransformer.
+        """
+        if not texts:
+            return []
+        encoded = self._model.tokenizer(
+            texts,
+            truncation=True,
+            max_length=self._model.max_seq_length,
+        )
+        return [len(ids) for ids in encoded["input_ids"]]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Factory
@@ -239,10 +319,13 @@ def chunks_to_vector(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             as-is in the output.
 
     Returns:
-        List of chunks (same dicts, copied) with three additional keys:
+        List of chunks (same dicts, copied) with additional keys:
             - "embedding": the embedding vector (List[float]).
             - "embedding_model": name of the model used to generate it.
             - "embedding_dim": dimensionality of the embedding vector.
+            - "token_count": real tokenizer-based token count of the
+              chunk's text, if the active embedder supports counting
+              (see BaseEmbedder.count_tokens). Omitted otherwise.
 
     Raises:
         KeyError: if any chunk is missing the "text" key.
@@ -279,11 +362,26 @@ def chunks_to_vector(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             elapsed_s=round(elapsed, 2),
         )
 
-        for chunk, vector in zip(batch, vectors):
+        try:
+            token_counts = embedder.count_tokens(texts)
+        except NotImplementedError:
+            token_counts = [None] * len(texts)
+        except Exception:
+            log.exception(
+                "embedder.token_count_failed",
+                batch_start=batch_start,
+                batch_size=len(batch),
+            )
+            token_counts = [None] * len(texts)
+
+        for chunk, vector, text, token_count in zip(batch, vectors, texts, token_counts):
             chunk_with_vec = chunk.copy()
             chunk_with_vec["embedding"] = vector
             chunk_with_vec["embedding_model"] = embedder.model_name
             chunk_with_vec["embedding_dim"] = len(vector)
+            chunk_with_vec["word_count"] = len(text.split())
+            if token_count is not None:
+                chunk_with_vec["token_count"] = token_count
             embedded_chunks.append(chunk_with_vec)
 
     return embedded_chunks

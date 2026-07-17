@@ -28,8 +28,6 @@ from __future__ import annotations
 import numpy as np
 import stanza
 from stanza.pipeline.multilingual import MultilingualPipeline
-from stanza.pipeline.core import DownloadMethod
-from atlazer.config.settings import settings
 
 _PIPELINE_CACHE: dict = {}
 _EMBEDDER_CACHE: dict = {}
@@ -54,13 +52,11 @@ def _get_pipeline(lang: str | None = None, download_models: bool = False):
             lang=lang,
             processors="tokenize",
             verbose=False,
-            dir=settings.stanza_resources_dir,
-            download_method=DownloadMethod.REUSE_RESOURCES
+            download_method=stanza.DownloadMethod.REUSE_RESOURCES
         )
     else:
         nlp = MultilingualPipeline(
-            dir=settings.stanza_resources_dir,
-            download_method=DownloadMethod.REUSE_RESOURCES
+            download_method=stanza.DownloadMethod.REUSE_RESOURCES
         )
 
     _PIPELINE_CACHE[cache_key] = nlp
