@@ -18,6 +18,7 @@ imports = (
     "atlazer.celery_app.tasks.webapi",
     "atlazer.celery_app.tasks.matcher",
     "atlazer.celery_app.tasks.challenge",
+    "atlazer.celery_app.tasks.evaluation",
     "atlazer.celery_app.tasks.maintenance",
 )
 
@@ -91,6 +92,12 @@ task_annotations = {
         "time_limit": 3600,
         "soft_time_limit": 3300,
     },
+    "atlazer.celery_app.tasks.evaluation.*": {
+        "max_retries": 3,
+        "default_retry_delay": 60,
+        "time_limit": 3600,
+        "soft_time_limit": 3300,
+    },
 }
 
 # ─── Task Routing ─────────────────────────────────────────────────────────────
@@ -129,8 +136,11 @@ task_routes = {
     "atlazer.celery_app.tasks.challenge.answer_paper_scoring":      {"queue": "challenge"},
     "atlazer.celery_app.tasks.challenge.save_answer_similarity":    {"queue": "challenge"},
 
+    # ── Evaluation tier ──
+    "atlazer.celery_app.tasks.evaluation.evaluate_answers":         {"queue": "evaluation"},
+
     # ── Maintenance ──
-    "atlazer.celery_app.tasks.maintenance.*":                {"queue": "default"},
+    "atlazer.celery_app.tasks.maintenance.*":   {"queue": "default"},
 }
 
 # ─── Worker ───────────────────────────────────────────────────────────────────

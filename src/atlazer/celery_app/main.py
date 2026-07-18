@@ -45,6 +45,8 @@ def create_celery_app() -> Celery:
         "atlazer.celery_app.tasks.maintenance",
         "atlazer.celery_app.tasks.webapi",
         "atlazer.celery_app.tasks.matcher",
+        "atlazer.celery_app.tasks.challenge",
+        "atlazer.celery_app.tasks.evaluation",
     ]
     _configure_queues(app)
     _configure_beat_schedule(app)
@@ -68,46 +70,50 @@ def create_celery_app() -> Celery:
 #                           → generate_embeddings → store_paper
 
 def _configure_queues(app: Celery) -> None:
-    default_exchange = Exchange("default", type="direct")
-    scrape_exchange  = Exchange("scrape",  type="direct")
-    process_exchange = Exchange("process", type="direct")
-    embed_exchange   = Exchange("embed",   type="direct")
-    store_exchange   = Exchange("store",   type="direct")
-    webapi_exchange  = Exchange("webapi",  type="direct")
-    matcher_exchange = Exchange("matcher", type="direct")
-    challenge_exchange = Exchange("challenge", type="direct")
-    dlx_exchange     = Exchange("dlx",     type="direct")   # dead-letter (nama saja; tidak ada semantik khusus di Redis)
+    default_exchange    = Exchange("default",   type="direct")
+    scrape_exchange     = Exchange("scrape",    type="direct")
+    process_exchange    = Exchange("process",   type="direct")
+    embed_exchange      = Exchange("embed",     type="direct")
+    store_exchange      = Exchange("store",     type="direct")
+    webapi_exchange     = Exchange("webapi",    type="direct")
+    matcher_exchange    = Exchange("matcher",   type="direct")
+    challenge_exchange  = Exchange("challenge", type="direct")
+    evaluation_exchange = Exchange("evaluation", type="direct")
+    dlx_exchange        = Exchange("dlx",       type="direct")
 
     app.conf.task_queues = (
-        Queue("default", default_exchange, routing_key="default"),
+        Queue("default",    default_exchange, routing_key="default"),
         # ── Tier 1: I/O bound ──
-        Queue("scrape",  scrape_exchange,  routing_key="scrape"),
+        Queue("scrape",     scrape_exchange,  routing_key="scrape"),
         # ── Tier 2: CPU bound ──
-        Queue("process", process_exchange, routing_key="process"),
+        Queue("process",    process_exchange, routing_key="process"),
         # ── Tier 3: API rate-limited ──
-        Queue("embed",   embed_exchange,   routing_key="embed"),
+        Queue("embed",      embed_exchange,   routing_key="embed"),
         # ── Tier 4: CPU bound (store paper metadata) ──
-        Queue("store",   store_exchange,   routing_key="store"),
+        Queue("store",      store_exchange,   routing_key="store"),
         # ── WebAPI ──
-        Queue("webapi",  webapi_exchange,  routing_key="webapi"),
+        Queue("webapi",     webapi_exchange,  routing_key="webapi"),
         # ── Matcher ──
-        Queue("matcher", matcher_exchange, routing_key="matcher"),
+        Queue("matcher",    matcher_exchange, routing_key="matcher"),
         # ── Challenge ──
-        Queue("challenge", challenge_exchange, routing_key="challenge"),
+        Queue("challenge",  challenge_exchange, routing_key="challenge"),
+        # ── Evaluation ──
+        Queue("evaluation", evaluation_exchange, routing_key="evaluation"),
         # ── Dead-letter sinks (diisi manual via on_task_failure, dikuras via
         #     tasks.maintenance.retry_dead_letters) ──
-        Queue("dlx.scrape",   dlx_exchange, routing_key="dlx.scrape"),
-        Queue("dlx.process",  dlx_exchange, routing_key="dlx.process"),
-        Queue("dlx.embed",    dlx_exchange, routing_key="dlx.embed"),
-        Queue("dlx.store",    dlx_exchange, routing_key="dlx.store"),
-        Queue("dlx.webapi",   dlx_exchange, routing_key="dlx.webapi"),
-        Queue("dlx.matcher",  dlx_exchange, routing_key="dlx.matcher"),
+        Queue("dlx.scrape",     dlx_exchange, routing_key="dlx.scrape"),
+        Queue("dlx.process",    dlx_exchange, routing_key="dlx.process"),
+        Queue("dlx.embed",      dlx_exchange, routing_key="dlx.embed"),
+        Queue("dlx.store",      dlx_exchange, routing_key="dlx.store"),
+        Queue("dlx.webapi",     dlx_exchange, routing_key="dlx.webapi"),
+        Queue("dlx.matcher",    dlx_exchange, routing_key="dlx.matcher"),
         Queue("dlx.challenge",  dlx_exchange, routing_key="dlx.challenge"),
+        Queue("dlx.evaluation", dlx_exchange, routing_key="dlx.evaluation"),
     )
 
-    app.conf.task_default_queue    = "default"
-    app.conf.task_default_exchange = "default"
-    app.conf.task_default_routing_key = "default"
+    app.conf.task_default_queue         = "default"
+    app.conf.task_default_exchange      = "default"
+    app.conf.task_default_routing_key   = "default"
 
 
 # ─── Periodic Beat Schedule ───────────────────────────────────────────────────
@@ -121,16 +127,16 @@ def _configure_beat_schedule(app: Celery) -> None:
 
     app.conf.beat_schedule = {
         # ── Main ingestion: every 6 hours per topic ──
-        # **{
-        #     f"scrape-{topic.replace(' ', '-')}-periodic": {
-        #         "task": "atlazer.celery_app.tasks.scrape.scrape_topic",
-        #         "schedule": settings.scrape_interval_seconds,
-        #         "args": [topic],
-        #         "kwargs": {"max_results": settings.max_results_per_topic},
-        #         "options": {"queue": "scrape"},
-        #     }
-        #     for topic in settings.arxiv_topics
-        # },
+        **{
+            f"scrape-{topic.replace(' ', '-')}-periodic": {
+                "task": "atlazer.celery_app.tasks.scrape.scrape_topic",
+                "schedule": settings.scrape_interval_seconds,
+                "args": [topic],
+                "kwargs": {"max_results": settings.max_results_per_topic},
+                "options": {"queue": "scrape"},
+            }
+            for topic in settings.arxiv_topics
+        },
         # ── Backfill trigger for each topic ──
         # Catatan: beat akan memicu ulang task ini secara periodik dari start=0.
         # Ini AMAN karena task sendiri akan skip kalau backfill sudah selesai
@@ -209,6 +215,12 @@ def _configure_beat_schedule(app: Celery) -> None:
             "args": ["dlx.challenge"],
             "options": {"queue": "default"},
         },
+        "retry-failed-evaluation": {
+            "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
+            "schedule": 3600,
+            "args": ["dlx.evaluation"],
+            "options": {"queue": "default"},
+        },
         # ── Housekeeping (purge_old_pdfs, pipeline_health) ──
         **MAINTENANCE_BEAT_SCHEDULE,
     }
@@ -260,13 +272,14 @@ def preload_embedder(**kwargs):
 # Nama task per-tier, dipakai untuk menentukan queue asal saat dead-lettering.
 # Harus tetap sinkron dengan task_routes di config/celery_config.py.
 _TIER_PREFIXES = {
-    "atlazer.celery_app.tasks.scrape.":  "scrape",
-    "atlazer.celery_app.tasks.process.": "process",
-    "atlazer.celery_app.tasks.embed.":   "embed",
-    "atlazer.celery_app.tasks.store.":   "store",
-    "atlazer.celery_app.tasks.webapi.":  "webapi",
-    "atlazer.celery_app.tasks.matcher.": "matcher",
-    "atlazer.celery_app.tasks.challenge.": "challenge",
+    "atlazer.celery_app.tasks.scrape.":     "scrape",
+    "atlazer.celery_app.tasks.process.":    "process",
+    "atlazer.celery_app.tasks.embed.":      "embed",
+    "atlazer.celery_app.tasks.store.":      "store",
+    "atlazer.celery_app.tasks.webapi.":     "webapi",
+    "atlazer.celery_app.tasks.matcher.":    "matcher",
+    "atlazer.celery_app.tasks.challenge.":  "challenge",
+    "atlazer.celery_app.tasks.evaluation.": "evaluation",
 }
 
 
