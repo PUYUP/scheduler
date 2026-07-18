@@ -1,3 +1,5 @@
+from sqlalchemy import Index
+from sqlalchemy import Float
 import secrets
 from uuid import UUID
 from decimal import Decimal
@@ -172,6 +174,16 @@ class ChunkAnswerMetadata(BaseModel):
     chunks: Optional[list[Dict[str, Any]]] = None
 
 
+class Answer(Base):
+    __tablename__ = "answers"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+
+
 class AnswerChunkORM(Base):
     __tablename__ = "answer_chunks"
 
@@ -203,3 +215,77 @@ class AnswerChunkORM(Base):
         if not v.strip():
             raise ValueError('Content cannot be empty')
         return v
+
+
+class AnswerSimilarityORM(Base):
+    __tablename__ = "answer_similarities"
+    __table_args__ = (
+        Index("ix_acs_answer_id", "answer_id"),
+        Index("ix_acs_answer_chunk_id", "answer_chunk_id"),
+        Index("ix_acs_challenge_id", "challenge_id"),
+        Index("ix_acs_paper_id", "paper_id"),
+        Index("ix_acs_challenge_paper_id", "challenge_paper_id"),
+        Index("ix_acs_similarity_score", "similarity_score"),
+        Index(
+            "ix_acs_answer_chunk_similarity",
+            "answer_chunk_id",
+            "similarity_score"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+
+    created_at: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[Optional[TIMESTAMP]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        onupdate=func.now(),
+        nullable=True,
+    )
+
+    answer_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("answers.id"),
+        nullable=False,
+    )
+    answer_chunk_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("answer_chunks.id"),
+        nullable=False,
+    )
+    challenge_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("challenges.id"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    document_chunk_id: Mapped[Optional[UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("document_chunks.id"),
+        nullable=True,
+    )
+    paper_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("papers.id"),
+        nullable=False,
+    )
+    challenge_paper_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("challenge_papers.id"),
+        nullable=False,
+    )
+
+    answer_chunk_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    paper_chunk_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    similarity_score: Mapped[float] = mapped_column(Float, nullable=False)

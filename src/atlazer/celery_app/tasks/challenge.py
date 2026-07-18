@@ -2,15 +2,25 @@ from __future__ import annotations
 
 import uuid
 import structlog
+import numpy as np
 from typing import Dict, Any, List
+from celery import group
+from sklearn.metrics.pairwise import cosine_similarity
 
 from atlazer.celery_app.main import app, db_pool
-from atlazer.models.challenge import ChunkAnswerMetadata
 from atlazer.utils.stanza_chunker import chunk_answer as stanza_chunk_answer
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
 from atlazer.storage.challenge import ChallengeDepot
-from atlazer.models.challenge import AnswerChunkORM
+from atlazer.models.challenge import (
+    ChunkAnswerMetadata,
+    AnswerChunkORM,
+    AnswerSimilarityORM
+)
+from atlazer.utils.answer_scoring import (
+    getting_answer_vectors,
+    getting_paper_vectors,
+)
 
 log = structlog.get_logger()
 
@@ -42,8 +52,8 @@ def chunk_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         semantic=True,
         download_models=False,
         embed_model_name=settings.local_embedding_model,
-        min_words=15,
-        max_words=5000,
+        min_words=1,
+        max_words=35,
     )
 
     validated.chunks = [{"text": chunk} for chunk in chunks]
@@ -191,5 +201,196 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
     log.info("challenge.save_embedding_answer.done")
+
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 4 of 7 — answer scoring
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.challenge.answer_scoring",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="challenge",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def answer_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("challenge.answer_scoring.start")
+    challenge_id = metadata.get("challenge_id")
+    answer_id = metadata.get("answer_id")
+
+    if not challenge_id:
+        log.warning("challenge.answer_scoring.missing_challenge_id", metadata=metadata)
+        raise ValueError("Missing challenge_id")
+
+    if not answer_id:
+        log.warning("challenge.answer_scoring.missing_answer_id", metadata=metadata)
+        raise ValueError("Missing answer_id")
+
+    log.info(
+        'challenge.answer_scoring.get_answer_vectors',
+        answer_id=answer_id
+    )
+
+    answer_vectors = getting_answer_vectors(answer_id)
+    if not answer_vectors:
+        log.warning("challenge.answer_scoring.no_answer_vectors", metadata=metadata)
+        raise ValueError("No answer vectors found")
+
+    # Get challenge papers
+    depot = ChallengeDepot(db_pool)
+    challenge_papers = depot.get_challenge_papers_by_challenge_id(challenge_id)
+    if not challenge_papers:
+        log.warning("challenge.answer_scoring.no_challenge_papers", metadata=metadata)
+        raise ValueError("No challenge papers found")
+
+    job = group(
+        answer_paper_scoring.s({
+            "paper_id": str(cp.paper_id),
+            "challenge_paper_id": str(cp.id),
+            "answer_vectors": answer_vectors,
+            **metadata
+        }).set(queue="challenge") for cp in challenge_papers
+    )
+    job.apply_async()
+    
+    metadata["answer_vectors"] = answer_vectors
+    metadata["challenge_papers"] = [{"id": str(x.id), "paper_id": str(x.paper_id)} for x in challenge_papers]
+    
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 5 of 7 — answer + paper scoring
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.challenge.answer_paper_scoring",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="challenge",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def answer_paper_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("challenge.answer_paper_scoring.start")
+
+    paper_id = metadata.get("paper_id")
+    answer_vectors = metadata.get("answer_vectors")
+
+    if not paper_id:
+        log.warning("challenge.answer_paper_scoring.missing_paper_id", metadata=metadata)
+        raise ValueError("Missing paper_id")
+
+    if not answer_vectors:
+        log.warning("challenge.answer_paper_scoring.missing_answer_vectors", metadata=metadata)
+        raise ValueError("Missing answer vectors")
+
+    log.info(
+        'challenge.answer_paper_scoring.get_paper_vectors',
+        paper_id=paper_id
+    )
+
+    paper_vectors = getting_paper_vectors(paper_id)
+    paper_embeddings = [x["embedding"] for x in paper_vectors]
+    answer_embeddings = [x["embedding"] for x in answer_vectors]
+
+    log.info(
+        'challenge.answer_paper_scoring.calculating_similarity',
+        answer_embeddings=len(answer_embeddings),
+        paper_embeddings=len(paper_embeddings)
+    )
+
+    similarity_matrix = cosine_similarity(answer_embeddings, paper_embeddings)
+    data_to_insert = []
+
+    for i, chunk in enumerate(answer_vectors):
+        scores_for_c = similarity_matrix[i]
+        best_match_index = np.argmax(scores_for_c)
+        highest_score = scores_for_c[best_match_index]
+        paper = paper_vectors[best_match_index]
+
+        data_to_insert.append({
+            "answer_chunk_id": chunk.get("id"),
+            "answer_chunk_content": chunk.get("content"),
+            "document_chunk_id": paper.get("id"),
+            "paper_chunk_content": paper.get("content"),
+            "similarity_score": float(highest_score),
+        })
+
+    if data_to_insert:
+        save_answer_similarity.apply_async(
+            kwargs={
+                "metadata": {
+                    "user_id": metadata.get("user_id"),
+                    "challenge_id": metadata.get("challenge_id"),
+                    "challenge_paper_id": metadata.get("challenge_paper_id"),
+                    "answer_id": metadata.get("answer_id"),
+                    "paper_id": paper_id,
+                    "data_to_insert": data_to_insert
+                }
+            },
+            queue="challenge"
+        )
+
+    log.info(
+        'challenge.answer_paper_scoring.similarity_matrix_calculated',
+        similarity_matrix=similarity_matrix.shape,
+        data_to_insert=len(data_to_insert)
+    )
+
+    metadata["data_to_insert"] = data_to_insert
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 6 of 7 — save answer similarity
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.challenge.save_answer_similarity",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="challenge",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def save_answer_similarity(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("challenge.save_answer_similarity.start")
+    data_to_insert = metadata.get("data_to_insert", [])
+    payloads: List[AnswerSimilarityORM] = []
+    depot = ChallengeDepot(db_pool)
+
+    for data in data_to_insert:
+        payload = AnswerSimilarityORM(
+            answer_id=metadata.get("answer_id"),
+            challenge_id=metadata.get("challenge_id"),
+            challenge_paper_id=metadata.get("challenge_paper_id"),
+            answer_chunk_id=data.get("answer_chunk_id"),
+            document_chunk_id=data.get("document_chunk_id"),
+            paper_id=metadata.get("paper_id"),
+            user_id=metadata.get("user_id"),
+            answer_chunk_content=data.get("answer_chunk_content"),
+            paper_chunk_content=data.get("paper_chunk_content"),
+            similarity_score=data.get("similarity_score"),
+        )
+        payloads.append(payload)
+
+    if payloads:
+        depot.bulk_inser_answer_similarities(payloads)
+
+    log.info(
+        'challenge.save_answer_similarity.success',
+        payloads_count=len(payloads)
+    )
 
     return metadata

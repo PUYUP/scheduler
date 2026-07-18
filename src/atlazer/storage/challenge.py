@@ -12,11 +12,10 @@ from atlazer.models.challenge import (
     ChallengePaperORM,
     PaperSummaryORM,
     AnswerChunkORM,
+    AnswerSimilarityORM
 )
-from atlazer.models.paper import PaperORM
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import insert, func, tuple_
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import insert, select, tuple_
 
 log = structlog.get_logger(__name__)
 
@@ -318,6 +317,94 @@ class ChallengeDepot:
                     error=str(e),
                 )
                 raise e
+
+    def bulk_inser_answer_similarities(self, values: List[AnswerSimilarityORM]) -> None:
+        if not values:
+            log.info("answer_similarity.empty_list")
+            return
+
+        # 1. Ambil kombinasi unik dari (user_id, challenge_id)
+        # Menggunakan Set {} agar jika ada kombinasi yang berulang tidak duplikat
+        user_challenge_pairs = list({(chunk.user_id, chunk.challenge_id, chunk.answer_id, chunk.paper_id) for chunk in values})
+
+        # 2. Siapkan data baru untuk di-insert
+        rows = [
+            {
+                "user_id": chunk.user_id,
+                "challenge_id": chunk.challenge_id,
+                "challenge_paper_id": chunk.challenge_paper_id,
+                "answer_id": chunk.answer_id,
+                "answer_chunk_id": chunk.answer_chunk_id,
+                "answer_chunk_content": chunk.answer_chunk_content,
+                "paper_id": chunk.paper_id,
+                "document_chunk_id": chunk.document_chunk_id,
+                "paper_chunk_content": chunk.paper_chunk_content,
+                "similarity_score": chunk.similarity_score,
+            }
+            for chunk in values
+        ]
+
+        with self._db_pool.session() as session:
+            try:
+                # 3. HAPUS chunk lama berdasarkan kombinasi (user_id DAN challenge_id)
+                session.query(AnswerSimilarityORM).filter(
+                    tuple_(
+                        AnswerSimilarityORM.user_id, 
+                        AnswerSimilarityORM.challenge_id,
+                        AnswerSimilarityORM.answer_id,
+                        AnswerSimilarityORM.paper_id
+                    ).in_(user_challenge_pairs)
+                ).delete(synchronize_session=False)
+
+                # 4. INSERT data baru secara massal
+                session.execute(insert(AnswerSimilarityORM), rows)
+                
+                session.commit()
+                
+                log.info(
+                    "challenge_answer_similarity.finish_reindex",
+                    user_challenge_pairs=str(user_challenge_pairs),
+                    count=len(values)
+                )
+                
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "challenge_answer_similarity.error_reindex",
+                    error=str(e),
+                )
+                raise e
+
+    def get_chunks_by_answer_id(self, answer_id: str) -> List[AnswerChunkORM] | None:
+        """Return chunks of an answer."""
+        try:
+            answer_uuid: UUID = uuid.UUID(answer_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {answer_id}")
+
+        stmt = (
+            select(AnswerChunkORM)
+            .where(AnswerChunkORM.answer_id == answer_uuid)
+        )
+
+        with self._db_pool.session() as session:
+            rows = session.execute(stmt).scalars().all()
+            return list(rows)
+
+    def get_challenge_papers_by_challenge_id(self, challenge_id: str) -> List[ChallengePaperORM]:
+        try:
+            challenge_uuid: UUID = uuid.UUID(challenge_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {challenge_id}")
+
+        stmt = (
+            select(ChallengePaperORM)
+            .where(ChallengePaperORM.challenge_id == challenge_uuid)
+        )
+
+        with self._db_pool.session() as session:
+            rows = session.execute(stmt).scalars().all()
+            return list(rows)
 
     @staticmethod
     def _build_challenge_paper_rows(

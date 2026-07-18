@@ -11,6 +11,16 @@ from typing import List, Optional
 from uuid import UUID
 
 
+class UserORM(Base):
+    __tablename__ = "users"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+
+
 class ProfileORM(Base):
     __tablename__ = "profile"
     

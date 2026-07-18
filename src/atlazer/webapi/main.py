@@ -174,6 +174,11 @@ def embed_answer(payload: EmbedAnswerRequest):
                 queue="challenge",
                 immutable=False,
             )
+            | signature(
+                "atlazer.celery_app.tasks.challenge.answer_scoring",
+                queue="challenge",
+                immutable=False,
+            )
         ).apply_async()
 
         log.info("webapi.embed-answer.success", task_id=job.id)

@@ -96,11 +96,11 @@ task_annotations = {
 # ─── Task Routing ─────────────────────────────────────────────────────────────
 task_routes = {
     # ── Scrape tier ──
-    "atlazer.celery_app.tasks.scrape.scrape_topic":          {"queue": "scrape"},
-    "atlazer.celery_app.tasks.scrape.scrape_topic_backfill": {"queue": "scrape"},
-    "atlazer.celery_app.tasks.scrape.scrape_topic_increment": {"queue": "scrape"},
-    "atlazer.celery_app.tasks.scrape.scrape_paper_metadata": {"queue": "scrape"},
-    "atlazer.celery_app.tasks.scrape.download_pdf":          {"queue": "scrape"},
+    "atlazer.celery_app.tasks.scrape.scrape_topic":             {"queue": "scrape"},
+    "atlazer.celery_app.tasks.scrape.scrape_topic_backfill":    {"queue": "scrape"},
+    "atlazer.celery_app.tasks.scrape.scrape_topic_increment":   {"queue": "scrape"},
+    "atlazer.celery_app.tasks.scrape.scrape_paper_metadata":    {"queue": "scrape"},
+    "atlazer.celery_app.tasks.scrape.download_pdf":             {"queue": "scrape"},
 
     # ── Process tier ──
     "atlazer.celery_app.tasks.process.parse_pdf":            {"queue": "process"},
@@ -122,9 +122,12 @@ task_routes = {
     "atlazer.celery_app.tasks.matcher.summarize_paper":      {"queue": "matcher"},
 
     # ── Challenge tier ──
-    "atlazer.celery_app.tasks.challenge.chunk_answer":       {"queue": "challenge"},
-    "atlazer.celery_app.tasks.challenge.embed_answer":       {"queue": "challenge"},
-    "atlazer.celery_app.tasks.challenge.save_embedding_answer":{"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.chunk_answer":              {"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.embed_answer":              {"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.save_embedding_answer":     {"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.answer_scoring":            {"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.answer_paper_scoring":      {"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.save_answer_similarity":    {"queue": "challenge"},
 
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":                {"queue": "default"},

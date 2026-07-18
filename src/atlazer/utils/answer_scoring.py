@@ -1,11 +1,12 @@
 import numpy as np
-from typing import List
+from typing import List, Dict, Any
 from atlazer.storage.paper import PaperDepot
 from atlazer.celery_app.main import db_pool
 from atlazer.storage.user import UserDepot
+from atlazer.storage.challenge import ChallengeDepot
 
 
-def getting_paper_vector(paper_id: str) -> List[List[float]]:
+def getting_paper_vectors(paper_id: str) -> List[Dict[str, Any]]:
     """
     Returns the embedding of a paper as a list of lists of floats.
 
@@ -27,14 +28,18 @@ def getting_paper_vector(paper_id: str) -> List[List[float]]:
     for chunk in chunks:
         # Check if embedding is not None and has the correct dimension (1024)
         if chunk.embedding is not None and len(chunk.embedding) == 1024:
-            embeddings.append(chunk.embedding)
+            embeddings.append({
+                "id": str(chunk.id),
+                "embedding": chunk.embedding,
+                "content": chunk.content,
+            })
         else:
             # Optional: Log a warning if a chunk is skipped
             print(f"Skipping chunk {chunk.id} in paper {paper_id} due to invalid/missing embedding")
     
     return embeddings
 
-def getting_profile_vector(user_id: str) -> List[List[float]]:
+def getting_profile_vectors(user_id: str) -> List[List[float]]:
     depot = UserDepot(db_pool)
     profile = depot.get_profile_by_user_id(user_id)
     if profile is None:
@@ -42,6 +47,28 @@ def getting_profile_vector(user_id: str) -> List[List[float]]:
     if profile.interest_embedding is None or len(profile.interest_embedding) != 1024:
         raise ValueError(f"Profile {user_id} has invalid/missing embedding")
     return [profile.interest_embedding]
+
+def getting_answer_vectors(answer_id: str) -> List[Dict[str, Any]]:
+    depot = ChallengeDepot(db_pool)
+    chunks = depot.get_chunks_by_answer_id(answer_id)
+    if chunks is None:
+        raise ValueError(f"Answer {answer_id} not found")
+
+    # Extract embeddings and filter out None values
+    embeddings = []
+    for chunk in chunks:
+        # Check if embedding is not None and has the correct dimension (1024)
+        if chunk.embedding is not None and len(chunk.embedding) == 1024:
+            embeddings.append({
+                "id": str(chunk.id),
+                "embedding": chunk.embedding,
+                "content": chunk.content,
+            })
+        else:
+            # Optional: Log a warning if a chunk is skipped
+            print(f"Skipping chunk {chunk.id} in answer {answer_id} due to invalid/missing embedding")
+    
+    return embeddings
 
 def embedding_similarity(embedding1, embedding2):
     """

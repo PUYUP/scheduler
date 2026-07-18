@@ -63,7 +63,11 @@ def _get_pipeline(lang: str | None = None, download_models: bool = False):
     return nlp
 
 
-def _split_sentences(text: str, lang: str | None = None, download_models: bool = False) -> list[str]:
+def _split_sentences(
+    text: str,
+    lang: str | None = None,
+    download_models: bool = False
+) -> list[str]:
     nlp = _get_pipeline(lang=lang, download_models=download_models)
     doc = nlp(text)
     return [s.text.strip() for s in doc.sentences if s.text.strip()]
@@ -96,7 +100,11 @@ def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
 # Mode 1: simple (word-count based)
 # ---------------------------------------------------------------------------
 
-def _group_sentences_by_wordcount(sentences: list[str], min_words: int, max_words: int) -> list[str]:
+def _group_sentences_by_wordcount(
+    sentences: list[str],
+    min_words: int,
+    max_words: int
+) -> list[str]:
     chunks: list[str] = []
     current: list[str] = []
     count = 0
@@ -137,7 +145,10 @@ def _group_sentences_by_wordcount(sentences: list[str], min_words: int, max_word
 # ---------------------------------------------------------------------------
 
 def _find_chunk_boundaries(
-    word_counts: list[int], sim_scores: list[float], min_words: int, max_words: int
+    word_counts: list[int],
+    sim_scores: list[float],
+    min_words: int,
+    max_words: int
 ) -> list[tuple[int, int]]:
     """
     Fungsi murni (tidak butuh model, mudah di-unit-test): menentukan
@@ -198,7 +209,10 @@ def _find_chunk_boundaries(
 
 
 def _group_sentences_by_topic(
-    sentences: list[str], min_words: int, max_words: int, embed_model_name: str
+    sentences: list[str],
+    min_words: int,
+    max_words: int,
+    embed_model_name: str
 ) -> list[str]:
     n = len(sentences)
     if n == 0:
