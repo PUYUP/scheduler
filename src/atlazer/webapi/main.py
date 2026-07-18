@@ -1,6 +1,6 @@
 import structlog
 from contextlib import asynccontextmanager
-from typing import Optional, Any
+from typing import Optional
 from datetime import datetime
 
 from celery import signature
@@ -18,6 +18,7 @@ from atlazer.webapi.schemas import (
     HealthResponse,
     PaperMatcherRequest,
     EmbedAnswerRequest,
+    EvaluateAnswerRequest,
 )
 from atlazer.utils.gemini_batch import get_batch_results
 from atlazer.storage.challenge import ChallengeDepot
@@ -186,3 +187,10 @@ def embed_answer(payload: EmbedAnswerRequest):
     except Exception as e:
         log.error("webapi.embed-answer.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/evaluate-answer")
+def evaluate_answer(payload: EvaluateAnswerRequest):
+    if embedder_service is None:
+        raise HTTPException(status_code=503, detail="Service is not ready yet.")
+    return TaskExecutionResponse(task_id="test")

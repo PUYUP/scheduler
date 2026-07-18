@@ -31,3 +31,9 @@ class EmbedChunksResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     model: str
+
+
+class EvaluateAnswerRequest(BaseModel):
+    user_id: str
+    challenge_id: str
+    answer_id: str
