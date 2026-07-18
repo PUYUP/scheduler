@@ -60,7 +60,7 @@ def get_batch_prompt(language_code: str) -> str:
 def _build_inline_request(
     chunks: Sequence[str],
     prompt: str = BATCH_PROMPT,
-) -> dict[str, Any]:
+) -> Any:
     """
     Menyusun satu inline request dari SEMUA chunks milik satu dokumen.
 
@@ -160,7 +160,7 @@ def create_batch_job(
         _build_inline_request(chunks, prompt) for chunks in documents
     ]
 
-    config: dict[str, Any] = {}
+    config: genai.types.CreateBatchJobConfigDict = {}
 
     if display_name:
         config["display_name"] = display_name
@@ -221,9 +221,16 @@ def get_batch_results(job_name: str) -> list[Any]:
     job = client.batches.get(name=job_name)
     results: list[Any] = []
     
+    if not job.dest or not job.dest.inlined_responses:
+        logger.warning(f"Batch job {job_name} belum selesai atau tidak memiliki inlined_responses. Status: {job.state}")
+        return results
+
     for inline_response in job.dest.inlined_responses:
         if inline_response.response:
             response_text = inline_response.response.text
+            if not response_text:
+                results.append("ERROR: response.text is empty or None")
+                continue
             try:
                 # Mem-parsing teks JSON langsung jadi dict
                 parsed_json = json.loads(response_text)

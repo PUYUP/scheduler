@@ -4,9 +4,8 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 from uuid import UUID
-from sqlalchemy import select, update, cast, or_
+from sqlalchemy import select, update, or_, CursorResult
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from atlazer.storage.db import DatabasePool
 from atlazer.models.user import ProfileUpdate, ProfileORM
@@ -185,7 +184,11 @@ class UserDepot:
                 result = session.execute(stmt)
                 session.commit()
                 
-                updated_count = result.rowcount
+                if isinstance(result, CursorResult):
+                    updated_count = result.rowcount
+                else:
+                    updated_count = 0
+
                 logger.info("Bulk updated %d profiles", updated_count)
                 
                 return updated_count

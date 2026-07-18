@@ -3,7 +3,6 @@ from __future__ import annotations
 import uuid
 import structlog
 from typing import Dict, Any, List
-from celery import signature
 
 from atlazer.celery_app.main import app, db_pool
 from atlazer.models.challenge import ChunkAnswerMetadata
@@ -31,11 +30,11 @@ log = structlog.get_logger()
     ignore_result=False,
 )
 def chunk_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    metadata = ChunkAnswerMetadata.model_validate(metadata)
-    content = metadata.content
-    language_code = metadata.language_code
+    validated = ChunkAnswerMetadata.model_validate(metadata)
+    content = validated.content
+    language_code = validated.language_code
 
-    log.info("challenge.chunk_answer.start", metadata=metadata.model_dump())
+    log.info("challenge.chunk_answer.start", metadata=validated.model_dump())
 
     chunks = stanza_chunk_answer(
         text=content,
@@ -47,16 +46,15 @@ def chunk_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         max_words=5000,
     )
 
-    metadata.chunks = [{"text": chunk} for chunk in chunks]
+    validated.chunks = [{"text": chunk} for chunk in chunks]
 
     log.info(
         "challenge.chunk_answer.done",
-        chunk_count=len(metadata.chunks),
-        metadata=metadata.model_dump()
+        chunk_count=len(validated.chunks),
+        metadata=validated.model_dump()
     )
 
-    metadata_dump = metadata.model_dump()
-    return metadata_dump
+    return validated.model_dump()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -238,5 +238,5 @@ class PaperDepot:
 
         with self._db_pool.session() as session:
             rows = session.execute(stmt).scalars().all()
-            return rows
+            return list(rows)
     

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import structlog
+from celery import group
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 
-from celery import group, signature
 from atlazer.celery_app.main import app, db_pool
-from atlazer.models.user import ProfileORM, ProfileUpdate
+from atlazer.models.user import ProfileUpdate
 from atlazer.storage.matcher import MatcherDepot
 from atlazer.storage.user import UserDepot
 from atlazer.storage.paper import PaperDepot
@@ -269,6 +269,13 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         challenge_paper_id=challenge_paper_id,
         language_code=language_code
     )
+
+    if not user_id or not paper_id or not challenge_id or not challenge_paper_id:
+        log.error(
+            "matcher.summarize_paper.missing_user_id_paper_id_challenge_id_or_challenge_paper_id",
+            metadata=metadata
+        )
+        raise ValueError("Missing user_id, paper_id, challenge_id, or challenge_paper_id")
     
     try:
         chunks = PaperDepot(db_pool).get_chunks_by_paper_id(paper_id)
@@ -286,6 +293,10 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 "status": "pending",
             }
         )
+
+        if not summary:
+            log.error("matcher.summarize_paper.failed_to_create_challenge_paper_summary", metadata=metadata)
+            raise ValueError("Failed to create challenge paper summary")
 
         # Send to Gemini
         chunk_contents = [c.content for c in chunks]

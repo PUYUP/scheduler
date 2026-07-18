@@ -1,10 +1,10 @@
-from pydantic import BaseModel, Field, ConfigDict, conint, field_validator
+from pydantic import BaseModel, conint, field_validator
 from typing import Optional, List, Literal
 from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import (
-    BigInteger, Text, Integer, Boolean, TIMESTAMP, CheckConstraint,
+    Text, Integer, Boolean, TIMESTAMP, CheckConstraint,
     UniqueConstraint, ForeignKey, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column

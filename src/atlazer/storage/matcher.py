@@ -7,11 +7,10 @@ from typing import Any, Dict, List
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from atlazer.storage.db import DatabasePool
-from atlazer.models.paper import PaperCreate, PaperORM
-from atlazer.models.document import DocumentChunkCreate, DocumentChunkORM
+from atlazer.models.paper import PaperORM
+from atlazer.models.document import DocumentChunkORM
 from atlazer.models.challenge import ChallengePaperORM, ChallengeORM
 
 logger = logging.getLogger(__name__)
@@ -122,7 +121,7 @@ class MatcherDepot:
                     "farthest": [],
                 }
 
-                if closest_paper is not None:
+                if closest_paper is not None and closest_distance is not None:
                     results["closest"].append(
                         {
                             "paper": closest_paper,
@@ -132,7 +131,7 @@ class MatcherDepot:
                         }
                     )
 
-                if farthest_paper is not None and (
+                if farthest_paper is not None and farthest_distance is not None and (
                     closest_paper is None or farthest_paper.id != closest_paper.id
                 ):
                     results["farthest"].append(
