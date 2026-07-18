@@ -128,8 +128,6 @@ async def gemini_batch_webhook(request: Request):
         user_id = user_metadata.get("user_id")
         challenge_paper_id = user_metadata.get("challenge_paper_id")
         challenge_paper_summary_id = user_metadata.get("challenge_paper_summary_id")
-        paper_id = user_metadata.get("paper_id")
-        challenge_id = user_metadata.get("challenge_id")
 
         if batch_id and user_id and challenge_paper_id:
             try:

@@ -124,6 +124,7 @@ task_routes = {
     # ── Challenge tier ──
     "atlazer.celery_app.tasks.challenge.chunk_answer":       {"queue": "challenge"},
     "atlazer.celery_app.tasks.challenge.embed_answer":       {"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.save_embedding_answer":{"queue": "challenge"},
 
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":                {"queue": "default"},

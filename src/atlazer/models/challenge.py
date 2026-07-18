@@ -166,6 +166,7 @@ def generate_code_before_insert(mapper, connection, target: ChallengeORM):
 class ChunkAnswerMetadata(BaseModel):
     user_id: str
     challenge_id: str
+    answer_id: str
     content: str
     language_code: Optional[str] = None
     chunks: Optional[list[Dict[str, Any]]] = None
@@ -181,8 +182,9 @@ class AnswerChunkORM(Base):
     )
     user_id:        Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     challenge_id:   Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    answer_id:      Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     content:        Mapped[str] = mapped_column(Text, nullable=False)
-    
+
     embedding:      Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
     embedding_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     embedding_adapter: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

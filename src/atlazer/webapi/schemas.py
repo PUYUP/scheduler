@@ -14,8 +14,9 @@ class EmbedChunksRequest(BaseModel):
 class EmbedAnswerRequest(BaseModel):
     user_id: str
     challenge_id: str
+    answer_id: str
     content: str
-    language_code: Optional[str] = None
+    language_code: str
 
 
 class PaperMatcherRequest(BaseModel):

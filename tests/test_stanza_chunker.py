@@ -33,7 +33,8 @@ def main():
 
     saving = save_embedding_answer({
         "user_id": "a1ffa462-1595-4373-92ff-2d422cbef153",
-        "challenge_id": "0302bcb4-7f40-4795-a150-95c632dc9a9e",
+        "challenge_id": "6df3b8cd-2afc-47f3-8e6f-dd5f1718bd06",
+        "answer_id": "a70dfda4-af3e-4ae1-9d4b-c0198fb900f0",
         "chunks": embeddings["chunks"],
     })
 

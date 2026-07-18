@@ -137,6 +137,7 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     chunks = metadata.get('chunks')
     user_id = metadata.get('user_id')
     challenge_id = metadata.get('challenge_id')
+    answer_id = metadata.get('answer_id')
 
     if not chunks:
         log.warning("challenge.save_embedding_answer.no_chunks", metadata=metadata)
@@ -146,9 +147,12 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         log.warning("challenge.save_embedding_answer.missing_user_id_or_challenge_id", metadata=metadata)
         raise ValueError("Missing user_id or challenge_id")
 
+    if not answer_id:
+        log.warning("challenge.save_embedding_answer.missing_answer_id", metadata=metadata)
+        raise ValueError("Missing answer_id")
+
     depot = ChallengeDepot(db_pool)
-    saved_results = []
-    
+
     try:
         user_uuid = uuid.UUID(str(user_id))
         challenge_uuid = uuid.UUID(str(challenge_id))
@@ -164,6 +168,7 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             AnswerChunkORM(
                 user_id=user_uuid,
                 challenge_id=challenge_uuid,
+                answer_id=answer_id,
                 content=chunk.get("text"),
                 embedding=chunk.get("embedding"),
                 embedding_model=chunk.get("embedding_model"),
