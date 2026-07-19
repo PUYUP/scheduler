@@ -1,9 +1,10 @@
 import logging
 import json
 
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, Dict    
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -32,20 +33,20 @@ CHUNK_SEPARATOR = "\n\n--- CHUNK BREAK ---\n\n"
 
 def get_batch_prompt(language_code: str) -> str:
     """
-    Menghasilkan prompt dinamis yang memaksa output ke bahasa target apa pun
-    (bisa berupa kode bahasa seperti 'en', 'es', 'ja', atau nama bahasa).
+    Generates a dynamic prompt that forces the output into any target language
+    (can be a language code like 'en', 'es', 'ja', or a language name).
     """
     return (
-        "Berikut adalah isi lengkap sebuah paper akademik, yang dipecah menjadi "
-        "beberapa bagian (chunks) berurutan dan digabung jadi satu teks di bawah "
-        "ini, dipisahkan dengan marker '--- CHUNK BREAK ---'. Baca seluruh chunks "
-        "sampai selesai sebelum menjawab, lalu buat SATU ringkasan utuh untuk "
-        "keseluruhan paper (bukan ringkasan per chunk) dalam format JSON.\n\n"
+        "Below is the complete content of an academic paper, split into "
+        "several sequential sections (chunks) and merged into a single text "
+        "below, separated by the marker '--- CHUNK BREAK ---'. Read all chunks "
+        "until the end before answering, then produce ONE complete summary for "
+        "the entire paper (not a summary per chunk) in JSON format.\n\n"
         "CRITICAL INSTRUCTIONS:\n"
         f"1. Translate and write all the values in the JSON output strictly in the "
         f"language corresponding to this language code/name: '{language_code}'. "
         "Only translate the values, keep the JSON keys strictly as defined in the schema.\n"
-        "2. DO NOT use phrases like 'this paper', 'this study', 'the authors', 'artikel ini', "
+        "2. DO NOT use phrases like 'this paper', 'this study', 'the authors', "
         "or any equivalent meta-phrases in the target language. Write the summary directly as "
         "factual statements or explanations, completely removing any fluff or context indicating "
         "that this is a summary of an academic paper.\n"
@@ -241,3 +242,48 @@ def get_batch_results(job_name: str) -> list[Any]:
             results.append(f"ERROR: {inline_response.error}")
             
     return results
+
+
+def upload_chunk_file(local_file_path: str, display_name: str) -> str | None:
+    """
+    Mengunggah file JSONL ke Google AI Studio.
+
+    Args:
+        local_file_path: Path lokal ke file JSONL.
+
+    Returns:
+        Nama file yang diunggah (misalnya 'files/123') jika berhasil,
+        atau None jika gagal.
+    """
+    try:
+        uploaded_file = client.files.upload(
+            file=local_file_path,
+            config=types.UploadFileConfig(
+                display_name=display_name,
+                mime_type='jsonl'
+            )
+        )
+        logger.info(f"Uploaded file: {uploaded_file.name}")
+        return uploaded_file.name
+    except Exception as e:
+        logger.error(f"Failed to upload file: {e}")
+        return None
+
+
+def scoring_chunk_file(
+    file_name: str,
+    model: str = "gemini-3.1-flash-lite",
+) -> str | None:
+    try:
+        job = client.batches.create(
+            model=model,
+            src=file_name,
+            config={
+                "display_name": file_name,
+            }
+        )
+        logger.info(f"Berhasil membuat batch job: {job.name}")
+        return job.name
+    except Exception as e:
+        logger.error(f"Gagal membuat batch job: {e}")
+        raise

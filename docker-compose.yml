@@ -14,6 +14,7 @@ x-celery-common: &celery-common
     HF_HOME: "/home/atlazer/.cache/huggingface"
   volumes:
     - downloads:/app/downloads
+    - gemini_batch:/app/gemini_batch
     - logs:/app/logs
     - hf_home:/home/atlazer/.cache/huggingface
     - onnx_cache:/app/data/onnx_cache
@@ -492,6 +493,7 @@ services:
 volumes:
   redis_data:
   downloads:
+  gemini_batch:
   logs:
   grobid_tmp:
   hf_home:

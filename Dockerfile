@@ -44,9 +44,10 @@ ENV HF_HOME=/home/atlazer/.cache/huggingface
 ENV STANZA_RESOURCES_DIR=/home/atlazer/.cache/resources
 ENV ONNX_CACHE_DIR=/app/data/onnx_cache
 
-RUN mkdir -p /app/downloads /app/logs /app/data/onnx_cache /home/atlazer/.cache/huggingface /home/atlazer/.cache/resources \
-    && chown -R atlazer:atlazer /app/downloads /app/logs /app/data/onnx_cache \
-    && chown -R atlazer:atlazer /home/atlazer/.cache/huggingface /home/atlazer/.cache/resources
+RUN mkdir -p /app/downloads /app/gemini_batch /app/logs /app/data/onnx_cache /home/atlazer/.cache/huggingface /home/atlazer/.cache/resources \
+    && chown -R atlazer:atlazer /app/downloads /app/gemini_batch /app/logs /app/data/onnx_cache \
+    && chown -R atlazer:atlazer /home/atlazer/.cache/huggingface /home/atlazer/.cache/resources \
+    && chown -R atlazer:atlazer /app
 
 ENV HOME=/home/atlazer
 

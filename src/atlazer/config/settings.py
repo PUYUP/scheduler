@@ -229,6 +229,9 @@ class Settings(BaseSettings):
     local_embedding_model: str  = "BAAI/bge-m3"
     tei_base_url: str           = "http://tei:80"
     onnx_cache_dir: str         = "/app/data/onnx_cache"
+
+    # ── Scoring ────────────────────────────────────────────────
+    gemini_batch_dir: str       = "/app/gemini_batch"
     
     # ── Logging ────────────────────────────────────────────────
     log_level: str          = "INFO"

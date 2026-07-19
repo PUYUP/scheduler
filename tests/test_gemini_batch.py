@@ -4,13 +4,16 @@ from atlazer.utils.gemini_batch import get_batch_results
 
 def batching_check():
     client = genai.Client()
-    job_name = "batches/hw11f8a3z23jj0p8ihsfn3bgyl6mgdv1070w"
+    job_name = "batches/ucqtjyc08z9a1b8up7unlby1hs6czfprk3m8"
     batch_job = client.batches.get(name=job_name)
     xxxxx = get_batch_results(job_name)
     print(xxxxx)
-    
-    if batch_job.state.name == 'JOB_STATE_SUCCEEDED':
 
+    if batch_job is None:
+        print("Job not found")
+        return
+
+    if batch_job.state is not None and batch_job.state.name == 'JOB_STATE_SUCCEEDED':
         # If batch job was created with a file
         if batch_job.dest and batch_job.dest.file_name:
             # Results are in a file
@@ -40,7 +43,7 @@ def batching_check():
         else:
             print("No results found (neither file nor inline).")
     else:
-        print(f"Job did not succeed. Final state: {batch_job.state.name}")
+        print(f"Job did not succeed. Final state: {job_name}")
         if batch_job.error:
             print(f"Error: {batch_job.error}")
 
