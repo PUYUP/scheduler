@@ -6,7 +6,7 @@ from atlazer.storage.user import UserDepot
 from atlazer.storage.challenge import ChallengeDepot
 
 
-def getting_paper_vectors(paper_id: str) -> List[Dict[str, Any]]:
+def getting_paper_chunks(paper_id: str) -> List[Dict[str, Any]]:
     """
     Returns the embedding of a paper as a list of lists of floats.
 
@@ -48,7 +48,7 @@ def getting_profile_vectors(user_id: str) -> List[List[float]]:
         raise ValueError(f"Profile {user_id} has invalid/missing embedding")
     return [profile.interest_embedding]
 
-def getting_answer_vectors(answer_id: str) -> List[Dict[str, Any]]:
+def getting_answer_chunks(answer_id: str) -> List[Dict[str, Any]]:
     depot = ChallengeDepot(db_pool)
     chunks = depot.get_chunks_by_answer_id(answer_id)
     if chunks is None:

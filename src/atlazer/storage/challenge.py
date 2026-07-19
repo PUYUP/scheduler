@@ -12,7 +12,8 @@ from atlazer.models.challenge import (
     ChallengePaperORM,
     PaperSummaryORM,
     AnswerChunkORM,
-    AnswerSimilarityORM
+    AnswerSimilarityORM,
+    AnswerORM,
 )
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import insert, select, tuple_
@@ -318,7 +319,10 @@ class ChallengeDepot:
                 )
                 raise e
 
-    def bulk_inser_answer_similarities(self, values: List[AnswerSimilarityORM]) -> None:
+    def bulk_inser_answer_similarities(
+        self,
+        values: List[AnswerSimilarityORM]
+    ) -> None:
         if not values:
             log.info("answer_similarity.empty_list")
             return
@@ -391,7 +395,29 @@ class ChallengeDepot:
             rows = session.execute(stmt).scalars().all()
             return list(rows)
 
-    def get_challenge_papers_by_challenge_id(self, challenge_id: str) -> List[ChallengePaperORM]:
+    def get_answer_similarities_by_answer_id(
+        self,
+        answer_id: str
+    ) -> List[AnswerSimilarityORM] | None:
+        """Return answer similarities of an answer."""
+        try:
+            answer_uuid: UUID = uuid.UUID(answer_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {answer_id}")
+
+        stmt = (
+            select(AnswerSimilarityORM)
+            .where(AnswerSimilarityORM.answer_id == answer_uuid)
+        )
+
+        with self._db_pool.session() as session:
+            rows = session.execute(stmt).scalars().all()
+            return list(rows)
+
+    def get_challenge_papers_by_challenge_id(
+        self,
+        challenge_id: str
+    ) -> List[ChallengePaperORM]:
         try:
             challenge_uuid: UUID = uuid.UUID(challenge_id)
         except ValueError:
@@ -442,6 +468,21 @@ class ChallengeDepot:
                 )
 
         return rows
+
+    def get_answer_by_id(self, answer_id: str) -> AnswerORM | None:
+        try:
+            answer_uuid: UUID = uuid.UUID(answer_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {answer_id}")
+
+        stmt = (
+            select(AnswerORM)
+            .where(AnswerORM.id == answer_uuid)
+        )
+
+        with self._db_pool.session() as session:
+            row = session.execute(stmt).scalars().first()
+            return row
 
 
 def _to_decimal_score(score: Optional[float]) -> Optional[Decimal]:

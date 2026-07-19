@@ -18,8 +18,8 @@ from atlazer.models.challenge import (
     AnswerSimilarityORM
 )
 from atlazer.utils.answer_scoring import (
-    getting_answer_vectors,
-    getting_paper_vectors,
+    getting_answer_chunks,
+    getting_paper_chunks,
 )
 
 log = structlog.get_logger()
@@ -237,7 +237,7 @@ def answer_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         answer_id=answer_id
     )
 
-    answer_vectors = getting_answer_vectors(answer_id)
+    answer_vectors = getting_answer_chunks(answer_id)
     if not answer_vectors:
         log.warning("challenge.answer_scoring.no_answer_vectors", metadata=metadata)
         raise ValueError("No answer vectors found")
@@ -298,7 +298,7 @@ def answer_paper_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         paper_id=paper_id
     )
 
-    paper_vectors = getting_paper_vectors(paper_id)
+    paper_vectors = getting_paper_chunks(paper_id)
     paper_embeddings = [x["embedding"] for x in paper_vectors]
     answer_embeddings = [x["embedding"] for x in answer_vectors]
 

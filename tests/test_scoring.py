@@ -2,9 +2,9 @@ import numpy as np
 
 from sklearn.metrics.pairwise import cosine_similarity
 from atlazer.utils.answer_scoring import (
-    getting_paper_vectors, 
+    getting_paper_chunks, 
     getting_profile_vectors,
-    getting_answer_vectors,
+    getting_answer_chunks,
     embedding_similarity_matrix,
     embedding_similarity
 )
@@ -13,11 +13,11 @@ from atlazer.utils.answer_scoring import (
 def scoring(paper_id: str):
     answer_id = 'e93db9e3-fe76-451e-adbf-46af16d59d50'
     
-    paper_vectors = getting_paper_vectors(paper_id)
+    paper_vectors = getting_paper_chunks(paper_id)
     paper_embeddings = [x["embedding"] for x in paper_vectors]
     paper_contents = [x["content"] for x in paper_vectors]
 
-    answer_vectors = getting_answer_vectors(answer_id)
+    answer_vectors = getting_answer_chunks(answer_id)
     answer_embeddings = [x["embedding"] for x in answer_vectors]
     answer_contents = [x["content"] for x in answer_vectors]
     similarity_matrix = cosine_similarity(answer_embeddings, paper_embeddings)

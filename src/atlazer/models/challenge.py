@@ -174,7 +174,7 @@ class ChunkAnswerMetadata(BaseModel):
     chunks: Optional[list[Dict[str, Any]]] = None
 
 
-class Answer(Base):
+class AnswerORM(Base):
     __tablename__ = "answers"
 
     id: Mapped[UUID] = mapped_column(
@@ -182,6 +182,11 @@ class Answer(Base):
         primary_key=True,
         server_default=func.gen_random_uuid()
     )
+
+    user_id:        Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    challenge_id:   Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    content:        Mapped[str] = mapped_column(Text, nullable=False)
+    status:         Mapped[Optional[str]] = mapped_column(String(255), nullable=True)    
 
 
 class AnswerChunkORM(Base):

@@ -224,7 +224,25 @@ class PaperDepot:
                 session.expunge(row)
             return row
 
-    def get_chunks_by_paper_id(self, paper_id: str) -> List[DocumentChunkORM] | None:
+    def get_paper_by_id(self, paper_id: str) -> PaperORM | None:
+        """Return a paper by its id."""
+        try:
+            paper_uuid: UUID = uuid.UUID(paper_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {paper_id}")
+
+        stmt = (
+            select(PaperORM)
+            .where(PaperORM.id == paper_uuid)
+        )
+
+        with self._db_pool.session() as session:
+            row = session.execute(stmt).scalar_one_or_none()
+            if row is not None:
+                session.expunge(row)
+            return row
+
+    def get_chunks_by_paper_id(self, paper_id: str) -> List[DocumentChunkORM] | List:
         """Return chunks of a paper."""
         try:
             paper_uuid: UUID = uuid.UUID(paper_id)
