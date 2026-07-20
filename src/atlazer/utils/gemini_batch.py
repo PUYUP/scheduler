@@ -273,6 +273,7 @@ def upload_chunk_file(local_file_path: str, display_name: str) -> str | None:
 def scoring_chunk_file(
     file_name: str,
     model: str = "gemini-3.1-flash-lite",
+    user_metadata: Optional[Dict[str, Any]] = None
 ) -> str | None:
     try:
         job = client.batches.create(
@@ -280,10 +281,14 @@ def scoring_chunk_file(
             src=file_name,
             config={
                 "display_name": file_name,
+                "webhook_config": {
+                    "uris": ["https://tunnel.atlanize.com/gemini-batch-scoring-webhook"],
+                    "user_metadata": user_metadata
+                }
             }
         )
-        logger.info(f"Berhasil membuat batch job: {job.name}")
+        logger.info(f"Successfully create batch scoring job: {job.name}")
         return job.name
     except Exception as e:
-        logger.error(f"Gagal membuat batch job: {e}")
+        logger.error(f"Failed to create batch scoring job: {e}")
         raise

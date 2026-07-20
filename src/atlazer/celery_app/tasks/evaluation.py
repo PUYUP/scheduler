@@ -178,7 +178,15 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(f"Failed to upload file {target_file}")
 
     # process to gemini AI
-    job_name = scoring_chunk_file(file_name)
+    job_name = scoring_chunk_file(
+        file_name,
+        model="gemini-3.1-flash-lite",
+        user_metadata=metadata
+    )
+
+    if job_name is None:
+        raise ValueError(f"Failed to create job for file {target_file}")
+
     log.info("evaluation.generate_jsonl.scoring_results", job_name=job_name)
 
     metadata["file_name"] = file_name
