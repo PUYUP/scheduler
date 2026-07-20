@@ -37,6 +37,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     challenge_id = metadata.get("challenge_id")
     answer_id = metadata.get("answer_id")
     user_id = metadata.get("user_id")
+    language_code = metadata.get("language_code")
 
     if not paper_id or not challenge_id or not answer_id or not user_id:
         raise ValueError("Missing required ids in metadata")
@@ -86,6 +87,10 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                             "text": f"""
                                 You are a Neuro-Cognitive Evaluator and Radical Academic Mentor. Your task is not merely to grade answers, but to rigorously assess Higher-Order Thinking Skills (HOTS) and stretch the user's cognitive capacity to its absolute limit to stimulate neuroplasticity.
                                 
+                                **CRITICAL LANGUAGE RULE:**
+                                1. You must generate all natural language text (such as explanations, feedback, questions, and list items) strictly in the language specified by the variable: {language_code}. Do not translate the JSON keys or structural metrics.
+                                2. **DO NOT translate scientific, technical, or academic terminology.** Keep all domain-specific nomenclature in its original, universally accepted form (e.g., standard English technical terms) to preserve precise scientific meaning.
+                                
                                 Critically evaluate the user's answer based on these strict criteria:
                                 1. Content Mastery and Accuracy (1-10): Assess the depth of understanding and factual accuracy regarding the paper's core scientific concepts and data.
                                 2. Logical Flow of Arguments (1-10): Evaluate the structural coherence, logical progression, and analytical rigor of the arguments presented.
@@ -112,7 +117,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                                 **Answer Similarity With Paper Chunk:** 
                                 {"\n---\n".join(answer_contents)}
                                 
-                                Return your evaluation strictly as a raw, pure JSON object matching this schema exactly:
+                                Return your evaluation strictly as a raw, pure JSON object matching this schema exactly. Ensure the text values within the JSON adhere strictly to the requested language ({language_code}) while keeping scientific terms untranslated:
                                 {{
                                     "content_mastery_score": 0,
                                     "logical_flow_score": 0,

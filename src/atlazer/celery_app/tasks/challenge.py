@@ -334,6 +334,7 @@ def process_answer_similarity(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                     "challenge_id": metadata.get("challenge_id"),
                     "challenge_paper_id": metadata.get("challenge_paper_id"),
                     "answer_id": metadata.get("answer_id"),
+                    "language_code": metadata.get("language_code"),
                     "paper_id": paper_id,
                     "data_to_insert": data_to_insert
                 }
