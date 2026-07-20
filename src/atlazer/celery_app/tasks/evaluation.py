@@ -16,25 +16,7 @@ log = structlog.get_logger()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 7 of 9 — evaluation_answers with critical thinking, etc
-# ─────────────────────────────────────────────────────────────────────────────
-
-@app.task(
-    name="atlazer.celery_app.tasks.evaluation.evaluate_answers",
-    bind=True,
-    max_retries=3,
-    default_retry_delay=30,
-    queue="challenge",
-    time_limit=1800,
-    soft_time_limit=1700,
-    ignore_result=False,
-)
-def evaluate_answers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    return metadata
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Task 8 of 9 — generate jsonl for batching
+# Task 7 of 9 — generate jsonl for batching
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -165,8 +147,10 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     target_dir = Path(settings.gemini_batch_dir)
-    target_dir.mkdir(exist_ok=True, parents=True)
     target_file = target_dir / f"{key}.jsonl"
+
+    # create full path of target file
+    target_file.parent.mkdir(exist_ok=True, parents=True)
 
     log.info("evaluation.generate_jsonl.payload", target_dir=target_dir)
     with open(target_file, "w", encoding="utf-8") as file:
@@ -177,21 +161,59 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     if file_name is None:
         raise ValueError(f"Failed to upload file {target_file}")
 
+    log.info("evaluation.generate_jsonl.scoring_results", file_name=file_name)
+    metadata["display_name"] = key
+    metadata["file_name"] = file_name
+    metadata["target_dir"] = str(target_dir)
+    metadata["target_file"] = str(target_file)
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 8 of 9 — scoring answer with critical thinking, etc
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.evaluation.scoring_answer",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="challenge",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def scoring_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("evaluation.scoring_answer", metadata=metadata)
+
+    target_file = metadata.get("target_file")
+    if target_file is None:
+        raise ValueError("Failed to get target file from metadata")
+
+    file_name = metadata.get("file_name")
+    if file_name is None:
+        raise ValueError("Failed to get file name from metadata")
+
     # process to gemini AI
+    user_metadata = {
+        "user_id": metadata.get("user_id"),
+        "answer_id": metadata.get("answer_id"),
+        "challenge_id": metadata.get("challenge_id"),
+        "challenge_paper_id": metadata.get("challenge_paper_id"),
+        "paper_id": metadata.get("paper_id"),
+    }
+
     job_name = scoring_chunk_file(
         file_name,
         model="gemini-3.1-flash-lite",
-        user_metadata=metadata
+        user_metadata=user_metadata
     )
 
     if job_name is None:
         raise ValueError(f"Failed to create job for file {target_file}")
 
-    log.info("evaluation.generate_jsonl.scoring_results", job_name=job_name)
+    log.info("evaluation.scoring_answer.scoring_ran", job_name=job_name)
 
-    metadata["file_name"] = file_name
-    metadata["target_dir"] = str(target_dir)
-    metadata["display_name"] = key
     metadata["job_name"] = job_name
     return metadata
 

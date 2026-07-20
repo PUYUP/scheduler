@@ -4,7 +4,7 @@ import uuid
 import structlog
 import numpy as np
 from typing import Dict, Any, List
-from celery import group
+from celery import group, signature
 from sklearn.metrics.pairwise import cosine_similarity
 
 from atlazer.celery_app.main import app, db_pool
@@ -392,5 +392,22 @@ def save_answer_similarity(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         'challenge.save_answer_similarity.success',
         payloads_count=len(payloads)
     )
+
+    # Chain: save_answer_similarity → evaluate_answers (evaluation queue)
+    (
+        signature(
+            "atlazer.celery_app.tasks.evaluation.generate_jsonl",
+            args=(metadata,),
+            queue="evaluation",
+            immutable=False,
+        )
+        |
+        signature(
+            "atlazer.celery_app.tasks.evaluation.scoring_answer",
+            args=(metadata,),
+            queue="evaluation",
+            immutable=False,
+        )
+    ).apply_async()
 
     return metadata
