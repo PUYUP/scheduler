@@ -8,8 +8,9 @@ from typing import Dict, Any
 from atlazer.celery_app.main import app, db_pool
 from atlazer.storage.paper import PaperDepot
 from atlazer.storage.challenge import ChallengeDepot
+from atlazer.models.evaluation import EvaluationORM
 from atlazer.config.settings import settings
-from atlazer.utils.gemini_batch import upload_chunk_file, scoring_chunk_file
+from atlazer.utils.gemini_batch import upload_chunk_file, scoring_chunk_file, get_batch_results
 from atlazer.models.evaluation import CognitiveAssessment
 
 log = structlog.get_logger()
@@ -24,7 +25,7 @@ log = structlog.get_logger()
     bind=True,
     max_retries=3,
     default_retry_delay=30,
-    queue="challenge",
+    queue="evaluation",
     time_limit=1800,
     soft_time_limit=1700,
     ignore_result=False,
@@ -124,11 +125,11 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                                     "neuro_growth_feedback": "Provide an intellectually provocative, brutally honest, yet constructive critique. Pinpoint exactly where their reasoning softened and how they should have challenged the text.",
                                     "brain_hack_question": "Formulate one highly sophisticated, complex question based on this paper's deep mechanics to force the user to build new neural connections in their next session.",
                                     "international_metrics_evaluated": {{
-                                        "issue_clarification_depth": "Evaluate the sharpness in unraveling complex issues within the paper.",
-                                        "evidence_interrogativity": "Evaluate whether the user aggressively questioned the data/methodologies rather than passively summarizing.",
-                                        "assumption_and_bias_detection": "Evaluate the ability to detect the author's underlying assumptions and the user's own cognitive biases.",
-                                        "divergent_synthesis": "Evaluate the capacity to bridge fragmented pieces of information into a novel, overarching perspective.",
-                                        "systemic_implication": "Evaluate the foresight in predicting long-term, real-world impacts or consequences of the paper's findings."
+                                        "issue_clarification_depth": null,
+                                        "evidence_interrogativity": null,
+                                        "assumption_and_bias_detection": null,
+                                        "divergent_synthesis": null,
+                                        "systemic_implication": null
                                     }}
                                 }}
                             """
@@ -141,7 +142,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 "top_p": 0.85,
                 "max_output_tokens": 1500,
                 "response_mime_type": "application/json",
-                "response_schema": resolve_pydantic_schema(CognitiveAssessment),
+                "response_schema": _resolve_pydantic_schema(CognitiveAssessment),
             }
         }
     }
@@ -178,7 +179,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     bind=True,
     max_retries=3,
     default_retry_delay=30,
-    queue="challenge",
+    queue="evaluation",
     time_limit=1800,
     soft_time_limit=1700,
     ignore_result=False,
@@ -219,7 +220,57 @@ def scoring_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     return metadata
 
 
-def resolve_pydantic_schema(model: type[BaseModel]) -> dict:
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 9 of 9 — save evaluatuion to database
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.evaluation.save_evaluation",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="evaluation",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def save_evaluation(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("evaluation.save_evaluation", metadata=metadata)
+
+    job_id = metadata.get("job_id")
+    if job_id is None:
+        raise ValueError("Failed to get job id from metadata")
+
+    try:
+        results = get_batch_results(job_id)
+        if results is None:
+            raise ValueError("Failed to get results from batch")
+    except Exception as e:
+        log.error("evaluation.save_evaluation.error", error=str(e))
+        raise ValueError(str(e))
+
+    log.info("evaluation.save_evaluation.batch_results", results=results)
+
+    payload: EvaluationORM = EvaluationORM(
+        user_id=metadata.get("user_id"),
+        challenge_id=metadata.get("challenge_id"),
+        challenge_paper_id=metadata.get("challenge_paper_id"),
+        answer_id=metadata.get("answer_id"),
+        results=results,
+    )
+
+    try:
+        depot = ChallengeDepot(db_pool)
+        depot.insert_evaluation(payload)
+    except Exception as e:
+        log.error("evaluation.save_evaluation.error", error=str(e))
+        raise ValueError(str(e))
+
+    log.info("evaluation.save_evaluation.success", metadata=metadata)
+    return metadata
+
+
+def _resolve_pydantic_schema(model: type[BaseModel]) -> dict:
     """
     Convert a Pydantic model to a Gemini-compatible schema dict
     (inlines $defs/$ref, karena Gemini response_schema tidak support $ref).

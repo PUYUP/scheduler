@@ -15,6 +15,7 @@ from atlazer.models.challenge import (
     AnswerSimilarityORM,
     AnswerORM,
 )
+from atlazer.models.evaluation import EvaluationORM
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import insert, select, tuple_
 
@@ -72,7 +73,7 @@ class ChallengeDepot:
                 session.refresh(new_challenge)
                 log.info("challenge.finish_insert", user_id=user_id, papers=papers)
                 return new_challenge
-            except Exception as e:
+            except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
                     "challenge.error_insert",
@@ -134,7 +135,7 @@ class ChallengeDepot:
                 log.info("challenge_paper.finish_update", id=challenge_paper_id)
                 return record
 
-            except Exception as e:
+            except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
                     "challenge_paper.error_update",
@@ -168,7 +169,7 @@ class ChallengeDepot:
                 log.info("paper_summary.finish_insert", id=record.id)
                 return record
 
-            except Exception as e:
+            except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
                     "paper_summary.error_insert",
@@ -225,7 +226,7 @@ class ChallengeDepot:
                 log.info("paper_summary.finish_update", id=paper_summary_id)
                 return record
 
-            except Exception as e:
+            except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
                     "paper_summary.error_update",
@@ -255,7 +256,7 @@ class ChallengeDepot:
                     "challenge_id": str(data.challenge_id),
                 }
 
-            except Exception as e:
+            except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
                     "answer_chunk.error_insert",
@@ -375,6 +376,30 @@ class ChallengeDepot:
                 session.rollback()
                 log.error(
                     "challenge_answer_similarity.error_reindex",
+                    error=str(e),
+                )
+                raise e
+
+    def insert_evaluation(self, data: EvaluationORM) -> Dict[str, Any] | None:
+        with self._db_pool.session() as session:
+            try:
+                session.add(data)
+                session.commit()
+                session.refresh(data)
+
+                log.info("evaluation.finish_insert", id=str(data.id))
+                return {
+                    "id": str(data.id),
+                    "user_id": str(data.user_id),
+                    "challenge_id": str(data.challenge_id),
+                    "challenge_paper_id": str(data.challenge_paper_id),
+                    "answer_id": str(data.answer_id),
+                    "results": data.results,
+                }
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "evaluation.error_insert",
                     error=str(e),
                 )
                 raise e

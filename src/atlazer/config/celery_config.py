@@ -139,6 +139,7 @@ task_routes = {
     # ── Evaluation tier ──
     "atlazer.celery_app.tasks.evaluation.generate_jsonl":           {"queue": "evaluation"},
     "atlazer.celery_app.tasks.evaluation.scoring_answer":           {"queue": "evaluation"},
+    "atlazer.celery_app.tasks.evaluation.save_evaluation":          {"queue": "evaluation"},
 
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":   {"queue": "default"},

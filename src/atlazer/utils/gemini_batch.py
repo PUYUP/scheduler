@@ -211,37 +211,164 @@ def list_batch_jobs() -> Any:
     return client.batches.list()
 
 
-def get_batch_results(job_name: str) -> list[Any]:
+def _parse_response_text(response_text: Optional[str]) -> Any:
     """
-    Mengambil hasil dari batch job yang sudah selesai (JOB_STATE_SUCCEEDED)
-    dan mengonversi teks JSON-nya menjadi Python dictionary.
+    Helper: parse teks JSON menjadi dict.
+    Kalau kosong atau gagal parse, kembalikan string error.
+    """
+    if not response_text:
+        return "ERROR: response.text is empty or None"
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        return f"JSON_ERROR: Gagal melakukan parse -> {response_text}"
+
+
+def _metadata_from_sdk_response(response_obj: Any) -> dict:
+    """
+    Helper: ambil usage_metadata & model_version dari objek response SDK
+    (dipakai untuk inline_response.response).
+    """
+    metadata: dict[str, Any] = {"usage_metadata": None, "model_version": None}
+
+    usage = getattr(response_obj, "usage_metadata", None)
+    if usage is not None:
+        # Kalau objek punya .model_dump() (pydantic), pakai itu supaya jadi dict bersih
+        if hasattr(usage, "model_dump"):
+            metadata["usage_metadata"] = usage.model_dump(exclude_none=True)
+        else:
+            metadata["usage_metadata"] = usage
+
+    metadata["model_version"] = getattr(response_obj, "model_version", None)
+    return metadata
+
+
+def _metadata_from_file_line(response_dict: dict) -> dict:
+    """
+    Helper: ambil usage_metadata & model_version dari raw JSON hasil file (JSONL).
+    Coba camelCase dulu (format REST asli), fallback ke snake_case.
+    """
+    metadata: dict[str, Any] = {"usage_metadata": None, "model_version": None}
+
+    usage = response_dict.get("usageMetadata") or response_dict.get("usage_metadata")
+    if usage is not None:
+        metadata["usage_metadata"] = usage
+
+    metadata["model_version"] = (
+        response_dict.get("modelVersion") or response_dict.get("model_version")
+    )
+    return metadata
+
+
+def _extract_text_from_file_line(response_dict: dict) -> Optional[str]:
+    """
+    Helper: ambil teks response dari satu baris JSONL hasil batch (mode file).
+    Sesuaikan path key ini kalau struktur JSONL Anda berbeda.
+    """
+    try:
+        candidates = response_dict.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if parts:
+                return parts[0].get("text")
+    except (AttributeError, IndexError, KeyError):
+        pass
+    return None
+
+
+def get_batch_results(job_name: str) -> list[dict[str, Any]]:
+    """
+    Mengambil hasil dari batch job yang sudah selesai (JOB_STATE_SUCCEEDED),
+    mengonversi teks JSON-nya menjadi Python dictionary, dan menyertakan
+    metadata response (usage_metadata, model_version) untuk tiap request.
+
+    Menangani dua kemungkinan lokasi hasil:
+      1. File     -> job.dest.file_name, didownload lalu diparse per baris (JSONL)
+      2. Inline   -> job.dest.inlined_responses, diambil langsung dari objek response
 
     Returns:
-        List berisi dictionary hasil ringkasan. Kalau ada request yang gagal 
-        atau tidak bisa diparse, elemen tersebut diisi string error-nya.
+        List berisi dict dengan struktur:
+        {
+            "result": <dict hasil parse, atau string error kalau gagal>,
+            "metadata": {
+                "usage_metadata": <dict token count, dll, atau None>,
+                "model_version": <str atau None>,
+            }
+        }
     """
     job = client.batches.get(name=job_name)
-    results: list[Any] = []
-    
-    if not job.dest or not job.dest.inlined_responses:
-        logger.warning(f"Batch job {job_name} belum selesai atau tidak memiliki inlined_responses. Status: {job.state}")
+    results: list[dict[str, Any]] = []
+
+    # Pastikan job benar-benar sudah selesai
+    if job.state is None or job.state.name != "JOB_STATE_SUCCEEDED":
+        logger.warning(f"Batch job {job_name} belum selesai. Status: {job.state}")
+        if getattr(job, "error", None):
+            logger.warning(f"Error job: {job.error}")
         return results
 
-    for inline_response in job.dest.inlined_responses:
-        if inline_response.response:
-            response_text = inline_response.response.text
-            if not response_text:
-                results.append("ERROR: response.text is empty or None")
+    if not job.dest:
+        logger.warning(f"Batch job {job_name} tidak memiliki dest.")
+        return results
+
+    empty_metadata = {"usage_metadata": None, "model_version": None}
+
+    # --- Kasus 1: hasil disimpan di file ---
+    if job.dest.file_name:
+        result_file_name = job.dest.file_name
+        logger.info(f"Hasil batch job {job_name} ada di file: {result_file_name}")
+
+        file_content = client.files.download(file=result_file_name)
+        text_content = file_content.decode("utf-8")
+
+        for line_num, line in enumerate(text_content.splitlines(), start=1):
+            line = line.strip()
+            if not line:
                 continue
             try:
-                # Mem-parsing teks JSON langsung jadi dict
-                parsed_json = json.loads(response_text)
-                results.append(parsed_json)
+                line_obj = json.loads(line)
             except json.JSONDecodeError:
-                results.append(f"JSON_ERROR: Gagal melakukan parse -> {response_text}")
-        else:
-            results.append(f"ERROR: {inline_response.error}")
-            
+                results.append({
+                    "result": f"JSON_ERROR: Gagal parse baris {line_num} -> {line}",
+                    "metadata": dict(empty_metadata),
+                })
+                continue
+
+            if line_obj.get("error"):
+                results.append({
+                    "result": f"ERROR: {line_obj['error']}",
+                    "metadata": dict(empty_metadata),
+                })
+                continue
+
+            response_dict = line_obj.get("response", {})
+            response_text = _extract_text_from_file_line(response_dict)
+            results.append({
+                "result": _parse_response_text(response_text),
+                "metadata": _metadata_from_file_line(response_dict),
+            })
+
+        return results
+
+    # --- Kasus 2: hasil inline ---
+    if job.dest.inlined_responses:
+        logger.info(f"Hasil batch job {job_name} bersifat inline.")
+
+        for inline_response in job.dest.inlined_responses:
+            if inline_response.response:
+                results.append({
+                    "result": _parse_response_text(inline_response.response.text),
+                    "metadata": _metadata_from_sdk_response(inline_response.response),
+                })
+            else:
+                results.append({
+                    "result": f"ERROR: {inline_response.error}",
+                    "metadata": dict(empty_metadata),
+                })
+
+        return results
+
+    # --- Tidak ada hasil sama sekali ---
+    logger.warning(f"Batch job {job_name} tidak memiliki file_name maupun inlined_responses.")
     return results
 
 
@@ -283,7 +410,7 @@ def scoring_chunk_file(
             config={
                 "display_name": file_name,
                 "webhook_config": {
-                    "uris": ["https://tunnel.atlanize.com/gemini-batch-scoring-webhook"],
+                    "uris": ["https://tunnel.atlanize.com/gemini-batch-webhook"],
                     "user_metadata": user_metadata
                 }
             }

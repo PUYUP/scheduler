@@ -10,6 +10,7 @@ from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
 from atlazer.celery_app.tasks.challenge import chunk_answer
+from atlazer.celery_app.tasks.evaluation import save_evaluation
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
     EmbedChunksRequest,
@@ -160,6 +161,20 @@ async def gemini_batch_webhook(request: Request):
 
         if action == "answer_score_generation":
             log.info("webapi.gemini-batch-webhook.answer_score_generation.start", user_metadata=user_metadata)
+
+            metadata = {
+                "job_id": batch_id,
+                "output_file_uri": data.get("output_file_uri"),
+                **user_metadata,
+            }
+
+            job = save_evaluation.apply_async(
+                kwargs={"metadata": metadata},
+                queue="evaluation"
+            )
+
+            log.info("webapi.gemini-batch-webhook.answer_score_generation.success", task_id=job.id)
+            return TaskExecutionResponse(task_id=job.id)
 
     return {"ok": True}
 
