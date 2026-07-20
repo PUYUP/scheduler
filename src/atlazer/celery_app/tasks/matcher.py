@@ -285,7 +285,7 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
         # create challenge paper summary
         challenge_depot = ChallengeDepot(db_pool)
-        summary = challenge_depot.insert_challenge_paper_summary(
+        summary = challenge_depot.insert_paper_summary(
             data={
                 "paper_id": paper_id,
                 "challenge_id": challenge_id,
@@ -295,8 +295,8 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         if not summary:
-            log.error("matcher.summarize_paper.failed_to_create_challenge_paper_summary", metadata=metadata)
-            raise ValueError("Failed to create challenge paper summary")
+            log.error("matcher.summarize_paper.failed_to_create_paper_summary", metadata=metadata)
+            raise ValueError("Failed to create paper summary")
 
         # Send to Gemini
         chunk_contents = [c.content for c in chunks]
@@ -308,7 +308,7 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             paper_id=paper_id,
             challenge_id=challenge_id,
             challenge_paper_id=challenge_paper_id,
-            challenge_paper_summary_id=str(summary.id)
+            paper_summary_id=str(summary.id)
         )
 
         metadata.update({

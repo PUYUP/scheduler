@@ -144,7 +144,7 @@ class ChallengeDepot:
                 )
                 raise e
 
-    def insert_challenge_paper_summary(
+    def insert_paper_summary(
         self, 
         data: Dict[str, Any],
     ) -> Optional[PaperSummaryORM]:
@@ -165,21 +165,21 @@ class ChallengeDepot:
                 session.commit()
                 session.refresh(record)
 
-                log.info("challenge_paper_summary.finish_insert", id=record.id)
+                log.info("paper_summary.finish_insert", id=record.id)
                 return record
 
             except Exception as e:
                 session.rollback()
                 log.error(
-                    "challenge_paper_summary.error_insert",
+                    "paper_summary.error_insert",
                     payload=data,
                     error=str(e),
                 )
                 raise e    
     
-    def update_challenge_paper_summary(
+    def update_paper_summary(
         self,
-        challenge_paper_summary_id: str,
+        paper_summary_id: str,
         update_data: Dict[str, Any]
     ) -> Optional[PaperSummaryORM]:
         """
@@ -188,16 +188,16 @@ class ChallengeDepot:
         yang akan diubah.
         
         Args:
-            challenge_paper_summary_id: UUID string dari challenge_paper_summary yang ingin diubah.
+            paper_summary_id: UUID string dari paper_summary yang ingin diubah.
             update_data: Dictionary berisi field yang akan di-update, 
                          contoh: {"relevance_label": "closest", "relevance_score": 0.85}
         """
-        log.info("challenge_paper_summary.start_update", id=challenge_paper_summary_id, payload=update_data)
+        log.info("paper_summary.start_update", id=paper_summary_id, payload=update_data)
 
         try:
-            cps_uuid: UUID = uuid.UUID(challenge_paper_summary_id)
+            cps_uuid: UUID = uuid.UUID(paper_summary_id)
         except ValueError:
-            raise ValueError(f"Invalid UUID string format: {challenge_paper_summary_id}")
+            raise ValueError(f"Invalid UUID string format: {paper_summary_id}")
 
         with self._db_pool.session() as session:
             try:
@@ -207,7 +207,7 @@ class ChallengeDepot:
                 ).first()
 
                 if not record:
-                    log.warning("challenge_paper_summary.not_found", id=challenge_paper_summary_id)
+                    log.warning("paper_summary.not_found", id=paper_summary_id)
                     return None
 
                 # 2. Lakukan iterasi update_data dan lakukan patch (partial update)
@@ -216,20 +216,20 @@ class ChallengeDepot:
                     if hasattr(record, key):
                         setattr(record, key, value)
                     else:
-                        log.debug("challenge_paper_summary.ignore_unknown_field", field=key)
+                        log.debug("paper_summary.ignore_unknown_field", field=key)
 
                 # 3. Simpan perubahan
                 session.commit()
                 session.refresh(record)
                 
-                log.info("challenge_paper_summary.finish_update", id=challenge_paper_summary_id)
+                log.info("paper_summary.finish_update", id=paper_summary_id)
                 return record
 
             except Exception as e:
                 session.rollback()
                 log.error(
-                    "challenge_paper_summary.error_update",
-                    id=challenge_paper_summary_id,
+                    "paper_summary.error_update",
+                    id=paper_summary_id,
                     payload=update_data,
                     error=str(e),
                 )

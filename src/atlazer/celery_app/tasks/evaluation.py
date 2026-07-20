@@ -201,6 +201,7 @@ def scoring_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         "challenge_id": metadata.get("challenge_id"),
         "challenge_paper_id": metadata.get("challenge_paper_id"),
         "paper_id": metadata.get("paper_id"),
+        "action": "answer_scoring",
     }
 
     job_name = scoring_chunk_file(

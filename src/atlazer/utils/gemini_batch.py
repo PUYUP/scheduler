@@ -134,7 +134,7 @@ def create_batch_job(
     paper_id: Optional[str] = None,
     challenge_id: Optional[str] = None,
     challenge_paper_id: Optional[str] = None,
-    challenge_paper_summary_id: Optional[str] = None
+    paper_summary_id: Optional[str] = None
 ) -> Any:
     """
     Membuat batch processing job dari chunks langsung (inline), tanpa file/GCS.
@@ -175,7 +175,8 @@ def create_batch_job(
                 # this will be use for updating challenge paper processing
                 "challenge_id": challenge_id,
                 "challenge_paper_id": challenge_paper_id,
-                "challenge_paper_summary_id": challenge_paper_summary_id
+                "paper_summary_id": paper_summary_id,
+                "action": ""
             }
         }
 
