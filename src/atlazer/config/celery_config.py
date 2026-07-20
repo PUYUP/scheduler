@@ -132,8 +132,8 @@ task_routes = {
     "atlazer.celery_app.tasks.challenge.chunk_answer":              {"queue": "challenge"},
     "atlazer.celery_app.tasks.challenge.embed_answer":              {"queue": "challenge"},
     "atlazer.celery_app.tasks.challenge.save_embedding_answer":     {"queue": "challenge"},
-    "atlazer.celery_app.tasks.challenge.answer_scoring":            {"queue": "challenge"},
-    "atlazer.celery_app.tasks.challenge.answer_paper_scoring":      {"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.process_challenge_papers":  {"queue": "challenge"},
+    "atlazer.celery_app.tasks.challenge.process_answer_similarity": {"queue": "challenge"},
     "atlazer.celery_app.tasks.challenge.save_answer_similarity":    {"queue": "challenge"},
 
     # ── Evaluation tier ──

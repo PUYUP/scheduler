@@ -176,7 +176,7 @@ def create_batch_job(
                 "challenge_id": challenge_id,
                 "challenge_paper_id": challenge_paper_id,
                 "paper_summary_id": paper_summary_id,
-                "action": ""
+                "action": "paper_summary_generation"
             }
         }
 

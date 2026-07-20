@@ -129,29 +129,38 @@ async def gemini_batch_webhook(request: Request):
         user_id = user_metadata.get("user_id")
         challenge_paper_id = user_metadata.get("challenge_paper_id")
         paper_summary_id = user_metadata.get("paper_summary_id")
+        action = user_metadata.get("action")
 
-        if batch_id and user_id and challenge_paper_id:
-            try:
-                results = get_batch_results(batch_id)
-                log.info("webapi.gemini-batch-webhook.result", batch_id=batch_id)
+        if action == 'paper_summary_generation':
+            log.info("webapi.gemini-batch-webhook.paper_summary_generation.start", user_metadata=user_metadata)
 
-                # store result in database
-                depot = ChallengeDepot(db_pool)
-                depot.update_paper_summary(
-                    paper_summary_id=paper_summary_id,
-                    update_data={
-                        "results": results,
-                        "tool": "google-gemini",
-                        "model": "gemini-3.1-flash-lite",
-                        "status": "completed",
-                        "job_id": batch_id,
-                        "finished_at": datetime.now(),
-                    }
-                )
-            except Exception as e:
-                log.error("webapi.gemini-batch-webhook.error", error=str(e))
-                raise HTTPException(status_code=500, detail=str(e))
-            
+            if batch_id and user_id and challenge_paper_id:
+                try:
+                    results = get_batch_results(batch_id)
+                    log.info("webapi.gemini-batch-webhook.result", batch_id=batch_id)
+
+                    # store result in database
+                    depot = ChallengeDepot(db_pool)
+                    depot.update_paper_summary(
+                        paper_summary_id=paper_summary_id,
+                        update_data={
+                            "results": results,
+                            "tool": "google-gemini",
+                            "model": "gemini-3.1-flash-lite",
+                            "status": "completed",
+                            "job_id": batch_id,
+                            "finished_at": datetime.now(),
+                        }
+                    )
+
+                    log.info("webapi.gemini-batch-webhook.paper_summary_generation.success", user_metadata=user_metadata)
+                except Exception as e:
+                    log.error("webapi.gemini-batch-webhook.error", error=str(e))
+                    raise HTTPException(status_code=500, detail=str(e))
+
+        if action == "answer_score_generation":
+            log.info("webapi.gemini-batch-webhook.answer_score_generation.start", user_metadata=user_metadata)
+
     return {"ok": True}
 
 
@@ -176,7 +185,7 @@ def embed_answer(payload: EmbedAnswerRequest):
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.challenge.answer_scoring",
+                "atlazer.celery_app.tasks.challenge.process_challenge_papers",
                 queue="challenge",
                 immutable=False,
             )

@@ -319,7 +319,7 @@ class ChallengeDepot:
                 )
                 raise e
 
-    def bulk_inser_answer_similarities(
+    def bulk_insert_answer_similarities(
         self,
         values: List[AnswerSimilarityORM]
     ) -> None:
@@ -355,8 +355,8 @@ class ChallengeDepot:
                     tuple_(
                         AnswerSimilarityORM.user_id, 
                         AnswerSimilarityORM.challenge_id,
-                        AnswerSimilarityORM.answer_id,
-                        AnswerSimilarityORM.paper_id
+                        AnswerSimilarityORM.challenge_paper_id,
+                        AnswerSimilarityORM.answer_id
                     ).in_(user_challenge_pairs)
                 ).delete(synchronize_session=False)
 

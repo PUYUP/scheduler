@@ -8,6 +8,7 @@ from celery import group, signature
 from sklearn.metrics.pairwise import cosine_similarity
 
 from atlazer.celery_app.main import app, db_pool
+from atlazer.celery_app.tasks.evaluation import generate_jsonl
 from atlazer.utils.stanza_chunker import chunk_answer as stanza_chunk_answer
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
@@ -206,11 +207,11 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 4 of 7 — answer scoring
+# Task 4 of 7 — process challenge papers similarity processing
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.challenge.answer_scoring",
+    name="atlazer.celery_app.tasks.challenge.process_challenge_papers",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -219,38 +220,38 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def answer_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("challenge.answer_scoring.start")
+def process_challenge_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("challenge.process_challenge_papers.start")
     challenge_id = metadata.get("challenge_id")
     answer_id = metadata.get("answer_id")
 
     if not challenge_id:
-        log.warning("challenge.answer_scoring.missing_challenge_id", metadata=metadata)
+        log.warning("challenge.process_challenge_papers.missing_challenge_id", metadata=metadata)
         raise ValueError("Missing challenge_id")
 
     if not answer_id:
-        log.warning("challenge.answer_scoring.missing_answer_id", metadata=metadata)
+        log.warning("challenge.process_challenge_papers.missing_answer_id", metadata=metadata)
         raise ValueError("Missing answer_id")
 
     log.info(
-        'challenge.answer_scoring.get_answer_vectors',
+        'challenge.process_challenge_papers.get_answer_vectors',
         answer_id=answer_id
     )
 
     answer_vectors = getting_answer_chunks(answer_id)
     if not answer_vectors:
-        log.warning("challenge.answer_scoring.no_answer_vectors", metadata=metadata)
+        log.warning("challenge.process_challenge_papers.no_answer_vectors", metadata=metadata)
         raise ValueError("No answer vectors found")
 
     # Get challenge papers
     depot = ChallengeDepot(db_pool)
     challenge_papers = depot.get_challenge_papers_by_challenge_id(challenge_id)
     if not challenge_papers:
-        log.warning("challenge.answer_scoring.no_challenge_papers", metadata=metadata)
+        log.warning("challenge.process_challenge_papers.no_challenge_papers", metadata=metadata)
         raise ValueError("No challenge papers found")
 
     job = group(
-        answer_paper_scoring.s({
+        process_answer_similarity.s({
             "paper_id": str(cp.paper_id),
             "challenge_paper_id": str(cp.id),
             "answer_vectors": answer_vectors,
@@ -266,11 +267,11 @@ def answer_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 5 of 7 — answer + paper scoring
+# Task 5 of 7 — answer + paper similarity processing
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.challenge.answer_paper_scoring",
+    name="atlazer.celery_app.tasks.challenge.process_answer_similarity",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -279,22 +280,22 @@ def answer_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def answer_paper_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("challenge.answer_paper_scoring.start")
+def process_answer_similarity(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("challenge.process_answer_similarity.start")
 
     paper_id = metadata.get("paper_id")
     answer_vectors = metadata.get("answer_vectors")
 
     if not paper_id:
-        log.warning("challenge.answer_paper_scoring.missing_paper_id", metadata=metadata)
+        log.warning("challenge.process_answer_similarity.missing_paper_id", metadata=metadata)
         raise ValueError("Missing paper_id")
 
     if not answer_vectors:
-        log.warning("challenge.answer_paper_scoring.missing_answer_vectors", metadata=metadata)
+        log.warning("challenge.process_answer_similarity.missing_answer_vectors", metadata=metadata)
         raise ValueError("Missing answer vectors")
 
     log.info(
-        'challenge.answer_paper_scoring.get_paper_vectors',
+        'challenge.process_answer_similarity.get_paper_vectors',
         paper_id=paper_id
     )
 
@@ -303,7 +304,7 @@ def answer_paper_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     answer_embeddings = [x["embedding"] for x in answer_vectors]
 
     log.info(
-        'challenge.answer_paper_scoring.calculating_similarity',
+        'challenge.process_answer_similarity.calculating_similarity',
         answer_embeddings=len(answer_embeddings),
         paper_embeddings=len(paper_embeddings)
     )
@@ -341,7 +342,7 @@ def answer_paper_scoring(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     log.info(
-        'challenge.answer_paper_scoring.similarity_matrix_calculated',
+        'challenge.process_answer_similarity.similarity_matrix_calculated',
         similarity_matrix=similarity_matrix.shape,
         data_to_insert=len(data_to_insert)
     )
@@ -386,7 +387,7 @@ def save_answer_similarity(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         payloads.append(payload)
 
     if payloads:
-        depot.bulk_inser_answer_similarities(payloads)
+        depot.bulk_insert_answer_similarities(payloads)
 
     log.info(
         'challenge.save_answer_similarity.success',
@@ -395,16 +396,9 @@ def save_answer_similarity(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     # Chain: save_answer_similarity → evaluate_answers (evaluation queue)
     (
-        signature(
-            "atlazer.celery_app.tasks.evaluation.generate_jsonl",
-            args=(metadata,),
-            queue="evaluation",
-            immutable=False,
-        )
-        |
-        signature(
+        generate_jsonl.s(metadata).set(queue="evaluation")
+        | signature(
             "atlazer.celery_app.tasks.evaluation.scoring_answer",
-            args=(metadata,),
             queue="evaluation",
             immutable=False,
         )
