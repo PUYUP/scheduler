@@ -59,6 +59,43 @@ class InternationalMetricsEvaluated(BaseModel):
     )
 
 
+class SOLOTaxonomy(BaseModel):
+    prestructural: int = Field(
+        ...,
+        ge=0,
+        le=10,
+        description=(
+            "Score (0-10). Score high ONLY if the answer completely misses the point, "
+            "uses irrelevant information, or shows deep misunderstanding. "
+            "(A highly competent answer should score 0 here)."
+        )
+    )
+    unistructural: int = Field(
+        ...,
+        ge=0,
+        le=10,
+        description="Score (0-10) for identifying and correctly focusing on at least one relevant, standalone aspect."
+    )
+    multistructural: int = Field(
+        ...,
+        ge=0,
+        le=10,
+        description="Score (0-10) for identifying multiple relevant aspects accurately, even if treated independently."
+    )
+    relational: int = Field(
+        ...,
+        ge=0,
+        le=10,
+        description="Score (0-10) for integrating various aspects into a cohesive, logically interconnected structure."
+    )
+    extended_abstract: int = Field(
+        ...,
+        ge=0,
+        le=10,
+        description="Score (0-10) for generalizing the integrated structure to propose hypotheses, new domains, or novel theoretical implications."
+    )
+
+
 class CognitiveAssessment(BaseModel):
     content_mastery_score: int = Field(
         ...,
@@ -102,7 +139,7 @@ class CognitiveAssessment(BaseModel):
         le=10,
         description="Score (1-10) representing how far the user's thinking was stretched beyond their baseline."
     )
-    
+
     blind_spots: List[str] = Field(
         ...,
         description="List specific logical flaws, biases, misinterpretations, or overlooked nuances by the user."
@@ -117,6 +154,10 @@ class CognitiveAssessment(BaseModel):
     )
 
     international_metrics_evaluated: InternationalMetricsEvaluated
+    solo: SOLOTaxonomy = Field(
+        ...,
+        description="Evaluation of cognitive processing based on the SOLO Taxonomy."
+    )
 
 
 class EvaluationORM(Base):

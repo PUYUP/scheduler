@@ -89,7 +89,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                                 
                                 **CRITICAL LANGUAGE RULE:**
                                 1. You must generate all natural language text (such as explanations, feedback, questions, and list items) strictly in the language specified by the variable: {language_code}. Do not translate the JSON keys or structural metrics.
-                                2. **DO NOT translate scientific, technical, or academic terminology.** Keep all domain-specific nomenclature in its original, universally accepted form (e.g., standard English technical terms) to preserve precise scientific meaning.
+                                2. **DO NOT translate scientific, technical, or academic terminology.** Keep all domain-specific nomenclature (including SOLO Taxonomy levels) in its original, universally accepted form to preserve precise scientific meaning.
                                 
                                 Critically evaluate the user's answer based on these strict criteria:
                                 1. Content Mastery and Accuracy (1-10): Assess the depth of understanding and factual accuracy regarding the paper's core scientific concepts and data.
@@ -100,6 +100,14 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                                 6. Structural Memory & Retrieval (1-10): Evaluate whether the user successfully integrated crucial structural details from the paper, or if the retrieval was only surface-level.
                                 7. Cognitive Stretch / Edge (1-10): Determine if this answer demonstrates maximum intellectual effort, or if the user played it safe. How hard was their brain forced to think?
                                 
+                                **SOLO TAXONOMY EVALUATION (0-10 SCALE):**
+                                Evaluate the user's mastery of each level in the Structure of the Observed Learning Outcome (SOLO) Taxonomy on a scale of 0 to 10. Generate a cognitive footprint by scoring how strongly the answer fulfills the criteria of each stage:
+                                - "Prestructural" (0-10): Score high ONLY if the answer completely misses the point, uses irrelevant information, or shows deep misunderstanding (A highly competent answer should score 0 here).
+                                - "Unistructural" (0-10): Score the ability to correctly identify and focus on at least one relevant, standalone aspect.
+                                - "Multistructural" (0-10): Score the ability to identify and list multiple relevant aspects accurately, even if treated independently.
+                                - "Relational" (0-10): Score the depth and ability to integrate various aspects into a cohesive, logically interconnected structure.
+                                - "Extended Abstract" (0-10): Score the ability to generalize the integrated structure to propose hypotheses, new domains, or novel theoretical implications beyond the provided text.
+
                                 Analyze the following dataset rigidly:
 
                                 **Paper Title:** 
@@ -126,6 +134,13 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                                     "cognitive_synthesis_score": 0,
                                     "memory_retention_score": 0,
                                     "cognitive_stretch_score": 0,
+                                    "solo": {{
+                                        "prestructural": 0,
+                                        "unistructural": 0,
+                                        "multistructural": 0,
+                                        "relational": 0,
+                                        "extended_abstract": 0
+                                    }},
                                     "blind_spots": ["List specific logical flaws, biases, misinterpretations, or overlooked nuances by the user"],
                                     "neuro_growth_feedback": "Provide an intellectually provocative, brutally honest, yet constructive critique. Pinpoint exactly where their reasoning softened and how they should have challenged the text.",
                                     "brain_hack_question": "Formulate one highly sophisticated, complex question based on this paper's deep mechanics to force the user to build new neural connections in their next session.",
