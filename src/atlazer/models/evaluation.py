@@ -96,50 +96,52 @@ class SOLOTaxonomy(BaseModel):
     )
 
 
-class CognitiveAssessment(BaseModel):
-    content_mastery_score: int = Field(
+class HOTSEvaluation(BaseModel):
+    content_mastery: int = Field(
         ...,
         ge=1,
         le=10,
         description="Score (1-10) representing mastery of the paper's content."
     )
-    logical_flow_score: int = Field(
+    logical_flow: int = Field(
         ...,
         ge=1,
         le=10,
         description="Score (1-10) representing the logical flow of the user's reasoning."
     )
-    critical_thinking_score: int = Field(
+    critical_thinking: int = Field(
         ...,
         ge=1,
         le=10,
         description="Score (1-10) representing depth of critical thinking demonstrated."
     )
-    academic_language_score: int = Field(
+    academic_language: int = Field(
         ...,
         ge=1,
         le=10,
         description="Score (1-10) representing command of academic language."
     )
-    cognitive_synthesis_score: int = Field(
+    cognitive_synthesis: int = Field(
         ...,
         ge=1,
         le=10,
         description="Score (1-10) representing ability to synthesize ideas across the paper."
     )
-    memory_retention_score: int = Field(
+    memory_retention: int = Field(
         ...,
         ge=1,
         le=10,
         description="Score (1-10) representing retention of key details from the paper."
     )
-    cognitive_stretch_score: int = Field(
+    cognitive_stretch: int = Field(
         ...,
         ge=1,
         le=10,
         description="Score (1-10) representing how far the user's thinking was stretched beyond their baseline."
     )
 
+
+class CognitiveAssessment(BaseModel):
     blind_spots: List[str] = Field(
         ...,
         description="List specific logical flaws, biases, misinterpretations, or overlooked nuances by the user."
@@ -157,6 +159,10 @@ class CognitiveAssessment(BaseModel):
     solo: SOLOTaxonomy = Field(
         ...,
         description="Evaluation of cognitive processing based on the SOLO Taxonomy."
+    )
+    hots: HOTSEvaluation = Field(
+        ...,
+        description="Evaluation of Higher-Order Thinking Skills (HOTS) on a 1-10 scale."
     )
 
 

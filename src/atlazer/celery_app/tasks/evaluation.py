@@ -91,14 +91,15 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                                 1. You must generate all natural language text (such as explanations, feedback, questions, and list items) strictly in the language specified by the variable: {language_code}. Do not translate the JSON keys or structural metrics.
                                 2. **DO NOT translate scientific, technical, or academic terminology.** Keep all domain-specific nomenclature (including SOLO Taxonomy levels) in its original, universally accepted form to preserve precise scientific meaning.
                                 
-                                Critically evaluate the user's answer based on these strict criteria:
-                                1. Content Mastery and Accuracy (1-10): Assess the depth of understanding and factual accuracy regarding the paper's core scientific concepts and data.
-                                2. Logical Flow of Arguments (1-10): Evaluate the structural coherence, logical progression, and analytical rigor of the arguments presented.
-                                3. Critical Thinking and Analysis (1-10): Measure the ability to deconstruct assumptions, evaluate methodologies, and grasp the systemic implications of the paper (beyond mere summarization).
-                                4. Academic Language and Writing Mechanics (1-10): Grade the precision of terminology, scholarly tone, clarity, and articulation of complex ideas.
-                                5. Cognitive Synthesis & Connectivity (1-10): Assess the ability to connect disparate, complex concepts within the paper to form sharp, novel insights.
-                                6. Structural Memory & Retrieval (1-10): Evaluate whether the user successfully integrated crucial structural details from the paper, or if the retrieval was only surface-level.
-                                7. Cognitive Stretch / Edge (1-10): Determine if this answer demonstrates maximum intellectual effort, or if the user played it safe. How hard was their brain forced to think?
+                                **HOTS EVALUATION (1-10 SCALE):**
+                                Critically evaluate the user's answer based on these strict criteria, scoring each from 1 to 10:
+                                1. Content Mastery: Assess the depth of understanding and factual accuracy regarding the paper's core scientific concepts and data.
+                                2. Logical Flow: Evaluate the structural coherence, logical progression, and analytical rigor of the arguments presented.
+                                3. Critical Thinking: Measure the ability to deconstruct assumptions, evaluate methodologies, and grasp the systemic implications of the paper (beyond mere summarization).
+                                4. Academic Language: Grade the precision of terminology, scholarly tone, clarity, and articulation of complex ideas.
+                                5. Cognitive Synthesis: Assess the ability to connect disparate, complex concepts within the paper to form sharp, novel insights.
+                                6. Memory Retention: Evaluate whether the user successfully integrated crucial structural details from the paper, or if the retrieval was only surface-level.
+                                7. Cognitive Stretch: Determine if this answer demonstrates maximum intellectual effort, or if the user played it safe. How hard was their brain forced to think?
                                 
                                 **SOLO TAXONOMY EVALUATION (0-10 SCALE):**
                                 Evaluate the user's mastery of each level in the Structure of the Observed Learning Outcome (SOLO) Taxonomy on a scale of 0 to 10. Generate a cognitive footprint by scoring how strongly the answer fulfills the criteria of each stage:
@@ -127,13 +128,15 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                                 
                                 Return your evaluation strictly as a raw, pure JSON object matching this schema exactly. Ensure the text values within the JSON adhere strictly to the requested language ({language_code}) while keeping scientific terms untranslated:
                                 {{
-                                    "content_mastery_score": 0,
-                                    "logical_flow_score": 0,
-                                    "critical_thinking_score": 0,
-                                    "academic_language_score": 0,
-                                    "cognitive_synthesis_score": 0,
-                                    "memory_retention_score": 0,
-                                    "cognitive_stretch_score": 0,
+                                    "hots": {{
+                                        "content_mastery": 0,
+                                        "logical_flow": 0,
+                                        "critical_thinking": 0,
+                                        "academic_language": 0,
+                                        "cognitive_synthesis": 0,
+                                        "memory_retention": 0,
+                                        "cognitive_stretch": 0
+                                    }},
                                     "solo": {{
                                         "prestructural": 0,
                                         "unistructural": 0,
