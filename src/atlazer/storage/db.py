@@ -39,6 +39,9 @@ class DatabaseConfig:
     def _dsn_with_aws(self) -> str:
         return f"postgresql+psycopg2://postgres.onasgmdatajeogvsbsom:{self.password}@aws-0-eu-west-1.pooler.supabase.com:6543/{self.database}"
 
+    def _dsn_with_local_db(self) -> str:
+        return f"postgresql+psycopg2://postgres.atlanize:{self.password}@192.168.1.8:6543/{self.database}"
+
 # ---------------------------------------------------------------------------
 # DDL — schema definitions
 # ---------------------------------------------------------------------------
@@ -364,7 +367,7 @@ class DatabasePool:
             return
         cfg = self._cfg
         self._engine = create_engine(
-            cfg._dsn_with_aws(),
+            cfg._dsn_with_local_db(),
             poolclass=QueuePool,
             pool_size=cfg.min_size,
             max_overflow=max(cfg.max_size - cfg.min_size, 0),

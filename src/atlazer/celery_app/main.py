@@ -164,10 +164,10 @@ def _configure_beat_schedule(app: Celery) -> None:
             "kwargs": { "start": 0 },
             "options": {"queue": "scrape"},
         },
-        # ── Matcher: batch user processing every 6 hours ──
+        # ── Matcher: batch user processing every 30 minutes ──
         "matcher-batch": {
             "task": "atlazer.celery_app.tasks.matcher.batch_user",
-            "schedule": 300,
+            "schedule": 1800,
             "args": [],
             "kwargs": {},
             "options": {"queue": "matcher"},

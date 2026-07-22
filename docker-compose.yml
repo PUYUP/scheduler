@@ -32,7 +32,7 @@ x-celery-common: &celery-common
       condition: service_completed_successfully
   restart: unless-stopped
   networks:
-    - atlazer-net
+    - atlazer_net
 
 
 services:
@@ -76,7 +76,7 @@ services:
       - hf_home:/home/atlazer/.cache/huggingface
     command: ["python", "src/atlazer/scripts/warm_model_cache.py"]
     networks:
-      - atlazer-net
+      - atlazer_net
     restart: "no"
 
   
@@ -99,7 +99,7 @@ services:
         condition: service_completed_successfully
     command: ["python", "src/atlazer/scripts/stanza_warmup.py"]
     networks:
-      - atlazer-net
+      - atlazer_net
     restart: "no"
 
 
@@ -120,7 +120,7 @@ services:
         condition: service_completed_successfully
     command: ["python", "src/atlazer/scripts/export_onnx.py"]
     networks:
-      - atlazer-net
+      - atlazer_net
     restart: "no"
 
 
@@ -144,7 +144,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - atlazer-net
+      - atlazer_net
     restart: unless-stopped
 
 
@@ -165,7 +165,7 @@ services:
       retries: 5
       start_period: 300s
     networks:
-      - atlazer-net
+      - atlazer_net
     restart: unless-stopped
     deploy:
       resources:
@@ -204,7 +204,7 @@ services:
         reservations:
           memory: 2g
     networks:
-      - atlazer-net
+      - atlazer_net
     restart: unless-stopped
 
 
@@ -502,5 +502,5 @@ volumes:
 
 
 networks:
-  atlazer-net:
+  atlazer_net:
     driver: bridge
