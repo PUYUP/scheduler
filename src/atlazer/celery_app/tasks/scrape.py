@@ -17,8 +17,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 import arxiv
 import httpx
 import structlog
@@ -39,7 +37,6 @@ from atlazer.utils.dedup import (
     mark_as_queued,
     claim_next_topic,
     set_topic_start,
-    reset_topic_start,
     get_topic_start,
 )
 from atlazer.models.paper_schema import PaperMetadata
