@@ -202,12 +202,14 @@ class AnswerChunkORM(Base):
     answer_id:      Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     content:        Mapped[str] = mapped_column(Text, nullable=False)
 
+    chunk_index:    Mapped[int] = mapped_column(Integer, nullable=True)
     embedding:      Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
     embedding_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     embedding_adapter: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     embedding_normalized: Mapped[bool] = mapped_column(Boolean, default=True)
     token_count: Mapped[Optional[conint(gt=0)]] = mapped_column(Integer, nullable=True)
     word_count: Mapped[Optional[conint(gt=0)]] = mapped_column(Integer, nullable=True)
+    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
     @field_validator('embedding')
     def check_embedding_length(cls, v):

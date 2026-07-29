@@ -309,6 +309,9 @@ def get_embedder() -> BaseEmbedder:
         )
 
 
+from typing import List, Dict, Any
+import time
+
 def chunks_to_vector(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Convert chunks to vectors.
@@ -320,6 +323,7 @@ def chunks_to_vector(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     Returns:
         List of chunks (same dicts, copied) with additional keys:
+            - "chunk_index": the sequential index of the chunk in the original list.
             - "embedding": the embedding vector (List[float]).
             - "embedding_model": name of the model used to generate it.
             - "embedding_dim": dimensionality of the embedding vector.
@@ -374,14 +378,18 @@ def chunks_to_vector(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             )
             token_counts = [None] * len(texts)
 
-        for chunk, vector, text, token_count in zip(batch, vectors, texts, token_counts):
+        # Gunakan enumerate untuk mendapatkan indeks (i) di dalam batch
+        for i, (chunk, vector, text, token_count) in enumerate(zip(batch, vectors, texts, token_counts)):
             chunk_with_vec = chunk.copy()
+            
+            chunk_with_vec["chunk_index"] = batch_start + i 
             chunk_with_vec["embedding"] = vector
             chunk_with_vec["embedding_model"] = embedder.model_name
             chunk_with_vec["embedding_dim"] = len(vector)
             chunk_with_vec["word_count"] = len(text.split())
             if token_count is not None:
                 chunk_with_vec["token_count"] = token_count
+                
             embedded_chunks.append(chunk_with_vec)
 
     return embedded_chunks

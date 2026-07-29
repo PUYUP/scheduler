@@ -162,8 +162,6 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         log.warning("challenge.save_embedding_answer.missing_answer_id", metadata=metadata)
         raise ValueError("Missing answer_id")
 
-    depot = ChallengeDepot(db_pool)
-
     try:
         user_uuid = uuid.UUID(str(user_id))
         challenge_uuid = uuid.UUID(str(challenge_id))
@@ -175,13 +173,24 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     payloads: List[AnswerChunkORM] = []
 
     for chunk in chunks:
+        attributes = {
+            "embedding_model": chunk.get("embedding_model"),
+            "embedding_adapter": chunk.get("embedding_adapter"),
+            "embedding_normalized": chunk.get("embedding_normalized", True),
+            "token_count": chunk.get("token_count"),
+            "word_count": chunk.get("word_count"),
+        }
+
         payloads.append(
             AnswerChunkORM(
                 user_id=user_uuid,
                 challenge_id=challenge_uuid,
                 answer_id=answer_id,
                 content=chunk.get("text"),
+                chunk_index=chunk.get("chunk_index"),
                 embedding=chunk.get("embedding"),
+                attributes=attributes,
+                # TO-DO: remove this when we move to attributes only
                 embedding_model=chunk.get("embedding_model"),
                 embedding_adapter=chunk.get("embedding_adapter"),
                 embedding_normalized=chunk.get("embedding_normalized", True),
@@ -191,6 +200,7 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     try:
+        depot = ChallengeDepot(db_pool)
         depot.bulk_insert_answer_chunks(payloads)
     except Exception as exc:
         log.error(

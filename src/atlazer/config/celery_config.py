@@ -19,6 +19,7 @@ imports = (
     "atlazer.celery_app.tasks.matcher",
     "atlazer.celery_app.tasks.challenge",
     "atlazer.celery_app.tasks.evaluation",
+    "atlazer.celery_app.tasks.workspace",
     "atlazer.celery_app.tasks.maintenance",
 )
 
@@ -98,6 +99,12 @@ task_annotations = {
         "time_limit": 3600,
         "soft_time_limit": 3300,
     },
+    "atlazer.celery_app.tasks.workspace.*": {
+        "max_retries": 3,
+        "default_retry_delay": 60,
+        "time_limit": 3600,
+        "soft_time_limit": 3300,
+    }
 }
 
 # ─── Task Routing ─────────────────────────────────────────────────────────────
@@ -141,6 +148,11 @@ task_routes = {
     "atlazer.celery_app.tasks.evaluation.scoring_answer":           {"queue": "evaluation"},
     "atlazer.celery_app.tasks.evaluation.save_evaluation":          {"queue": "evaluation"},
 
+    # ── Workspace tier ──
+    "atlazer.celery_app.tasks.workspace.chunk_context":             {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.embed_context":             {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.save_embedding_context":    {"queue": "workspace"},
+    
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":   {"queue": "default"},
 }

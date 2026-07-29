@@ -47,6 +47,7 @@ def create_celery_app() -> Celery:
         "atlazer.celery_app.tasks.matcher",
         "atlazer.celery_app.tasks.challenge",
         "atlazer.celery_app.tasks.evaluation",
+        "atlazer.celery_app.tasks.workspace",
     ]
     _configure_queues(app)
     _configure_beat_schedule(app)
@@ -79,6 +80,7 @@ def _configure_queues(app: Celery) -> None:
     matcher_exchange    = Exchange("matcher",   type="direct")
     challenge_exchange  = Exchange("challenge", type="direct")
     evaluation_exchange = Exchange("evaluation", type="direct")
+    workspace_exchange  = Exchange("workspace", type="direct")
     dlx_exchange        = Exchange("dlx",       type="direct")
 
     app.conf.task_queues = (
@@ -99,6 +101,8 @@ def _configure_queues(app: Celery) -> None:
         Queue("challenge",  challenge_exchange, routing_key="challenge"),
         # ── Evaluation ──
         Queue("evaluation", evaluation_exchange, routing_key="evaluation"),
+        # ── Workspace ──
+        Queue("workspace",  workspace_exchange, routing_key="workspace"),
         # ── Dead-letter sinks (diisi manual via on_task_failure, dikuras via
         #     tasks.maintenance.retry_dead_letters) ──
         Queue("dlx.scrape",     dlx_exchange, routing_key="dlx.scrape"),
@@ -109,6 +113,7 @@ def _configure_queues(app: Celery) -> None:
         Queue("dlx.matcher",    dlx_exchange, routing_key="dlx.matcher"),
         Queue("dlx.challenge",  dlx_exchange, routing_key="dlx.challenge"),
         Queue("dlx.evaluation", dlx_exchange, routing_key="dlx.evaluation"),
+        Queue("dlx.workspace",  dlx_exchange, routing_key="dlx.workspace"),
     )
 
     app.conf.task_default_queue         = "default"
@@ -280,6 +285,7 @@ _TIER_PREFIXES = {
     "atlazer.celery_app.tasks.matcher.":    "matcher",
     "atlazer.celery_app.tasks.challenge.":  "challenge",
     "atlazer.celery_app.tasks.evaluation.": "evaluation",
+    "atlazer.celery_app.tasks.workspace.":  "workspace",
 }
 
 
