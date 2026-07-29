@@ -9,7 +9,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from atlazer.celery_app.main import app, db_pool
 from atlazer.celery_app.tasks.evaluation import generate_jsonl
-from atlazer.utils.stanza_chunker import chunk_answer as stanza_chunk_answer
+from atlazer.utils.stanza_chunker import chunk_content as stanza_chunk_answer
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
 from atlazer.storage.challenge import ChallengeDepot

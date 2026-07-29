@@ -167,7 +167,7 @@ def _configure_beat_schedule(app: Celery) -> None:
         # ── Matcher: batch user processing every 30 minutes ──
         "matcher-batch": {
             "task": "atlazer.celery_app.tasks.matcher.batch_user",
-            "schedule": 1800,
+            "schedule": 7200,
             "args": [],
             "kwargs": {},
             "options": {"queue": "matcher"},

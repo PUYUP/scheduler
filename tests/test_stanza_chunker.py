@@ -1,4 +1,4 @@
-from atlazer.utils.stanza_chunker import chunk_answer
+from atlazer.utils.stanza_chunker import chunk_content
 from atlazer.celery_app.tasks.challenge import (
     chunk_answer as chunk_answer_task,
     embed_answer,
@@ -20,7 +20,7 @@ Nama kolom FK di profile — saya asumsikan user_id (snake_case, ikut konvensi t
 
 
 def main():
-    result = chunk_answer(
+    result = chunk_content(
         LONG_TEXT,
         lang="zh",
         semantic=True,          # aktifkan topic-aware chunking

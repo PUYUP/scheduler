@@ -17,9 +17,9 @@ Instalasi:
     pip install stanza sentence-transformers
 
 Pemakaian singkat:
-    from stanza_chunker import chunk_answer
+    from stanza_chunker import chunk_content
 
-    hasil = chunk_answer(teks, lang="id", semantic=True, download_models=True)
+    hasil = chunk_content(teks, lang="id", semantic=True, download_models=True)
     # hasil -> list[str]
 """
 
@@ -235,7 +235,7 @@ def _group_sentences_by_topic(
 # API utama
 # ---------------------------------------------------------------------------
 
-def chunk_answer(
+def chunk_content(
     text: str,
     lang: str | None = None,
     min_words: int = 500,
