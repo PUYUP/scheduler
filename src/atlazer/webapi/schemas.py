@@ -37,3 +37,11 @@ class EvaluateAnswerRequest(BaseModel):
     user_id: str
     challenge_id: str
     answer_id: str
+
+
+class EmbedContextRequest(BaseModel):
+    user_id: str
+    workspace_id: str
+    context_id: str
+    content: str
+    language_code: str = 'en'

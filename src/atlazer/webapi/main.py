@@ -10,6 +10,7 @@ from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
 from atlazer.celery_app.tasks.challenge import chunk_answer
+from atlazer.celery_app.tasks.workspace import chunk_context
 from atlazer.celery_app.tasks.evaluation import save_evaluation
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
@@ -20,6 +21,7 @@ from atlazer.webapi.schemas import (
     PaperMatcherRequest,
     EmbedAnswerRequest,
     EvaluateAnswerRequest,
+    EmbedContextRequest,
 )
 from atlazer.utils.gemini_batch import get_batch_results
 from atlazer.storage.challenge import ChallengeDepot
@@ -218,3 +220,32 @@ def evaluate_answer(payload: EvaluateAnswerRequest):
     if embedder_service is None:
         raise HTTPException(status_code=503, detail="Service is not ready yet.")
     return TaskExecutionResponse(task_id="test")
+
+
+@app.post("/embed-context")
+def embed_context(payload: EmbedContextRequest):
+    if embedder_service is None:
+        raise HTTPException(status_code=503, detail="Service is not ready yet.")
+
+    try:
+        log.info("webapi.embed-context.start", payload=payload.model_dump())
+
+        job = (
+            chunk_context.s(payload.model_dump()).set(queue="workspace")
+            | signature(
+                "atlazer.celery_app.tasks.workspace.embed_context",
+                queue="workspace",
+                immutable=False,
+            )
+            | signature(
+                "atlazer.celery_app.tasks.workspace.save_embedding_context",
+                queue="workspace",
+                immutable=False,
+            )
+        ).apply_async()
+
+        log.info("webapi.embed-context.success", task_id=job.id)
+        return TaskExecutionResponse(task_id=job.id)
+    except Exception as e:
+        log.error("webapi.embed-context.error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
