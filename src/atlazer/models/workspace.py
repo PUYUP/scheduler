@@ -11,6 +11,7 @@ from atlazer.models.base import Base
 class ChunkContextMetadata(BaseModel):
     user_id: str
     workspace_id: str
+    context_id: str
     content: str
     language_code: str = "en"
     chunks: Optional[list[Dict[str, Any]]] = None

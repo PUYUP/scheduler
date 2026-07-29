@@ -1,15 +1,14 @@
-
 from __future__ import annotations
 
 import uuid
 import structlog
 from typing import Dict, Any, List
-from celery import group, signature
 
 from atlazer.celery_app.main import app, db_pool
 from atlazer.utils.stanza_chunker import chunk_content as stanza_chunk_context
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
+from atlazer.storage.workspace import ContextChunkDepot
 from atlazer.models.workspace import (
     ChunkContextMetadata,
     ContextChunkORM
@@ -161,6 +160,19 @@ def save_embedding_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             chunk_index=chunk.get('chunk_index'),
             attributes=attributes,
         ))
-    
+
+    try:
+        depot = ContextChunkDepot(db_pool)
+        depot.bulk_upsert(payloads)
+    except Exception as exc:
+        log.error(
+            "workspace.save_embedding_context.failed",
+            metadata=metadata,
+            error=str(exc),
+            attempt=self.request.retries,
+        )
+        raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
+
     log.info("workspace.save_embedding_context.done", metadata=metadata)
+
     return metadata

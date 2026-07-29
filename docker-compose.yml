@@ -9,8 +9,8 @@ x-celery-common: &celery-common
   environment:
     # Volume sudah pasti terisi sebelum container ini start (lihat depends_on
     # model-init di bawah), jadi aman cegah network call ke HF Hub sama sekali.
-    HF_HUB_OFFLINE: "1"
-    TRANSFORMERS_OFFLINE: "1"
+    HF_HUB_OFFLINE: "0"
+    TRANSFORMERS_OFFLINE: "0"
     HF_HOME: "/home/atlazer/.cache/huggingface"
   volumes:
     - downloads:/app/downloads
@@ -291,8 +291,8 @@ services:
   worker-embed:
     <<: *celery-common
     environment:
-      HF_HUB_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
     command: >
       celery -A atlazer.celery_app.main worker
       --loglevel=info

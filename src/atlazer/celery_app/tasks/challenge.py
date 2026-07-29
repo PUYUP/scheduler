@@ -45,7 +45,10 @@ def chunk_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     content = validated.content
     language_code = validated.language_code
 
-    log.info("challenge.chunk_answer.start", metadata=validated.model_dump())
+    log.info(
+        "challenge.chunk_answer.start",
+        metadata={"language_code": language_code}
+    )
 
     chunks = stanza_chunk_answer(
         text=content,
