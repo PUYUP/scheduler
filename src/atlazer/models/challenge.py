@@ -204,12 +204,13 @@ class AnswerChunkORM(Base):
 
     chunk_index:    Mapped[int] = mapped_column(Integer, nullable=True)
     embedding:      Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
+    attributes:     Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+
     embedding_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     embedding_adapter: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     embedding_normalized: Mapped[bool] = mapped_column(Boolean, default=True)
     token_count: Mapped[Optional[conint(gt=0)]] = mapped_column(Integer, nullable=True)
-    word_count: Mapped[Optional[conint(gt=0)]] = mapped_column(Integer, nullable=True)
-    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    word_count: Mapped[Optional[conint(gt=0)]] = mapped_column(Integer, nullable=True)    
 
     @field_validator('embedding')
     def check_embedding_length(cls, v):

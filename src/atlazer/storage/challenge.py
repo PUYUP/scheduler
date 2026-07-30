@@ -280,7 +280,10 @@ class ChallengeDepot:
                 "challenge_id": chunk.challenge_id,
                 "answer_id": chunk.answer_id,
                 "content": chunk.content,
+                "chunk_index": chunk.chunk_index,
                 "embedding": chunk.embedding,
+                "attributes": chunk.attributes,
+                # TODO: use attributes for this fields, remove in future
                 "embedding_model": chunk.embedding_model,
                 "embedding_adapter": chunk.embedding_adapter,
                 "embedding_normalized": chunk.embedding_normalized,

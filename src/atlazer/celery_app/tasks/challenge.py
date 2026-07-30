@@ -177,6 +177,7 @@ def save_embedding_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     for chunk in chunks:
         attributes = {
+            "embedding_dim": chunk.get("embedding_dim"),
             "embedding_model": chunk.get("embedding_model"),
             "embedding_adapter": chunk.get("embedding_adapter"),
             "embedding_normalized": chunk.get("embedding_normalized", True),

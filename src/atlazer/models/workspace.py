@@ -1,5 +1,5 @@
 from uuid import UUID
-from sqlalchemy import Integer, String, Index, func
+from sqlalchemy import Integer, String, Index, func, UniqueConstraint
 from sqlalchemy.orm import mapped_column, Mapped
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from pgvector.sqlalchemy import Vector
@@ -44,6 +44,15 @@ class ContextChunkORM(Base):
 
         # 4. Sorting Index
         Index("ix_context_chunks_context_chunk", "context_id", "chunk_index"),
+
+        # 5. Unique Constraint Index
+        UniqueConstraint(
+            "user_id", 
+            "workspace_id", 
+            "context_id", 
+            "chunk_index", 
+            name="uq_context_chunks_identity"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
