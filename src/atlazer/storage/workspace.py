@@ -43,7 +43,7 @@ class WorkspaceDepot:
             return
 
         context_keys = list({
-            (chunk.user_id, chunk.workspace_id, chunk.context_id) 
+            (chunk.user_id, chunk.context_id, chunk.workspace_id) 
             for chunk in values
         })
 
@@ -91,7 +91,7 @@ class WorkspaceDepot:
             log.info("workspace.bulk_insert_chunks.empty_list")
             return
 
-        user_pairs = list({(chunk.user_id, chunk.context_id) for chunk in values})
+        context_keys = list({(chunk.user_id, chunk.context_id) for chunk in values})
         rows = [
             {
                 "user_id": chunk.user_id,
@@ -108,7 +108,7 @@ class WorkspaceDepot:
                     tuple_(
                         ContextPaperORM.user_id, 
                         ContextPaperORM.context_id
-                    ).in_(user_pairs)
+                    ).in_(context_keys)
                 ).delete(synchronize_session=False)
 
                 session.execute(insert(ContextPaperORM), rows)
@@ -135,7 +135,7 @@ class WorkspaceDepot:
             log.info("workspace.bulk_insert_similarities.empty_list")
             return
 
-        user_pairs = list({(chunk.user_id, chunk.context_id, chunk.workspace_id, chunk.context_chunk_id) for chunk in values})
+        context_keys = list({(chunk.user_id, chunk.context_id, chunk.workspace_id, chunk.context_chunk_id) for chunk in values})
         rows = [
             {
                 "user_id": chunk.user_id,
@@ -160,7 +160,7 @@ class WorkspaceDepot:
                         ContextSimilarityORM.context_id,
                         ContextSimilarityORM.workspace_id,
                         ContextSimilarityORM.context_chunk_id,
-                    ).in_(user_pairs)
+                    ).in_(context_keys)
                 ).delete(synchronize_session=False)
 
                 session.execute(insert(ContextSimilarityORM), rows)
