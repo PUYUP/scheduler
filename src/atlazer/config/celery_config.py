@@ -154,6 +154,7 @@ task_routes = {
     "atlazer.celery_app.tasks.workspace.save_embedding_context":    {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.match_papers_by_context":   {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.save_matched_papers":       {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.save_context_similarities": {"queue": "workspace"},
     
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":   {"queue": "default"},

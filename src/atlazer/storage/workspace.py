@@ -7,7 +7,7 @@ from atlazer.models.paper import PaperORM
 from datetime import datetime
 from typing import List, Any, Dict
 from atlazer.storage.db import DatabasePool
-from atlazer.models.workspace import ContextChunkORM, ContextPaperORM
+from atlazer.models.workspace import ContextChunkORM, ContextPaperORM, ContextSimilarityORM
 from atlazer.models.document import DocumentChunkORM
 
 from sqlalchemy import tuple_, insert, select, func
@@ -109,6 +109,58 @@ class WorkspaceDepot:
                 )
                 raise e
 
+    def bulk_insert_similarities(
+        self,
+        values: List[ContextSimilarityORM]
+    ) -> None:
+        if not values:
+            log.info("workspace.bulk_insert_similarities.empty_list")
+            return
+
+        user_pairs = list({(chunk.user_id, chunk.context_id, chunk.workspace_id, chunk.context_chunk_id) for chunk in values})
+        rows = [
+            {
+                "user_id": chunk.user_id,
+                "workspace_id": chunk.workspace_id,
+                "context_id": chunk.context_id,
+                "context_chunk_id": chunk.context_chunk_id,
+                "context_content": chunk.context_content,
+                "paper_id": chunk.paper_id,
+                "document_chunk_id": chunk.document_chunk_id,
+                "document_content": chunk.document_content,
+                "attributes": chunk.attributes,
+                "similarity_score": chunk.similarity_score,
+            }
+            for chunk in values
+        ]
+
+        with self._db_pool.session() as session:
+            try:
+                session.query(ContextSimilarityORM).filter(
+                    tuple_(
+                        ContextSimilarityORM.user_id, 
+                        ContextSimilarityORM.context_id,
+                        ContextSimilarityORM.workspace_id,
+                        ContextSimilarityORM.context_chunk_id,
+                    ).in_(user_pairs)
+                ).delete(synchronize_session=False)
+
+                session.execute(insert(ContextSimilarityORM), rows)
+                session.commit()
+
+                log.info(
+                    "workspace.bulk_insert_similarities.finish_upsert",
+                    count=len(values),
+                )
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace.bulk_insert_similarities.error_upsert",
+                    error=str(e),
+                )
+                raise e
+
     def get_chunks_by_context_id(self, context_id: str) -> List[ContextChunkORM]:
         try:
             context_uuid: UUID = uuid.UUID(context_id)
@@ -132,17 +184,21 @@ class WorkspaceDepot:
     def match_context_with_papers(
         self,
         chunks: List[ContextChunkORM],
-        top_k: int = 10,
+        top_k: int = 15,
     ) -> Dict[str, Any]:
-        paper_distances: Dict[Any, List[float]] = {}
-        paper_objects: Dict[Any, PaperORM] = {}
-        raw_matches: List[dict] = []
+        result: Dict[Any, Any] = {}
 
         try:
             with self._db_pool.session() as session:
                 for chunk in chunks:
-                    if not chunk.embedding or len(chunk.embedding) == 0:
+                    if chunk.embedding is None or len(chunk.embedding) == 0:
                         log.warning("context_chunk.empty_embedding", chunk=chunk)
+                        result[chunk.id] = {
+                            "id": chunk.id,
+                            "chunk_content": chunk.content,
+                            "papers": [],
+                            "similar_chunks": [],
+                        }
                         continue
 
                     distance = DocumentChunkORM.embedding.cosine_distance(chunk.embedding)
@@ -154,13 +210,12 @@ class WorkspaceDepot:
                             DocumentChunkORM.content.label("document_chunk_content"),
                             DocumentChunkORM.paper_id.label("paper_id"),
                             distance.label("distance"),
-                            func
-                                .row_number()
-                                .over(
-                                    partition_by=DocumentChunkORM.paper_id,
-                                    order_by=distance.asc(),
-                                )
-                                .label("rn"),
+                            func.row_number()
+                            .over(
+                                partition_by=DocumentChunkORM.paper_id,
+                                order_by=distance.asc(),
+                            )
+                            .label("rn"),
                         )
                         .subquery()
                     )
@@ -180,13 +235,14 @@ class WorkspaceDepot:
 
                     rows = session.execute(stmt).all()
 
-                    for paper, doc_chunk_id, doc_chunk_content, dist in rows:
-                        paper_distances.setdefault(paper.id, []).append(dist)
-                        paper_objects.setdefault(paper.id, paper)
+                    papers: List[PaperORM] = []
+                    similar_chunks: List[dict] = []
 
-                        raw_matches.append(
+                    for paper, doc_chunk_id, doc_chunk_content, dist in rows:
+                        papers.append(paper)
+                        similar_chunks.append(
                             {
-                                "dockument_content": doc_chunk_content,
+                                "document_content": doc_chunk_content,
                                 "document_id": doc_chunk_id,
                                 "chunk_content": chunk.content,
                                 "chunk_id": chunk.id,
@@ -195,6 +251,13 @@ class WorkspaceDepot:
                             }
                         )
 
+                    result[chunk.id] = {
+                        "id": chunk.id,
+                        "chunk_content": chunk.content,
+                        "papers": papers,
+                        "similar_chunks": similar_chunks,
+                    }
+
         except SQLAlchemyError as e:
             log.error(
                 "context_chunk.error_match_context_with_papers",
@@ -202,29 +265,9 @@ class WorkspaceDepot:
             )
             raise e
 
-        # rata-ratakan distance tiap paper lintas semua chunk yang match ke paper itu
-        averaged = [
-            (paper_objects[pid], sum(dists) / len(dists))
-            for pid, dists in paper_distances.items()
-        ]
-        averaged.sort(key=lambda item: item[1])
-
-        top_papers: List[PaperORM] = [paper for paper, _ in averaged[:top_k]]
-        top_paper_ids = {paper.id for paper in top_papers}
-
-        similar_chunks = [
-            match for match in raw_matches if match["paper_id"] in top_paper_ids
-        ]
-
-        result: Dict[str, Any] = {
-            "papers": top_papers,
-            "similar_chunks": similar_chunks,
-        }
-
         log.info(
             "context_chunk.match_context_with_papers",
-            papers=len(top_papers),
-            similar_chunks=len(similar_chunks),
+            chunks=len(result),
         )
 
         return result

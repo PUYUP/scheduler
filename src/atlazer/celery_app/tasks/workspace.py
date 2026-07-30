@@ -13,6 +13,7 @@ from atlazer.models.workspace import (
     ChunkContextMetadata,
     ContextChunkORM,
     ContextPaperORM,
+    ContextSimilarityORM,
 )
 
 log = structlog.get_logger()
@@ -208,8 +209,14 @@ def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         depot = WorkspaceDepot(db_pool)
         chunks = depot.get_chunks_by_context_id(context_id)
         matcher = depot.match_context_with_papers(chunks)
-        papers = matcher.get("papers", [])
-        similar_chunks = matcher.get("similar_chunks", [])
+
+        # collect all the matched data
+        papers = []
+        similar_chunks = []
+
+        for m in matcher:
+            papers.extend(matcher[m]["papers"])
+            similar_chunks.extend(matcher[m]["similar_chunks"])
 
         # Convert PaperORM objects to basic dicts
         serialized_papers = [
@@ -278,6 +285,64 @@ def save_matched_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as exc:
             log.error(
                 "workspace.save_matched_papers.failed",
+                metadata=metadata,
+                error=str(exc),
+                attempt=self.request.retries,
+            )
+            raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
+
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 6 of 7 — save context similarities
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.save_context_similarities",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def save_context_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.save_context_similarities.start")
+
+    context_id = metadata.get("context_id")
+    workspace_id = metadata.get("workspace_id")
+    user_id = metadata.get("user_id")
+    matched_result = metadata.get("matched_result", {})
+    similar_chunks = matched_result.get("similar_chunks", [])
+
+    if similar_chunks:
+        log.info("workspace.save_context_similarities.inserting_data", payload_count=len(similar_chunks))
+        payloads: List[ContextSimilarityORM] = []
+
+        # payloads enrichment
+        for similarity in similar_chunks:
+            payload = ContextSimilarityORM(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                paper_id=similarity.get("paper_id"),
+                context_id=context_id,
+                context_chunk_id=similarity.get("chunk_id"),
+                context_content=similarity.get("chunk_content"),
+                document_chunk_id=similarity.get("document_id"),
+                document_content=similarity.get("document_content"),
+                similarity_score=similarity.get("similarity_score"),
+                attributes=similarity.get("attributes")
+            )
+            payloads.append(payload)
+
+        try:
+            depot = WorkspaceDepot(db_pool)
+            depot.bulk_insert_similarities(payloads)
+        except Exception as exc:
+            log.error(
+                "workspace.save_context_similarities.failed",
                 metadata=metadata,
                 error=str(exc),
                 attempt=self.request.retries,

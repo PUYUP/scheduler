@@ -174,7 +174,6 @@ def batch_user(self) -> Dict[str, int]:
             log.info("matcher.batch_user.no_profiles")
             return {"processed_count": 0, "skipped_count": 0}
 
-        matcher_depot = MatcherDepot(db_pool)
         skipped_count = 0
         tasks_to_run = []
         profile_ids = []

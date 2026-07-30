@@ -1,10 +1,12 @@
 import logging
 import json
 
-from typing import Any, Optional, Sequence, Dict    
+from pathlib import Path
+from typing import Any, Optional, Sequence, Dict, List
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from atlazer.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -89,34 +91,36 @@ def _build_inline_request(
                 "parts": [{"text": combined}],
             }
         ],
-        "config": {
+        "generation_config": {
             "response_mime_type": "application/json",
+            "temperature": 0.15, 
+            "top_p": 0.85,
             "response_schema": {
                 "type": "OBJECT",
                 "properties": {
                     "background": {
                         "type": "STRING",
-                        "description": "Latar belakang atau masalah dari paper"
+                        "description": "The background, motivation, or research problem addressed by the paper."
                     },
                     "methods": {
                         "type": "STRING",
-                        "description": "Metode penelitian yang digunakan"
+                        "description": "The research methodology, experimental design, models, datasets, or techniques used in the study."
                     },
                     "results": {
                         "type": "STRING",
-                        "description": "Temuan utama dari paper"
+                        "description": "The main findings, outcomes, or contributions reported by the paper."
                     },
                     "conclusions": {
                         "type": "STRING",
-                        "description": "Kesimpulan dari paper"
+                        "description": "The conclusions drawn by the authors based on the research findings."
                     },
                     "limitations": {
                         "type": "STRING",
-                        "description": "Keterbatasan, perdebatan, atau kelemahan dari metode maupun hasil penelitian dalam paper"
+                        "description": "The limitations, weaknesses, challenges, or unresolved issues related to the methodology, experiments, or findings."
                     },
                     "future_works": {
                         "type": "STRING",
-                        "description": "Potensi improvisasi, pengembangan, atau rekomendasi untuk penelitian selanjutnya"
+                        "description": "Potential improvements, future research directions, or recommendations proposed by the authors."
                     }
                 },
                 "required": ["background", "methods", "results", "conclusions"]
@@ -124,6 +128,35 @@ def _build_inline_request(
         }
     }
 
+def _create_jsonl_file(
+    contents: List[Any],
+    challenge_id: Optional[str] = None,
+    paper_id: Optional[str] = None,
+    challenge_paper_id: Optional[str] = None
+) -> Dict[str, Any]:
+    target_dir = Path(settings.gemini_batch_dir)
+    key = f"paper-summary/{challenge_id}/{challenge_paper_id}/{paper_id}"
+    target_file = target_dir / f"{key}.jsonl"
+    target_file.parent.mkdir(exist_ok=True, parents=True)
+
+    with open(target_file, "w", encoding="utf-8") as file:
+        for i, request in enumerate(contents):
+            req_id = key if len(contents) == 1 else f"{key}-{i}"
+            payload = {
+                "key": req_id,
+                "request": request,
+            }
+            file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    file_name = upload_chunk_file(str(target_file), display_name=key)
+    if file_name is None:
+        raise ValueError(f"Failed to upload file {target_file}")
+
+    return {
+        "file_name": file_name,
+        "target_file": str(target_file),
+        "key": key
+    }
 
 def create_batch_job(
     documents: Sequence[Sequence[str]],
@@ -156,10 +189,12 @@ def create_batch_job(
         raise ValueError("documents tidak boleh kosong")
 
     prompt = get_batch_prompt(language_code)
-
-    inline_requests = [
-        _build_inline_request(chunks, prompt) for chunks in documents
-    ]
+    file_content = _create_jsonl_file(
+        [_build_inline_request(chunks, prompt) for chunks in documents], 
+        challenge_id, 
+        paper_id, 
+        challenge_paper_id
+    )
 
     config: genai.types.CreateBatchJobConfigDict = {}
 
@@ -183,7 +218,7 @@ def create_batch_job(
     try:
         job = client.batches.create(
             model=model,
-            src=inline_requests,
+            src=file_content["file_name"],
             config=config or None,
         )
         logger.info(f"Berhasil membuat batch job: {job.name}")
