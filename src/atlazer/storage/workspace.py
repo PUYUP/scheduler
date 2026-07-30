@@ -1,5 +1,6 @@
 import structlog
 
+from datetime import datetime
 from typing import List
 from atlazer.storage.db import DatabasePool
 from atlazer.models.workspace import (
@@ -50,6 +51,7 @@ class ContextChunkDepot:
                         "content": stmt.excluded.content,
                         "embedding": stmt.excluded.embedding,
                         "attributes": stmt.excluded.attributes,
+                        "updated_at": datetime.now(),
                     },
                 )
 
