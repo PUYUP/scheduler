@@ -242,6 +242,11 @@ def embed_context(payload: EmbedContextRequest):
                 queue="workspace",
                 immutable=False,
             )
+            | signature(
+                "atlazer.celery_app.tasks.workspace.match_papers_by_context",
+                queue="workspace",
+                immutable=False,
+            )
         ).apply_async()
 
         log.info("webapi.embed-context.success", task_id=job.id)

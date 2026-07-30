@@ -177,3 +177,56 @@ def save_embedding_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("workspace.save_embedding_context.done", metadata=metadata)
 
     return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 4 of 7 — context paper matcher
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.match_papers_by_context",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.match_papers_by_context.start", metadata=metadata)
+
+    context_id = metadata.get("context_id")
+    workspace_id = metadata.get("workspace_id")
+
+    if not context_id or not workspace_id:
+        log.info("workspace.missing_required_field")
+        raise ValueError("Missing context_id or workspace_id")
+
+    try:
+        depot = ContextChunkDepot(db_pool)
+        chunks = depot.get_chunks_by_context_id(context_id)
+        matcher = depot.match_context_with_papers(chunks)
+
+        # Convert PaperORM objects to basic dicts
+        serialized_papers = [
+            {
+                "id": paper.id, 
+                "title": paper.title
+            } 
+            for paper in matcher.get("papers", [])
+        ]
+
+        metadata["matched_result"] = {
+            "papers": serialized_papers,
+        }
+    except Exception as exc:
+        log.error(
+            "workspace.match_papers_by_context.failed",
+            metadata=metadata,
+            error=str(exc),
+            attempt=self.request.retries,
+        )
+        raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
+
+    return metadata

@@ -68,26 +68,26 @@ class MatcherDepot:
                 # Subquery untuk paper yang sudah dichallenge user
                 challenged_subq = (
                     select(ChallengePaperORM.paper_id)
-                    .join(ChallengeORM, ChallengeORM.id == ChallengePaperORM.challenge_id)
-                    .where(ChallengeORM.user_id == user_id)
+                        .join(ChallengeORM, ChallengeORM.id == ChallengePaperORM.challenge_id)
+                        .where(ChallengeORM.user_id == user_id)
                 )
 
                 # Query untuk mencari paper yang paling mirip, mengecualikan yang sudah ada
                 closest_stmt = (
                     select(PaperORM, distance.label("distance"))
-                    .join(DocumentChunkORM, DocumentChunkORM.paper_id == PaperORM.id)
-                    .where(PaperORM.id.not_in(challenged_subq))
-                    .order_by(distance.asc())
-                    .limit(1)
+                        .join(DocumentChunkORM, DocumentChunkORM.paper_id == PaperORM.id)
+                        .where(PaperORM.id.not_in(challenged_subq))
+                        .order_by(distance.asc())
+                        .limit(1)
                 )
 
                 # Query untuk mencari paper yang paling tidak mirip, mengecualikan yang sudah ada
                 farthest_stmt = (
                     select(PaperORM, distance.label("distance"))
-                    .join(DocumentChunkORM, DocumentChunkORM.paper_id == PaperORM.id)
-                    .where(PaperORM.id.not_in(challenged_subq))
-                    .order_by(distance.desc())
-                    .limit(1)
+                        .join(DocumentChunkORM, DocumentChunkORM.paper_id == PaperORM.id)
+                        .where(PaperORM.id.not_in(challenged_subq))
+                        .order_by(distance.desc())
+                        .limit(1)
                 )
 
                 closest_row = session.execute(closest_stmt).first()
