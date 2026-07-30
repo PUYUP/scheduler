@@ -8,10 +8,11 @@ from atlazer.celery_app.main import app, db_pool
 from atlazer.utils.stanza_chunker import chunk_content as stanza_chunk_context
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
-from atlazer.storage.workspace import ContextChunkDepot
+from atlazer.storage.workspace import WorkspaceDepot
 from atlazer.models.workspace import (
     ChunkContextMetadata,
-    ContextChunkORM
+    ContextChunkORM,
+    ContextPaperORM,
 )
 
 log = structlog.get_logger()
@@ -163,8 +164,8 @@ def save_embedding_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         ))
 
     try:
-        depot = ContextChunkDepot(db_pool)
-        depot.bulk_upsert(payloads)
+        depot = WorkspaceDepot(db_pool)
+        depot.bulk_insert_chunks(payloads)
     except Exception as exc:
         log.error(
             "workspace.save_embedding_context.failed",
@@ -204,9 +205,11 @@ def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("Missing context_id or workspace_id")
 
     try:
-        depot = ContextChunkDepot(db_pool)
+        depot = WorkspaceDepot(db_pool)
         chunks = depot.get_chunks_by_context_id(context_id)
         matcher = depot.match_context_with_papers(chunks)
+        papers = matcher.get("papers", [])
+        similar_chunks = matcher.get("similar_chunks", [])
 
         # Convert PaperORM objects to basic dicts
         serialized_papers = [
@@ -214,11 +217,12 @@ def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 "id": paper.id, 
                 "title": paper.title
             } 
-            for paper in matcher.get("papers", [])
+            for paper in papers
         ]
 
         metadata["matched_result"] = {
             "papers": serialized_papers,
+            "similar_chunks": similar_chunks,
         }
     except Exception as exc:
         log.error(
@@ -228,5 +232,56 @@ def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             attempt=self.request.retries,
         )
         raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
+
+    return metadata
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 5 of 7 — save mathced papers
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.save_matched_papers",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def save_matched_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.save_matched_papers.start")
+
+    context_id = metadata.get("context_id")
+    workspace_id = metadata.get("workspace_id")
+    user_id = metadata.get("user_id")
+    matched_result = metadata.get("matched_result", {})
+    papers = matched_result.get("papers", [])
+
+    if papers:
+        log.info("workspace.save_matched_papers.inserting_data", payload_count=len(papers))
+        payloads: List[ContextPaperORM] = []
+
+        # payloads enrichment
+        for paper in papers:
+            payload = ContextPaperORM(
+                paper_id=paper.get("id"),
+                context_id=context_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+            payloads.append(payload)
+
+        try:
+            depot = WorkspaceDepot(db_pool)
+            depot.bulk_insert_papers(payloads)
+        except Exception as exc:
+            log.error(
+                "workspace.save_matched_papers.failed",
+                metadata=metadata,
+                error=str(exc),
+                attempt=self.request.retries,
+            )
+            raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
     return metadata

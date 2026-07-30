@@ -368,9 +368,8 @@ class ChallengeDepot:
 
                 # 4. INSERT data baru secara massal
                 session.execute(insert(AnswerSimilarityORM), rows)
-                
                 session.commit()
-                
+
                 log.info(
                     "challenge_answer_similarity.finish_reindex",
                     user_challenge_pairs=str(user_challenge_pairs),

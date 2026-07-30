@@ -2,31 +2,32 @@ import uuid
 import structlog
 
 from uuid import UUID
-from sqlalchemy import select, func
 from atlazer.models.paper import PaperORM
 
 from datetime import datetime
 from typing import List, Any, Dict
 from atlazer.storage.db import DatabasePool
-from atlazer.models.workspace import ContextChunkORM
+from atlazer.models.workspace import ContextChunkORM, ContextPaperORM
 from atlazer.models.document import DocumentChunkORM
 
+from sqlalchemy import tuple_, insert, select, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 log = structlog.get_logger()
 
 
-class ContextChunkDepot:
+class WorkspaceDepot:
 
     def __init__(self, db_pool: DatabasePool):
         self._db_pool = db_pool
 
-    def bulk_upsert(self, values: List[ContextChunkORM]) -> None:
+    def bulk_insert_chunks(self, values: List[ContextChunkORM]) -> None:
         if not values:
-            log.info("context_chunk.empty_list")
+            log.info("workspace.bulk_insert_chunks.empty_list")
             return
 
+        user_pairs = list({(chunk.user_id, chunk.context_id, chunk.workspace_id, chunk.chunk_index) for chunk in values})
         rows = [
             {
                 "user_id": chunk.user_id,
@@ -42,35 +43,68 @@ class ContextChunkDepot:
 
         with self._db_pool.session() as session:
             try:
-                stmt = pg_insert(ContextChunkORM).values(rows)
-
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=[
-                        ContextChunkORM.user_id,
-                        ContextChunkORM.workspace_id,
+                session.query(ContextChunkORM).filter(
+                    tuple_(
+                        ContextChunkORM.user_id, 
                         ContextChunkORM.context_id,
+                        ContextChunkORM.workspace_id,
                         ContextChunkORM.chunk_index,
-                    ],
-                    set_={
-                        "content": stmt.excluded.content,
-                        "embedding": stmt.excluded.embedding,
-                        "attributes": stmt.excluded.attributes,
-                        "updated_at": datetime.now(),
-                    },
-                )
+                    ).in_(user_pairs)
+                ).delete(synchronize_session=False)
 
-                session.execute(stmt)
+                session.execute(insert(ContextChunkORM), rows)
                 session.commit()
 
                 log.info(
-                    "context_chunk.finish_upsert",
+                    "workspace.bulk_insert_chunks.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "context_chunk.error_upsert",
+                    "workspace.bulk_insert_chunks.error_upsert",
+                    error=str(e),
+                )
+                raise e
+
+    def bulk_insert_papers(self, values: List[ContextPaperORM]) -> None:
+        if not values:
+            log.info("workspace.bulk_insert_chunks.empty_list")
+            return
+
+        user_pairs = list({(chunk.user_id, chunk.context_id) for chunk in values})
+        rows = [
+            {
+                "user_id": chunk.user_id,
+                "workspace_id": chunk.workspace_id,
+                "context_id": chunk.context_id,
+                "paper_id": chunk.paper_id,
+            }
+            for chunk in values
+        ]
+
+        with self._db_pool.session() as session:
+            try:
+                session.query(ContextPaperORM).filter(
+                    tuple_(
+                        ContextPaperORM.user_id, 
+                        ContextPaperORM.context_id
+                    ).in_(user_pairs)
+                ).delete(synchronize_session=False)
+
+                session.execute(insert(ContextPaperORM), rows)
+                session.commit()
+
+                log.info(
+                    "workspace.bulk_insert_papers.finish_upsert",
+                    count=len(values),
+                )
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace.bulk_insert_papers.error_upsert",
                     error=str(e),
                 )
                 raise e
@@ -141,6 +175,7 @@ class ContextChunkDepot:
                         .join(ranked_subq, ranked_subq.c.paper_id == PaperORM.id)
                         .where(ranked_subq.c.rn == 1)
                         .order_by(ranked_subq.c.distance.asc())
+                        .limit(top_k)
                     )
 
                     rows = session.execute(stmt).all()
@@ -177,19 +212,19 @@ class ContextChunkDepot:
         top_papers: List[PaperORM] = [paper for paper, _ in averaged[:top_k]]
         top_paper_ids = {paper.id for paper in top_papers}
 
-        chunk_similars = [
+        similar_chunks = [
             match for match in raw_matches if match["paper_id"] in top_paper_ids
         ]
 
         result: Dict[str, Any] = {
             "papers": top_papers,
-            "chunk_similars": chunk_similars,
+            "similar_chunks": similar_chunks,
         }
 
         log.info(
             "context_chunk.match_context_with_papers",
             papers=len(top_papers),
-            chunk_similars=len(chunk_similars),
+            similar_chunks=len(similar_chunks),
         )
 
         return result
