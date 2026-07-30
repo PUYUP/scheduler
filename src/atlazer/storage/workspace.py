@@ -4,17 +4,32 @@ import structlog
 from uuid import UUID
 from atlazer.models.paper import PaperORM
 
-from datetime import datetime
-from typing import List, Any, Dict
+from typing import List, Any, Dict, TypedDict
 from atlazer.storage.db import DatabasePool
 from atlazer.models.workspace import ContextChunkORM, ContextPaperORM, ContextSimilarityORM
 from atlazer.models.document import DocumentChunkORM
 
 from sqlalchemy import tuple_, insert, select, func
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 log = structlog.get_logger()
+
+
+# --- 1. Type Hinting Setup ---
+class SimilarChunkDict(TypedDict):
+    document_content: str
+    document_id: Any
+    chunk_content: str
+    chunk_id: Any
+    paper_id: Any
+    similarity_score: float
+
+
+class MatchResultDict(TypedDict):
+    id: Any
+    chunk_content: str
+    papers: List[Dict[str, Any]]  # Berisi list of dictionary dari paper
+    similar_chunks: List[SimilarChunkDict]
 
 
 class WorkspaceDepot:
@@ -27,7 +42,11 @@ class WorkspaceDepot:
             log.info("workspace.bulk_insert_chunks.empty_list")
             return
 
-        user_pairs = list({(chunk.user_id, chunk.context_id, chunk.workspace_id, chunk.chunk_index) for chunk in values})
+        context_keys = list({
+            (chunk.user_id, chunk.workspace_id, chunk.context_id) 
+            for chunk in values
+        })
+
         rows = [
             {
                 "user_id": chunk.user_id,
@@ -48,8 +67,7 @@ class WorkspaceDepot:
                         ContextChunkORM.user_id, 
                         ContextChunkORM.context_id,
                         ContextChunkORM.workspace_id,
-                        ContextChunkORM.chunk_index,
-                    ).in_(user_pairs)
+                    ).in_(context_keys)
                 ).delete(synchronize_session=False)
 
                 session.execute(insert(ContextChunkORM), rows)
@@ -183,17 +201,22 @@ class WorkspaceDepot:
 
     def match_context_with_papers(
         self,
-        chunks: List[ContextChunkORM],
+        chunks: List['ContextChunkORM'], # Sesuaikan tipe kelas Anda
         top_k: int = 15,
-    ) -> Dict[str, Any]:
-        result: Dict[Any, Any] = {}
+    ) -> Dict[Any, MatchResultDict]:
+
+        results: Dict[Any, MatchResultDict] = {}
 
         try:
             with self._db_pool.session() as session:
                 for chunk in chunks:
-                    if chunk.embedding is None or len(chunk.embedding) == 0:
-                        log.warning("context_chunk.empty_embedding", chunk=chunk)
-                        result[chunk.id] = {
+                    if not chunk.embedding:
+                        log.warning(
+                            "context_chunk.empty_embedding",
+                            chunk=chunk,
+                        )
+
+                        results[chunk.id] = {
                             "id": chunk.id,
                             "chunk_content": chunk.content,
                             "papers": [],
@@ -201,73 +224,110 @@ class WorkspaceDepot:
                         }
                         continue
 
-                    distance = DocumentChunkORM.embedding.cosine_distance(chunk.embedding)
-
-                    # ambil 1 document-chunk terdekat per paper untuk chunk ini
-                    ranked_subq = (
-                        select(
-                            DocumentChunkORM.id.label("document_chunk_id"),
-                            DocumentChunkORM.content.label("document_chunk_content"),
-                            DocumentChunkORM.paper_id.label("paper_id"),
-                            distance.label("distance"),
-                            func.row_number()
-                            .over(
-                                partition_by=DocumentChunkORM.paper_id,
-                                order_by=distance.asc(),
-                            )
-                            .label("rn"),
-                        )
-                        .subquery()
+                    # Jarak cosine
+                    distance_expr = (
+                        DocumentChunkORM.embedding.cosine_distance(chunk.embedding)
                     )
 
+                    # --- 2. Perbaikan Query (Memaksa penggunaan Vector Index) ---
+                    # Ambil kandidat awal dengan LIMIT agar pgvector (atau ekstensilain) menggunakan Index.
+                    # Kita buffer (top_k * 5) karena beberapa chunk mungkin berasal dari paper yang sama.
+                    top_candidates = (
+                        select(
+                            DocumentChunkORM.id.label("document_chunk_id"),
+                            DocumentChunkORM.paper_id.label("paper_id"),
+                            DocumentChunkORM.content.label("document_chunk_content"),
+                            distance_expr.label("distance"),
+                        )
+                        .order_by(distance_expr.asc())
+                        .limit(top_k * 5) 
+                        .cte("top_candidates")
+                    )
+
+                    # Lakukan pemeringkatan (window function) dari kandidat yang sudah di-limit
+                    ranked_chunks = (
+                        select(
+                            top_candidates.c.document_chunk_id,
+                            top_candidates.c.paper_id,
+                            top_candidates.c.document_chunk_content,
+                            top_candidates.c.distance,
+                            func.row_number()
+                            .over(
+                                partition_by=top_candidates.c.paper_id,
+                                order_by=top_candidates.c.distance.asc(),
+                            )
+                            .label("rank"),
+                        )
+                        .cte("ranked_chunks")
+                    )
+
+                    # Ambil paper unik terbaik
                     stmt = (
                         select(
                             PaperORM,
-                            ranked_subq.c.document_chunk_id,
-                            ranked_subq.c.document_chunk_content,
-                            ranked_subq.c.distance,
+                            ranked_chunks.c.document_chunk_id,
+                            ranked_chunks.c.document_chunk_content,
+                            ranked_chunks.c.distance,
                         )
-                        .join(ranked_subq, ranked_subq.c.paper_id == PaperORM.id)
-                        .where(ranked_subq.c.rn == 1)
-                        .order_by(ranked_subq.c.distance.asc())
+                        .join(
+                            ranked_chunks,
+                            ranked_chunks.c.paper_id == PaperORM.id,
+                        )
+                        .where(ranked_chunks.c.rank == 1)
+                        .order_by(ranked_chunks.c.distance.asc())
                         .limit(top_k)
                     )
 
                     rows = session.execute(stmt).all()
+                    
+                    papers = []
+                    similar_chunks: List[SimilarChunkDict] = []
 
-                    papers: List[PaperORM] = []
-                    similar_chunks: List[dict] = []
-
-                    for paper, doc_chunk_id, doc_chunk_content, dist in rows:
-                        papers.append(paper)
+                    for (
+                        paper_orm,
+                        document_chunk_id,
+                        document_chunk_content,
+                        distance,
+                    ) in rows:
+                        
+                        # --- 3. Mencegah DetachedInstanceError ---
+                        # Ubah ORM object menjadi dictionary biasa sebelum session ditutup
+                        # Anda bisa memanggil spesifik atribut (contoh: id, title, abstract)
+                        # atau menggunakan pendekatan dinamis seperti di bawah ini:
+                        paper_dict = {
+                            column.name: getattr(paper_orm, column.name)
+                            for column in paper_orm.__table__.columns
+                        }
+                        
+                        papers.append(paper_dict)
+                        
                         similar_chunks.append(
                             {
-                                "document_content": doc_chunk_content,
-                                "document_id": doc_chunk_id,
+                                "document_content": document_chunk_content,
+                                "document_id": document_chunk_id,
                                 "chunk_content": chunk.content,
                                 "chunk_id": chunk.id,
-                                "similarity_score": round(1 - dist, 4),
-                                "paper_id": paper.id,
+                                "paper_id": paper_orm.id,
+                                "similarity_score": float(1 - distance),
                             }
                         )
 
-                    result[chunk.id] = {
+                    results[chunk.id] = {
                         "id": chunk.id,
                         "chunk_content": chunk.content,
                         "papers": papers,
                         "similar_chunks": similar_chunks,
                     }
 
-        except SQLAlchemyError as e:
-            log.error(
+        except SQLAlchemyError:
+            log.exception(
                 "context_chunk.error_match_context_with_papers",
-                error=str(e),
             )
-            raise e
+            raise
 
         log.info(
             "context_chunk.match_context_with_papers",
-            chunks=len(result),
+            chunks=len(results),
         )
 
-        return result
+        return results

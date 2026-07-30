@@ -221,10 +221,9 @@ def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         # Convert PaperORM objects to basic dicts
         serialized_papers = [
             {
-                "id": paper.id, 
-                "title": paper.title
-            } 
-            for paper in papers
+                "id": paper.get("id"), 
+                "title": paper.get("title")
+            } for paper in papers
         ]
 
         metadata["matched_result"] = {
