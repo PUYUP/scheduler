@@ -1,14 +1,15 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
+from collections import defaultdict
 
 from uuid import UUID
-from sqlalchemy import select, update, or_, CursorResult
+from sqlalchemy import select, update, or_, CursorResult, bindparam
 from sqlalchemy.exc import SQLAlchemyError
 
 from atlazer.storage.db import DatabasePool
-from atlazer.models.user import ProfileUpdate, ProfileORM
+from atlazer.models.user import ProfileUpdate, ProfileORM, SubscriptionORM
 
 logger = logging.getLogger(__name__)
 
@@ -32,18 +33,23 @@ class UserDepot:
     def get_profiles_for_paper_matching(self) -> List[Dict[str, Any]]:
         """Get profiles that are ready for paper matching."""
         current_time = datetime.now(timezone.utc).isoformat()
-        
+
         # Gunakan .is_(None) yang merupakan standar SQLAlchemy untuk perbandingan NULL
-        stmt = select(ProfileORM).where(
-            or_(
-                ProfileORM.next_processed_at.is_(None),
-                ProfileORM.next_processed_at < current_time
+        stmt = (
+            select(ProfileORM, SubscriptionORM.attributes)
+            .outerjoin(SubscriptionORM, SubscriptionORM.user_id == ProfileORM.user_id)
+            .where(
+                or_(
+                    ProfileORM.next_processed_at.is_(None),
+                    ProfileORM.next_processed_at < current_time,
+                )
             )
-        ).limit(10)
+            .limit(10)
+        )
 
         with self._pool.session() as session:
             try:
-                profiles = session.execute(stmt).scalars().all()
+                rows = session.execute(stmt).all()
 
                 return [
                     {
@@ -53,8 +59,9 @@ class UserDepot:
                         "interest_embedding": p.interest_embedding,
                         "language_code": p.language_code,
                         "next_processed_at": p.next_processed_at.isoformat() if p.next_processed_at else None,
+                        "subscription_attributes": attributes if attributes is not None else {},
                     }
-                    for p in profiles
+                    for p, attributes in rows
                 ]
             except Exception as e:
                 # Menggunakan logger.exception agar merekam stack-trace penuh
@@ -147,51 +154,53 @@ class UserDepot:
             logger.exception("Failed to update profile id=%s", profile_uuid)
             raise
 
-    def bulk_update_profiles(self, uuid_strs: List[str], payload: ProfileUpdate) -> int:
+    def bulk_update_profiles(self, updates: List[Tuple[str, ProfileUpdate]]) -> int:
         """
-        Melakukan bulk update pada beberapa profile sekaligus berdasarkan list ID.
-        Mengembalikan jumlah baris (rowcount) yang berhasil di-update.
+        Bulk update profile dengan payload berbeda per profile,
+        dikelompokkan berdasarkan field yang sama untuk efisiensi.
         """
-        if not uuid_strs:
+        if not updates:
             return 0
 
-        # Ambil dictionary dari payload
-        raw_values = self._values(payload)
-        
-        # FILTERING: Hanya simpan field yang TIDAK None
-        values = {k: v for k, v in raw_values.items() if v is not None}
+        grouped: Dict[frozenset, List[Dict[str, Any]]] = defaultdict(list)
 
-        # Jika setelah difilter ternyata kosong (tidak ada yang perlu diupdate), hentikan
-        if not values:
-            return 0
-
-        profile_uuids: List[UUID] = []
-        for uuid_str in uuid_strs:
+        for uuid_str, payload in updates:
             try:
-                profile_uuids.append(uuid.UUID(uuid_str))
+                profile_id = uuid.UUID(uuid_str)
             except ValueError:
-                raise ValueError(f"Invalid UUID string format in list: {uuid_str}")
+                raise ValueError(f"Invalid UUID string format: {uuid_str}")
 
-        stmt = (
-            update(ProfileORM)
-            .where(ProfileORM.id.in_(profile_uuids))
-            .values(**values) # Sekarang hanya berisi field yang benar-benar ada nilainya
-            .execution_options(synchronize_session="fetch")
-        )
+            raw_values = self._values(payload)
+            values = {k: v for k, v in raw_values.items() if v is not None}
 
+            if not values:
+                continue
+
+            key = frozenset(values.keys())
+            values["_id"] = profile_id  # nama beda dari kolom asli, dipakai di WHERE
+            grouped[key].append(values)
+
+        if not grouped:
+            return 0
+
+        total_updated = 0
         try:
             with self._pool.session() as session:
-                result = session.execute(stmt)
-                session.commit()
-                
-                if isinstance(result, CursorResult):
-                    updated_count = result.rowcount
-                else:
-                    updated_count = 0
+                for field_keys, rows in grouped.items():
+                    stmt = (
+                        update(ProfileORM)
+                        .where(ProfileORM.id == bindparam("_id"))
+                        .values({field: bindparam(field) for field in field_keys})
+                    )
+                    result = session.execute(stmt, rows)  # executemany
+                    if isinstance(result, CursorResult):
+                        total_updated += result.rowcount
 
-                logger.info("Bulk updated %d profiles", updated_count)
-                
-                return updated_count
+                session.commit()
+
+            logger.info("Bulk updated %d profiles (grouped by field set)", total_updated)
+            return total_updated
+
         except SQLAlchemyError:
-            logger.exception("Failed to bulk update profiles for %d IDs", len(uuid_strs))
+            logger.exception("Failed to bulk update profiles with per-user payloads")
             raise

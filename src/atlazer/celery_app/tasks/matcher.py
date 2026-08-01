@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import structlog
 from celery import group
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from datetime import datetime, timedelta
 
 from atlazer.celery_app.main import app, db_pool
@@ -176,13 +176,16 @@ def batch_user(self) -> Dict[str, int]:
 
         skipped_count = 0
         tasks_to_run = []
-        profile_ids = []
+        profile_update_payloads: List[Tuple[str, ProfileUpdate]] = []
 
         for prof in profiles:
             profile_id = str(prof.get("id"))
             user_id = str(prof.get("user_id"))
             embed = prof.get("interest_embedding")
             language_code = prof.get("language_code", "en")
+            subscription_attributes = prof.get("subscription_attributes", {})
+            challenge_interval = subscription_attributes.get("challengeInterval", 168)
+            next_processed_at = datetime.now() + timedelta(hours=challenge_interval)
 
             if embed is None or len(embed) == 0:
                 log.error("matcher.batch_user.no_embedding", profile_id=profile_id)
@@ -205,7 +208,8 @@ def batch_user(self) -> Dict[str, int]:
             tasks_to_run.append(single_user.s(payload).set(queue="matcher"))
 
             # collect profile id for bulk update
-            profile_ids.append(profile_id)
+            payload = ProfileUpdate(next_processed_at=next_processed_at)
+            profile_update_payloads.append((profile_id, payload))
 
         processed_count = len(tasks_to_run)
 
@@ -224,12 +228,7 @@ def batch_user(self) -> Dict[str, int]:
             # metadata_list = result.get()
 
             # update profile match result
-            user_depot.bulk_update_profiles(
-                profile_ids,
-                ProfileUpdate(
-                    next_processed_at=datetime.now() + timedelta(days=2)
-                )
-            )
+            user_depot.bulk_update_profiles(profile_update_payloads)
 
         log.info(
             "matcher.batch_user.success",
