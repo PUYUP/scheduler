@@ -64,6 +64,8 @@ def generate_embeddings(
     # store chunks for profile interest embedding
     if provision is not None:
         profile_id = provision.get("profile_id")
+        next_processed_at = provision.get("next_processed_at", datetime.now(timezone.utc) + timedelta(hours=48))
+
         if profile_id is not None:
             result = embedded_chunks[0]
             embedding = result["embedding"]
@@ -73,7 +75,6 @@ def generate_embeddings(
                 user_depot = UserDepot(db_pool)
                 # Set next processed at to 48 hours from now, to prevent updating
                 # frequently
-                next_processed_at = datetime.now(timezone.utc) + timedelta(hours=48)
                 user_depot.update_profile(
                     profile_id, 
                     ProfileUpdate(
