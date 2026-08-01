@@ -1,11 +1,11 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, cast
 from collections import defaultdict
 
 from uuid import UUID
-from sqlalchemy import select, update, or_, CursorResult, bindparam
+from sqlalchemy import select, update, or_, CursorResult, bindparam, Table
 from sqlalchemy.exc import SQLAlchemyError
 
 from atlazer.storage.db import DatabasePool
@@ -186,13 +186,15 @@ class UserDepot:
         total_updated = 0
         try:
             with self._pool.session() as session:
+                profile_table = cast(Table, ProfileORM.__table__)
+
                 for field_keys, rows in grouped.items():
                     stmt = (
-                        update(ProfileORM)
-                        .where(ProfileORM.id == bindparam("_id"))
+                        update(profile_table)
+                        .where(profile_table.c.id == bindparam("_id"))
                         .values({field: bindparam(field) for field in field_keys})
                     )
-                    result = session.execute(stmt, rows)  # executemany
+                    result = session.execute(stmt, rows)
                     if isinstance(result, CursorResult):
                         total_updated += result.rowcount
 
