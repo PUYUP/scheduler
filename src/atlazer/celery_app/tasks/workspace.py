@@ -46,8 +46,8 @@ def chunk_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         semantic=True,
         download_models=False,
         embed_model_name=settings.local_embedding_model,
-        min_words=1,
-        max_words=35,
+        min_words=settings.context_chunker_min_words,
+        max_words=settings.context_chunker_max_words,
     )
 
     validated.chunks = [{"text": chunk} for chunk in chunks]

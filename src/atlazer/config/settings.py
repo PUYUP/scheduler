@@ -216,6 +216,8 @@ class Settings(BaseSettings):
     chunk_size_tokens: int      = 1024
     chunk_overlap_tokens: int   = 128
     min_chunk_chars: int        = 100   # discard tiny chunks
+    context_chunker_min_words: int = 35
+    context_chunker_max_words: int = 90
 
     # ── Embeddings ─────────────────────────────────────────────
     worker_proc_alive_timeout: int = 60              # seconds
