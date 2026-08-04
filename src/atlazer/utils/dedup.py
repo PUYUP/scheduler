@@ -20,19 +20,16 @@ from typing import cast, Dict, Any, List, Optional
 from atlazer.config.settings import settings
 from atlazer.celery_app.main import db_pool
 from atlazer.storage.progress import ScrapeProgressDepot
+from atlazer.utils.lib import get_redis
 
 log = structlog.get_logger(__name__)
 
 _QUEUED_TTL_SECONDS = 172_800   # 48 h
 
 
-def _get_redis() -> redis.Redis:
-    return redis.from_url(settings.redis_url, decode_responses=True)  # type: ignore[return-value]
-
-
 def is_already_processed(paper_id: str, repository: str) -> bool:
     """Return True if the paper is queued OR fully processed."""
-    r = _get_redis()
+    r = get_redis()
     return (
         cast(bool, r.sismember(f"atlazer_rag:{repository}:processed", paper_id))
         or cast(bool, r.sismember(f"atlazer_rag:{repository}:queued", paper_id))
@@ -41,7 +38,7 @@ def is_already_processed(paper_id: str, repository: str) -> bool:
 
 def mark_as_queued(paper_id: str, repository: str) -> None:
     """Mark paper as in-flight.  Expires after 48 h if processing stalls."""
-    r = _get_redis()
+    r = get_redis()
     pipe = r.pipeline()
     pipe.sadd(f"atlazer_rag:{repository}:queued", paper_id)
     pipe.setex(f"atlazer_rag:{repository}:queued:{paper_id}", _QUEUED_TTL_SECONDS, "1")
@@ -54,7 +51,7 @@ def mark_as_processed(paper_id: str, repository: str) -> None:
     Promote paper from queued → processed.
     Called by store_paper after successful write.
     """
-    r = _get_redis()
+    r = get_redis()
     pipe = r.pipeline()
     pipe.srem(f"atlazer_rag:{repository}:queued", paper_id)
     pipe.delete(f"atlazer_rag:{repository}:queued:{paper_id}")
@@ -65,7 +62,7 @@ def mark_as_processed(paper_id: str, repository: str) -> None:
 
 def reset_paper(paper_id: str, repository: str) -> None:
     """Force re-ingestion of a specific paper (removes from both sets)."""
-    r = _get_redis()
+    r = get_redis()
     pipe = r.pipeline()
     pipe.srem(f"atlazer_rag:{repository}:processed", paper_id)
     pipe.srem(f"atlazer_rag:{repository}:queued", paper_id)
@@ -75,16 +72,16 @@ def reset_paper(paper_id: str, repository: str) -> None:
 
 
 def count_processed(repository: str) -> int:
-    return cast(int, _get_redis().scard(f"atlazer_rag:{repository}:processed"))
+    return cast(int, get_redis().scard(f"atlazer_rag:{repository}:processed"))
 
 
 def count_queued(repository: str) -> int:
-    return cast(int, _get_redis().scard(f"atlazer_rag:{repository}:queued"))
+    return cast(int, get_redis().scard(f"atlazer_rag:{repository}:queued"))
 
 
 def is_backfill_complete(topic: str, repository: str, last_position: int) -> bool:
     """True kalau backfill untuk topic+repository ini sudah pernah tuntas."""
-    r = _get_redis()
+    r = get_redis()
     key = f"backfill:complete:{repository}:{topic}"
     try:
         return cast(bool, r.sismember(key, str(last_position)))
@@ -102,7 +99,7 @@ def is_backfill_complete(topic: str, repository: str, last_position: int) -> boo
 
 def mark_backfill_complete(topic: str, repository: str, last_position: int) -> None:
     """Tandai backfill untuk topic+repository ini sebagai selesai."""
-    r = _get_redis()
+    r = get_redis()
     key = f"backfill:complete:{repository}:{topic}"
     r.sadd(key, str(last_position))
     log.info(
@@ -137,7 +134,7 @@ def check_increment_process(repository: str) -> Optional[Dict[str, Any]]:
         repository: str
         start: int
     """
-    r = _get_redis()
+    r = get_redis()
     key = f"increment:{repository}"
     # NOTE: redis-py men-share signature command sync & async, jadi hgetall()
     # di-type sebagai Union[Awaitable[dict], dict] walau kita pakai client
@@ -154,7 +151,7 @@ def check_increment_process(repository: str) -> Optional[Dict[str, Any]]:
  
 def set_increment_process(repository: str, topic: str, start: int) -> Dict[str, Any]:
     """Set increment process"""
-    r = _get_redis()
+    r = get_redis()
     key = f"increment:{repository}"
     process = {
         "start": str(start),
@@ -175,7 +172,7 @@ def set_increment_process(repository: str, topic: str, start: int) -> Dict[str, 
  
 def clear_increment_process(repository: str) -> None:
     """Clear increment process"""
-    r = _get_redis()
+    r = get_redis()
     key = f"increment:{repository}"
     r.delete(key)
     log.info(
@@ -209,7 +206,7 @@ def claim_next_topic(repository: str, serving_topics: List[str]) -> Dict[str, An
             f"serving_topics tidak boleh kosong (repository={repository})"
         )
  
-    r = _get_redis()
+    r = get_redis()
     lock_key = f"lock:increment:{repository}"
  
     # timeout=10 -> auto-release kalau proses crash sebelum sempat unlock,
@@ -243,7 +240,7 @@ def claim_next_topic(repository: str, serving_topics: List[str]) -> Dict[str, An
  
 def get_topic_start(repository: str, topic: str) -> int:
     """Ambil offset paging untuk topic ini. Default 0 kalau belum pernah diproses."""
-    r = _get_redis()
+    r = get_redis()
     # NOTE: sama seperti di check_increment_process -- cast() di sini cuma
     # menyingkirkan cabang Awaitable dari stub redis-py, bukan mengklaim
     # data sudah di-decode. Decode isi tetap lewat _decode() di bawah.
@@ -276,7 +273,7 @@ def get_topic_start(repository: str, topic: str) -> int:
  
  
 def set_topic_start(repository: str, topic: str, start: int) -> None:
-    r = _get_redis()
+    r = get_redis()
     r.hset(f"scrape_topic_start:{repository}", topic, str(start))
  
     # set di db juga
@@ -301,7 +298,7 @@ def set_topic_start(repository: str, topic: str, start: int) -> None:
  
  
 def reset_topic_start(repository: str, topic: str) -> None:
-    r = _get_redis()
+    r = get_redis()
     r.hdel(f"scrape_topic_start:{repository}", topic)
  
     # reset di db juga

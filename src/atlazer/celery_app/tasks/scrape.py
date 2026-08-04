@@ -39,7 +39,7 @@ from atlazer.utils.dedup import (
     set_topic_start,
     get_topic_start,
 )
-from atlazer.models.paper_schema import PaperMetadata
+from atlazer.ingestion.schemas import PaperMetadata
 from atlazer.config.settings import settings
 
 log = structlog.get_logger(__name__)

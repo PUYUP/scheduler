@@ -14,7 +14,6 @@ from .document import (
     DocumentChunkCreate,
     ChunkType,
 )
-from .paper_schema import PaperMetadata, ChunkSchema
 
 __all__ = [
     "Base",
@@ -29,6 +28,4 @@ __all__ = [
     "DocumentChunkBase",
     "DocumentChunkCreate",
     "ChunkType",
-    "PaperMetadata",
-    "ChunkSchema",
 ]
