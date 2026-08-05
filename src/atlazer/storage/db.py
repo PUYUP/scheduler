@@ -222,7 +222,7 @@ CREATE INDEX idx_chunks_type
 
 
 -- =====================================================================
--- scrape_progress
+-- ingestion_progress
 -- Menyimpan progress pagination (offset "start") untuk scraping
 -- increment per (repository, topic). Berfungsi sebagai source of
 -- truth yang persistent, sebagai fallback/backup kalau state di Redis
@@ -232,7 +232,7 @@ CREATE INDEX idx_chunks_type
 -- gen_random_uuid() sudah built-in di Postgres 13+ (termasuk semua project
 -- Supabase saat ini), jadi tidak perlu create extension tambahan.
 
-create table if not exists public.scrape_progress (
+create table if not exists public.ingestion_progress (
     id             uuid primary key default gen_random_uuid(),
     repository     text not null,
     topic          text not null,
@@ -244,13 +244,13 @@ create table if not exists public.scrape_progress (
     created_at     timestamptz not null default now(),
     updated_at     timestamptz not null default now(),
 
-    constraint scrape_progress_repo_topic_uniq unique (repository, topic)
+    constraint ingestion_progress_repo_topic_uniq unique (repository, topic)
 );
 
 -- Index untuk query "ambil semua topic milik repository tertentu"
 -- (mis. saat inisialisasi ulang serving_topics)
-create index if not exists idx_scrape_progress_repository
-    on public.scrape_progress (repository);
+create index if not exists idx_ingestion_progress_repository
+    on public.ingestion_progress (repository);
 
 -- =====================================================================
 -- Trigger: auto-update kolom updated_at setiap kali row di-UPDATE
@@ -266,30 +266,30 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_scrape_progress_updated_at on public.scrape_progress;
+drop trigger if exists trg_ingestion_progress_updated_at on public.ingestion_progress;
 
-create trigger trg_scrape_progress_updated_at
-    before update on public.scrape_progress
+create trigger trg_ingestion_progress_updated_at
+    before update on public.ingestion_progress
     for each row
     execute function public.set_updated_at();
 
 -- =====================================================================
 -- Upsert helper (opsional): satu statement untuk "insert atau update
 -- start_offset" tanpa perlu SELECT dulu dari sisi aplikasi.
--- Dipanggil dari Python: select public.upsert_scrape_progress('arxiv','cs.AI', 5);
+-- Dipanggil dari Python: select public.upsert_ingestion_progress('arxiv','cs.AI', 5);
 -- =====================================================================
 
-create or replace function public.upsert_scrape_progress(
+create or replace function public.upsert_ingestion_progress(
     p_repository text,
     p_topic text,
     p_start_offset integer,
     p_last_result_count integer default null,
     p_status text default 'active'
 )
-returns public.scrape_progress
+returns public.ingestion_progress
 language sql
 as $$
-    insert into public.scrape_progress (repository, topic, start_offset, last_result_count, status)
+    insert into public.ingestion_progress (repository, topic, start_offset, last_result_count, status)
     values (p_repository, p_topic, p_start_offset, p_last_result_count, p_status)
     on conflict (repository, topic)
     do update set
@@ -307,7 +307,7 @@ $$;
 -- yang otomatis bypass RLS), kita kunci total dari sisi anon/authenticated.
 -- =====================================================================
 
-alter table public.scrape_progress enable row level security;
+alter table public.ingestion_progress enable row level security;
 
 -- Tidak ada policy untuk anon/authenticated -> akses hanya lewat
 -- service_role key (dipakai backend/Celery worker), sesuai rekomendasi
@@ -360,7 +360,7 @@ class DatabasePool:
     def __init__(self, config: DatabaseConfig | None = None) -> None:
         self._cfg = config or DatabaseConfig.from_env()
         self._engine = None
-        self._SessionLocal: sessionmaker | None = None
+        self._SessionLocal: sessionmaker[Session] | None = None
 
     def start(self) -> None:
         if self._engine is not None:

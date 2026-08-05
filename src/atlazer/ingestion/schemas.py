@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 class PaperMetadata(BaseModel):
     """
     Validated metadata for a single paper.
-    Produced by scrape_paper_metadata, passed to every downstream task.
+    Produced by ingest_paper_metadata, passed to every downstream task.
     """
     paper_id:         str
     repository:       str

@@ -38,17 +38,17 @@ def create_celery_app() -> Celery:
     # Explicit imports are more reliable than autodiscover across Docker
     # bind-mount layouts — every task module must be listed here.
     app.conf.include = [
-        # "atlazer.celery_app.tasks.scrape",
-        "atlazer.celery_app.tasks.process",
-        "atlazer.celery_app.tasks.embed",
-        "atlazer.celery_app.tasks.store",
+        "atlazer.celery_app.tasks.ingestion.extractors.arxiv",
+        "atlazer.celery_app.tasks.ingestion.extractors.iaescore",
+        "atlazer.celery_app.tasks.ingestion.process",
+        "atlazer.celery_app.tasks.ingestion.embed",
+        "atlazer.celery_app.tasks.ingestion.store",
         "atlazer.celery_app.tasks.maintenance",
         "atlazer.celery_app.tasks.webapi",
         "atlazer.celery_app.tasks.matcher",
         "atlazer.celery_app.tasks.challenge",
         "atlazer.celery_app.tasks.evaluation",
         "atlazer.celery_app.tasks.workspace",
-        "atlazer.celery_app.tasks.ingestion.extractors.arxiv",
     ]
     _configure_queues(app)
     _configure_beat_schedule(app)
@@ -62,18 +62,17 @@ def create_celery_app() -> Celery:
 # Dead-lettering di sini dilakukan MANUAL lewat signal task_failure
 # (lihat on_task_failure di bawah), setelah semua retry habis.
 #
-#  scrape  → discover papers, download PDFs
+#  ingestion  → discover papers, download PDFs
 #  process → parse PDF, clean text, chunk
 #  embed   → generate embeddings
 #  store   → store metadata and vectors to database
 #
-# Tasks chain:  scrape_topic → scrape_paper_metadata → download_pdf
+# Tasks chain:  ingestion → paper_metadata → download_pdf
 #                           → parse_pdf → chunk_document
 #                           → generate_embeddings → store_paper
 
 def _configure_queues(app: Celery) -> None:
     default_exchange    = Exchange("default",   type="direct")
-    # scrape_exchange     = Exchange("scrape",    type="direct")
     process_exchange    = Exchange("process",   type="direct")
     embed_exchange      = Exchange("embed",     type="direct")
     store_exchange      = Exchange("store",     type="direct")
@@ -83,12 +82,14 @@ def _configure_queues(app: Celery) -> None:
     evaluation_exchange = Exchange("evaluation", type="direct")
     workspace_exchange  = Exchange("workspace", type="direct")
     arxiv_exchange      = Exchange("arxiv",     type="direct")
+    iaescore_exchange   = Exchange("iaescore",  type="direct")
     dlx_exchange        = Exchange("dlx",       type="direct")
 
     app.conf.task_queues = (
         Queue("default",    default_exchange, routing_key="default"),
         # ── Tier 1: I/O bound ──
-        # Queue("scrape",     scrape_exchange,  routing_key="scrape"),
+        Queue("arxiv",      arxiv_exchange,     routing_key="arxiv"),
+        Queue("iaescore",   iaescore_exchange,  routing_key="iaescore"),
         # ── Tier 2: CPU bound ──
         Queue("process",    process_exchange, routing_key="process"),
         # ── Tier 3: API rate-limited ──
@@ -105,11 +106,8 @@ def _configure_queues(app: Celery) -> None:
         Queue("evaluation", evaluation_exchange, routing_key="evaluation"),
         # ── Workspace ──
         Queue("workspace",  workspace_exchange, routing_key="workspace"),
-        # ── Arxiv ──
-        Queue("arxiv",      arxiv_exchange,   routing_key="arxiv"),
         # ── Dead-letter sinks (diisi manual via on_task_failure, dikuras via
         #     tasks.maintenance.retry_dead_letters) ──
-        # Queue("dlx.scrape",     dlx_exchange, routing_key="dlx.scrape"),
         Queue("dlx.process",    dlx_exchange, routing_key="dlx.process"),
         Queue("dlx.embed",      dlx_exchange, routing_key="dlx.embed"),
         Queue("dlx.store",      dlx_exchange, routing_key="dlx.store"),
@@ -119,6 +117,7 @@ def _configure_queues(app: Celery) -> None:
         Queue("dlx.evaluation", dlx_exchange, routing_key="dlx.evaluation"),
         Queue("dlx.workspace",  dlx_exchange, routing_key="dlx.workspace"),
         Queue("dlx.arxiv",      dlx_exchange, routing_key="dlx.arxiv"),
+        Queue("dlx.iaescore",   dlx_exchange, routing_key="dlx.iaescore"),
     )
 
     app.conf.task_default_queue         = "default"
@@ -136,44 +135,6 @@ def _configure_beat_schedule(app: Celery) -> None:
     from atlazer.celery_app.tasks.maintenance import MAINTENANCE_BEAT_SCHEDULE
 
     app.conf.beat_schedule = {
-        # ── Main ingestion: every 6 hours per topic ──
-        # **{
-        #     f"scrape-{topic.replace(' ', '-')}-periodic": {
-        #         "task": "atlazer.celery_app.tasks.scrape.scrape_topic",
-        #         "schedule": settings.scrape_interval_seconds,
-        #         "args": [topic],
-        #         "kwargs": {"max_results": settings.max_results_per_topic},
-        #         "options": {"queue": "scrape"},
-        #     }
-        #     for topic in settings.arxiv_topics
-        # },
-        # ── Backfill trigger for each topic ──
-        # Catatan: beat akan memicu ulang task ini secara periodik dari start=0.
-        # Ini AMAN karena task sendiri akan skip kalau backfill sudah selesai
-        # (lihat guard is_backfill_complete di scrape_topic_backfill), dan
-        # berfungsi sebagai safety-net kalau chain pagination sempat terputus
-        # (misal worker crash di tengah jalan).
-        # **{
-        #     f"scrape-{topic.replace(' ', '-')}-backfill": {
-        #         "task": "atlazer.celery_app.tasks.scrape.scrape_topic_backfill",
-        #         "schedule": settings.scrape_backfill_interval_seconds,
-        #         "args": [topic],
-        #         "kwargs": {
-        #             "max_results": settings.max_results_per_topic,
-        #             "start": 0,
-        #         },
-        #         "options": {"queue": "scrape"},
-        #     }
-        #     for topic in settings.arxiv_topics
-        # },
-        # ── Incremental ingestion: every 10 minutes per topic ──
-        # "scrape-topic-increment": {
-        #     "task": "atlazer.celery_app.tasks.scrape.scrape_topic_increment",
-        #     "schedule": settings.scrape_increment_interval_seconds,
-        #     "args": ["arxiv"],
-        #     "kwargs": { "start": 0 },
-        #     "options": {"queue": "scrape"},
-        # },
         # ── Matcher: batch user processing every 2 hours ──
         "matcher-batch": {
             "task": "atlazer.celery_app.tasks.matcher.batch_user",
@@ -183,12 +144,6 @@ def _configure_beat_schedule(app: Celery) -> None:
             "options": {"queue": "matcher"},
         },
         # ── Retry dead-letter queue items every hour ──
-        "retry-failed-scrape": {
-            "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
-            "schedule": 3600,
-            "args": ["dlx.scrape"],
-            "options": {"queue": "default"},
-        },
         "retry-failed-process": {
             "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
             "schedule": 3600,
@@ -235,7 +190,7 @@ def _configure_beat_schedule(app: Celery) -> None:
         # ── Arxiv Provider Ingestion ──
         "arxiv-fetch-page": {
             "task": "atlazer.celery_app.tasks.ingestion.extractors.arxiv.fetch_page",
-            "schedule": settings.scrape_increment_interval_seconds,
+            "schedule": settings.ingestion_interval_seconds,
             "options": {"queue": "arxiv"},
         },
         "arxiv-retry-failed": {
@@ -244,6 +199,20 @@ def _configure_beat_schedule(app: Celery) -> None:
             "args": ["dlx.arxiv"],
             "options": {"queue": "default"},
         },
+
+        # ── IaeScore Provider Ingestion ──
+        # "iaescore-fetch-page": {
+        #     "task": "atlazer.celery_app.tasks.ingestion.extractors.iaescore.fetch_page",
+        #     "schedule": settings.ingestion_interval_seconds,
+        #     "options": {"queue": "iaescore"},
+        # },
+        "iaescore-retry-failed": {
+            "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
+            "schedule": 3600,
+            "args": ["dlx.iaescore"],
+            "options": {"queue": "default"},
+        },
+
         # ── Housekeeping (purge_old_pdfs, pipeline_health) ──
         **MAINTENANCE_BEAT_SCHEDULE,
     }
@@ -295,10 +264,11 @@ def preload_embedder(**kwargs):
 # Nama task per-tier, dipakai untuk menentukan queue asal saat dead-lettering.
 # Harus tetap sinkron dengan task_routes di config/celery_config.py.
 _TIER_PREFIXES = {
-    # "atlazer.celery_app.tasks.scrape.":     "scrape",
-    "atlazer.celery_app.tasks.process.":    "process",
-    "atlazer.celery_app.tasks.embed.":      "embed",
-    "atlazer.celery_app.tasks.store.":      "store",
+    "atlazer.celery_app.tasks.ingestion.process.":    "process",
+    "atlazer.celery_app.tasks.ingestion.embed.":      "embed",
+    "atlazer.celery_app.tasks.ingestion.store.":      "store",
+    "atlazer.celery_app.tasks.ingestion.extractors.arxiv.": "arxiv",
+    "atlazer.celery_app.tasks.ingestion.extractors.iaescore.": "iaescore",
     "atlazer.celery_app.tasks.webapi.":     "webapi",
     "atlazer.celery_app.tasks.matcher.":    "matcher",
     "atlazer.celery_app.tasks.challenge.":  "challenge",
@@ -336,7 +306,7 @@ def on_task_failure(sender, task_id, exception, args, kwargs, traceback, einfo, 
     )
 
     # ── Manual dead-lettering (Redis broker has no native DLX) ────────────
-    # Only scrape/process/embed tasks are dead-lettered; maintenance-tier
+    # Only ingestion/process/embed tasks are dead-lettered; maintenance-tier
     # failures (queue=default) are excluded to avoid a dead-letter loop.
     if original_queue is not None:
         try:

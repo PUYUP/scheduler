@@ -19,7 +19,7 @@ import structlog
 from typing import cast, Dict, Any, List, Optional
 from atlazer.config.settings import settings
 from atlazer.celery_app.main import db_pool
-from atlazer.storage.progress import ScrapeProgressDepot
+from atlazer.storage.progress import IngestionProgressDepot
 from atlazer.utils.lib import get_redis
 
 log = structlog.get_logger(__name__)
@@ -244,13 +244,13 @@ def get_topic_start(repository: str, topic: str) -> int:
     # NOTE: sama seperti di check_increment_process -- cast() di sini cuma
     # menyingkirkan cabang Awaitable dari stub redis-py, bukan mengklaim
     # data sudah di-decode. Decode isi tetap lewat _decode() di bawah.
-    raw = cast(Optional[bytes], r.hget(f"scrape_topic_start:{repository}", topic))
+    raw = cast(Optional[bytes], r.hget(f"ingest_topic_start:{repository}", topic))
     value = _decode(raw) if raw is not None else None
  
     if value is None:
         # coba ambil dari db
         try:
-            depot = ScrapeProgressDepot(db_pool)
+            depot = IngestionProgressDepot(db_pool)
             value = str(depot.get_start_offset(repository, topic, 0))
         except Exception as e:
             log.error(
@@ -262,7 +262,7 @@ def get_topic_start(repository: str, topic: str) -> int:
             )
             # PERHATIAN: fallback ke 0 di sini berarti kalau redis kehilangan
             # key (restart/eviction) DAN db read error bersamaan, topic ini
-            # akan mulai scrape ulang dari halaman 0. Dampaknya dibatasi oleh
+            # akan mulai ingest ulang dari halaman 0. Dampaknya dibatasi oleh
             # is_already_processed() di caller (tidak duplikat ingest), tapi
             # tetap buang-buang quota API. Kalau ini krusial, ganti jadi
             # `raise` supaya task di-retry oleh Celery daripada diam-diam
@@ -274,11 +274,11 @@ def get_topic_start(repository: str, topic: str) -> int:
  
 def set_topic_start(repository: str, topic: str, start: int) -> None:
     r = get_redis()
-    r.hset(f"scrape_topic_start:{repository}", topic, str(start))
+    r.hset(f"ingest_topic_start:{repository}", topic, str(start))
  
     # set di db juga
     try:
-        depot = ScrapeProgressDepot(db_pool)
+        depot = IngestionProgressDepot(db_pool)
         depot.set_progress(repository, topic, start)
     except Exception as e:
         log.error(
@@ -293,17 +293,17 @@ def set_topic_start(repository: str, topic: str, start: int) -> None:
         # divergen tanpa alert lain selain log ini. Kalau redis pernah hilang
         # datanya, get_topic_start() di atas akan fallback ke nilai db yang
         # sudah basi. Pertimbangkan retry/alerting kalau konsistensi db itu
-        # penting buat sistem lain yang membaca ScrapeProgressDepot langsung.
+        # penting buat sistem lain yang membaca IngestionProgressDepot langsung.
         return
  
  
 def reset_topic_start(repository: str, topic: str) -> None:
     r = get_redis()
-    r.hdel(f"scrape_topic_start:{repository}", topic)
+    r.hdel(f"ingest_topic_start:{repository}", topic)
  
     # reset di db juga
     try:
-        depot = ScrapeProgressDepot(db_pool)
+        depot = IngestionProgressDepot(db_pool)
         depot.set_progress(repository, topic, 0)
     except Exception as e:
         log.error(

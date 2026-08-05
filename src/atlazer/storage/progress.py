@@ -6,13 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from atlazer.storage.db import DatabasePool
-from atlazer.models.paper import ScrapeProgressORM
+from atlazer.models.paper import IngestionProgressORM
 
 logger = logging.getLogger(__name__)
 
 
-class ScrapeProgressDepot:
-    """Read / upsert helpers for the `scrape_progress` table.
+class IngestionProgressDepot:
+    """Read / upsert helpers for the `ingestion_progress` table.
 
     Takes an already-started :class:`DatabasePool`.
     """
@@ -20,16 +20,16 @@ class ScrapeProgressDepot:
     def __init__(self, pool: DatabasePool) -> None:
         self._pool = pool
 
-    def get_progress(self, repository: str, topic: str) -> ScrapeProgressORM | None:
+    def get_progress(self, repository: str, topic: str) -> IngestionProgressORM | None:
         """Return the progress row for this exact (repository, topic) pair,
         or `None` if no progress has been recorded yet.
 
         `(repository, topic)` is unique-constrained at the DB level, so
         this can never match more than one row.
         """
-        stmt = select(ScrapeProgressORM).where(
-            ScrapeProgressORM.repository == repository,
-            ScrapeProgressORM.topic == topic,
+        stmt = select(IngestionProgressORM).where(
+            IngestionProgressORM.repository == repository,
+            IngestionProgressORM.topic == topic,
         )
 
         with self._pool.session() as session:
@@ -37,7 +37,7 @@ class ScrapeProgressDepot:
                 row = session.execute(stmt).scalar_one_or_none()
             except SQLAlchemyError:
                 logger.exception(
-                    "Failed to fetch scrape progress for repository=%s topic=%s",
+                    "Failed to fetch progress for repository=%s topic=%s",
                     repository, topic,
                 )
                 raise
@@ -50,7 +50,7 @@ class ScrapeProgressDepot:
 
     def get_start_offset(self, repository: str, topic: str, default: int = 0) -> int:
         """Convenience wrapper around `get_progress` for callers that only
-        need the numeric offset (e.g. `scrape_topic_increment`), without
+        need the numeric offset (e.g. `ingest_topic_increment`), without
         having to handle the `None` / detached-ORM-object case themselves.
         """
         row = self.get_progress(repository, topic)
@@ -61,15 +61,15 @@ class ScrapeProgressDepot:
         repository: str,
         topic: str,
         start_offset: int,
-    ) -> ScrapeProgressORM:
+    ) -> IngestionProgressORM:
         """Upsert progress untuk kombinasi (repository, topic).
 
         Jika baris untuk (repository, topic) sudah ada, `start_offset`-nya
         akan di-update. Jika belum ada, baris baru akan dibuat.
         """
-        stmt = select(ScrapeProgressORM).where(
-            ScrapeProgressORM.repository == repository,
-            ScrapeProgressORM.topic == topic,
+        stmt = select(IngestionProgressORM).where(
+            IngestionProgressORM.repository == repository,
+            IngestionProgressORM.topic == topic,
         )
 
         with self._pool.session() as session:
@@ -81,7 +81,7 @@ class ScrapeProgressDepot:
                     row.start_offset = start_offset
                 else:
                     # belum ada -> buat baris baru
-                    row = ScrapeProgressORM(
+                    row = IngestionProgressORM(
                         repository=repository,
                         topic=topic,
                         start_offset=start_offset,
@@ -92,7 +92,7 @@ class ScrapeProgressDepot:
                 session.refresh(row)
             except SQLAlchemyError:
                 logger.exception(
-                    "Failed to upsert scrape progress for repository=%s topic=%s",
+                    "Failed to upsert progress for repository=%s topic=%s",
                     repository, topic,
                 )
                 session.rollback()

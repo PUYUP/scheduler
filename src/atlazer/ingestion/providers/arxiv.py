@@ -27,7 +27,7 @@ log = structlog.get_logger(__name__)
 
 class TimeoutSession(requests.Session):
     def request(self, *args, **kwargs):
-        kwargs.setdefault("timeout", 30.0)
+        kwargs.setdefault("timeout", 120.0)
         return super().request(*args, **kwargs)
 
 
@@ -160,7 +160,7 @@ class ArxivProvider(BaseRepositoryProvider):
         try:
             paper = self._fetch_single_paper(paper_id)
         except Exception as exc:
-            log.warning("scrape_paper_metadata.fetch_failed", paper_id=paper_id, repository=self.provider_name, error=str(exc))
+            log.warning("ingest_paper_metadata.fetch_failed", paper_id=paper_id, repository=self.provider_name, error=str(exc))
             raise ValueError(f"No paper found for id={paper_id} repository={self.provider_name}")
 
         log.info(
@@ -282,7 +282,7 @@ class ArxivProvider(BaseRepositoryProvider):
     @retry(
         retry=retry_if_exception_type((httpx.HTTPError, httpx.TimeoutException)),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=4, max=30),
+        wait=wait_exponential(multiplier=2, min=4, max=120),
     )
     def _download_file(self, url: str, dest: Path) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -291,7 +291,7 @@ class ArxivProvider(BaseRepositoryProvider):
             url,
             timeout=settings.download_timeout_seconds,
             follow_redirects=True,
-            headers={"User-Agent": "atlanize-rag-scraper/1.0 (research purposes)"},
+            headers={"User-Agent": "atlanize-rag-ingestion/1.0 (research purposes)"},
         ) as r:
             r.raise_for_status()
             with open(dest, "wb") as f:

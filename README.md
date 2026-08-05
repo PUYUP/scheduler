@@ -14,7 +14,7 @@ Celery + Redis pipeline that ingests ArXiv papers end-to-end:
   ┌──────────┐  every   │  ┌──────────┐  ┌──────────────────────────────┐ │
   │   Beat   │──6 hrs──►│  │  SCRAPE  │  │  Queue Topology              │ │
   │Scheduler │          │  │ workers  │  │                              │ │
-  └──────────┘          │  │ (×2)     │  │  scrape ──DLX──► dlx.scrape │ │
+  └──────────┘          │  │ (×2)     │  │  ingest ──DLX──► dlx.ingest │ │
                          │  └────┬─────┘  │  process──DLX──►dlx.process │ │
                          │       │ chain  │  embed ──DLX──► dlx.embed   │ │
                          │  ┌────▼─────┐  └──────────────────────────────┘ │
@@ -41,10 +41,10 @@ Celery + Redis pipeline that ingests ArXiv papers end-to-end:
 ```
 [SCRAPE queue]                [PROCESS queue]              [EMBED queue]
       │                              │                           │
-scrape_topic                         │                           │
+ingest_topic                         │                           │
   │  Queries ArXiv API               │                           │
   │  Filters dedup                   │                           │
-  └─► scrape_paper_metadata          │                           │
+  └─► ingest_paper_metadata          │                           │
         │  Fetches full metadata     │                           │
         └─► download_pdf             │                           │
               │  HTTP stream PDF     │                           │
@@ -75,20 +75,20 @@ docker compose up -d
 # 3. Watch tasks in Flower
 open http://localhost:5555/flower
 
-# 4. Manually trigger a scrape
-docker compose exec worker-scrape \
-    python src/atlazer/scripts/trigger_scrape.py --arxiv-topics physics.acc-ph physics.med-ph --max-results 2
+# 4. Manually trigger a ingest
+docker compose exec worker-ingest \
+    python src/atlazer/scripts/trigger_ingest.py --arxiv-topics physics.acc-ph physics.med-ph --max-results 2
 
 # 5. Re-ingest a specific paper
-docker compose exec worker-scrape \
-    python src/atlazer/scripts/trigger_scrape.py --paper-id 2607.02449 --repository arxiv
+docker compose exec worker-ingest \
+    python src/atlazer/scripts/trigger_ingest.py --paper-id 2607.02449 --repository arxiv
 ```
 
 ## Scaling
 
 ```bash
-# Add more scrape workers when queue depth is high
-docker compose up -d --scale worker-scrape=4
+# Add more ingest workers when queue depth is high
+docker compose up -d --scale worker-ingest=4
 
 # Add more process workers for PDF-heavy workloads
 docker compose up -d --scale worker-process=4
@@ -114,7 +114,7 @@ arxiv-rag/
 ├── celery_app/
 │   ├── main.py              # App factory, queue topology, Beat schedule
 │   ├── tasks/
-│   │   ├── scrape.py        # Tasks 1–3  (scrape queue)
+│   │   ├── ingest.py        # Tasks 1–3  (ingest queue)
 │   │   ├── process.py       # Tasks 4–5  (process queue)
 │   │   ├── embed.py         # Tasks 6–7  (embed queue)
 │   │   └── maintenance.py   # DLQ retry, health check, pdf purge
@@ -125,7 +125,7 @@ arxiv-rag/
 │       └── text_cleaner.py  # Academic PDF text normalisation
 │
 └── scripts/
-    └── trigger_scrape.py    # CLI to manually kick off ingestion
+    └── trigger_ingest.py    # CLI to manually kick off ingestion
 ```
 
 ## Connecting Your Vector Store

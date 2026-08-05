@@ -77,7 +77,7 @@ def extract_metadata(
     (
         download_pdf.s(metadata=metadata_dict).set(queue="arxiv")
         | signature(
-            "atlazer.celery_app.tasks.process.parse_pdf",
+            "atlazer.celery_app.tasks.ingestion.process.parse_pdf",
             queue="process",
             immutable=False,
         )

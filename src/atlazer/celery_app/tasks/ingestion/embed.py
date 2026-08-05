@@ -34,7 +34,7 @@ log = structlog.get_logger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.embed.generate_embeddings",
+    name="atlazer.celery_app.tasks.ingestion.embed.generate_embeddings",
     bind=True,
     max_retries=10,
     default_retry_delay=30,
@@ -95,7 +95,7 @@ def generate_embeddings(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     # Chain: embed_chunks → store_paper (store queue)
     signature(
-        "atlazer.celery_app.tasks.store.store_paper",
+        "atlazer.celery_app.tasks.ingestion.store.store_paper",
         args=(metadata,),
         queue="store",
         immutable=False,

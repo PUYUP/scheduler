@@ -98,14 +98,14 @@ class PaperORM(Base):
   )
 
 
-class ScrapeProgressORM(Base):
+class IngestionProgressORM(Base):
   """Persistent pagination progress per (repository, topic).
 
   Dipakai sebagai fallback/backup kalau state di Redis hilang —
-  lihat `scrape_progress.sql` untuk skema DB & upsert function-nya.
+  lihat `ingestion_progress.sql` untuk skema DB & upsert function-nya.
   """
 
-  __tablename__ = "scrape_progress"
+  __tablename__ = "ingestion_progress"
 
   id: Mapped[UUID] = mapped_column(
     PG_UUID(as_uuid=True),
@@ -127,16 +127,16 @@ class ScrapeProgressORM(Base):
   updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
   __table_args__ = (
-    UniqueConstraint("repository", "topic", name="scrape_progress_repo_topic_uniq"),
+    UniqueConstraint("repository", "topic", name="ingestion_progress_repo_topic_uniq"),
     CheckConstraint(
       "status in ('active', 'done', 'paused')",
-      name="scrape_progress_status_check",
+      name="ingestionprogress_status_check",
     ),
   )
 
   def __repr__(self) -> str:  # pragma: no cover
     return (
-      f"<ScrapeProgressORM repository={self.repository!r} "
+      f"<IngestionProgressORM repository={self.repository!r} "
       f"topic={self.topic!r} start_offset={self.start_offset} status={self.status!r}>"
     )
 

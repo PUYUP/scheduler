@@ -20,7 +20,7 @@ log = structlog.get_logger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.store.store_paper",
+    name="atlazer.celery_app.tasks.ingestion.store.store_paper",
     bind=True,
     max_retries=5,
     default_retry_delay=60,
@@ -66,7 +66,7 @@ def store_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         log.error("store_document_chunks.failed", paper_id=paper_id, repository=repository, error=str(exc))
         raise self.retry(exc=exc)
 
-    # Mark this paper as fully processed so scrape_topic won't re-queue it
+    # Mark this paper as fully processed so ingest_topic won't re-queue it
     from atlazer.utils.dedup import mark_as_processed
     mark_as_processed(paper_id, repository=repository)
 

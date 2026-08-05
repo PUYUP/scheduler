@@ -11,15 +11,17 @@ from atlazer.config.settings import settings
 # Listed explicitly — autodiscover with related_name="" is unreliable in Docker.
 # Every module with @app.task must appear here.
 imports = (
-    # "atlazer.celery_app.tasks.scrape",
-    "atlazer.celery_app.tasks.process",
-    "atlazer.celery_app.tasks.embed",
-    "atlazer.celery_app.tasks.store",
+    "atlazer.celery_app.tasks.ingestion.process",
+    "atlazer.celery_app.tasks.ingestion.embed",
+    "atlazer.celery_app.tasks.ingestion.store",
+    "atlazer.celery_app.tasks.ingestion.extractors.arxiv",
+    "atlazer.celery_app.tasks.ingestion.extractors.iaescore",
     "atlazer.celery_app.tasks.webapi",
     "atlazer.celery_app.tasks.matcher",
     "atlazer.celery_app.tasks.challenge",
     "atlazer.celery_app.tasks.evaluation",
     "atlazer.celery_app.tasks.workspace",
+    
     "atlazer.celery_app.tasks.maintenance",
 )
 
@@ -50,26 +52,20 @@ worker_prefetch_multiplier  = 1               # one task at a time per worker sl
 
 # ─── Retry Defaults (each task can override) ──────────────────────────────────
 task_annotations = {
-    # "atlazer.celery_app.tasks.scrape.*": {
-    #     "max_retries": 5,
-    #     "default_retry_delay": 60,
-    #     "time_limit": 180,
-    #     "soft_time_limit": 150,
-    # },
-    "atlazer.celery_app.tasks.process.*": {
+    "atlazer.celery_app.tasks.ingestion.process.*": {
         "max_retries": 3,
         "default_retry_delay": 120,
         "time_limit": 1800,
         "soft_time_limit": 1500,
     },
-    "atlazer.celery_app.tasks.embed.*": {
+    "atlazer.celery_app.tasks.ingestion.embed.*": {
         "max_retries": 10,
         "default_retry_delay": 30,
         "rate_limit": "20/m",        # stay under embedding API rate limit
         "time_limit": 3600,
         "soft_time_limit": 3300,
     },
-    "atlazer.celery_app.tasks.store.*": {
+    "atlazer.celery_app.tasks.ingestion.store.*": {
         "max_retries": 10,
         "default_retry_delay": 30,
         "time_limit": 1800,
@@ -112,27 +108,27 @@ task_annotations = {
         "time_limit": 3600,
         "soft_time_limit": 3300,
     },
+    # ── IaeScore Task ──
+    "atlazer.celery_app.tasks.ingestion.extractors.iaescore.*": {
+        "max_retries": 3,
+        "default_retry_delay": 60,
+        "time_limit": 3600,
+        "soft_time_limit": 3300,
+    },
 }
 
 # ─── Task Routing ─────────────────────────────────────────────────────────────
 task_routes = {
-    # ── Scrape tier ──
-    # "atlazer.celery_app.tasks.scrape.scrape_topic":             {"queue": "scrape"},
-    # "atlazer.celery_app.tasks.scrape.scrape_topic_backfill":    {"queue": "scrape"},
-    # "atlazer.celery_app.tasks.scrape.scrape_topic_increment":   {"queue": "scrape"},
-    # "atlazer.celery_app.tasks.scrape.scrape_paper_metadata":    {"queue": "scrape"},
-    # "atlazer.celery_app.tasks.scrape.download_pdf":             {"queue": "scrape"},
-
     # ── Process tier ──
-    "atlazer.celery_app.tasks.process.parse_pdf":            {"queue": "process"},
-    "atlazer.celery_app.tasks.process.clean_text":           {"queue": "process"},
-    "atlazer.celery_app.tasks.process.chunk_document":       {"queue": "process"},
+    "atlazer.celery_app.tasks.ingestion.process.parse_pdf":            {"queue": "process"},
+    "atlazer.celery_app.tasks.ingestion.process.clean_text":           {"queue": "process"},
+    "atlazer.celery_app.tasks.ingestion.process.chunk_document":       {"queue": "process"},
 
     # ── Embed tier ──
-    "atlazer.celery_app.tasks.embed.generate_embeddings":    {"queue": "embed"},
+    "atlazer.celery_app.tasks.ingestion.embed.generate_embeddings":    {"queue": "embed"},
 
     # ── Store tier ──
-    "atlazer.celery_app.tasks.store.store_paper":            {"queue": "store"},
+    "atlazer.celery_app.tasks.ingestion.store.store_paper":            {"queue": "store"},
 
     # ── WebAPI tier ──
     "atlazer.celery_app.tasks.webapi.generate_embeddings":   {"queue": "webapi"},
@@ -167,6 +163,9 @@ task_routes = {
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.fetch_page":       {"queue": "arxiv"},
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.extract_metadata": {"queue": "arxiv"},
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.download_pdf":     {"queue": "arxiv"},
+
+    # ── IaeScore Task ──
+    "atlazer.celery_app.tasks.ingestion.extractors.iaescore.fetch_page":    {"queue": "iaescore"},
     
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":   {"queue": "default"},

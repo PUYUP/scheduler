@@ -169,7 +169,13 @@ def pipeline_health(self) -> Dict[str, Any]:
     }
 
     # Queue depths
-    queues = ["scrape", "process", "embed", "dlx.scrape", "dlx.process", "dlx.embed"]
+    queues = [
+        "arxiv",
+        "process",
+        "embed",
+        "dlx.process",
+        "dlx.embed"
+    ]
     for q in queues:
         try:
             report["queues"][q] = cast(int, r.llen(q))

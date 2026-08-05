@@ -58,4 +58,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
 CMD celery -A atlazer.celery_app.main worker \
     --loglevel=info \
     --concurrency=4 \
-    --queues=default,scrape,process,embed,store,webapi
+    --queues=default,arxiv,iaescore,process,embed,store,webapi

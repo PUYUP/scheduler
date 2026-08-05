@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
-from pathlib import Path
+from typing import Dict, Any
 from atlazer.ingestion.schemas import PaperMetadata
 
 
 class BaseRepositoryProvider(ABC):
     provider_name: str
+    journal_name: str
+    journal_entry_point_url: str
     limit: int = 1
     offset: int = 0
     sort_by: str = "newest"

@@ -3,7 +3,7 @@ tasks/process.py
 ────────────────────────────
 Tier-2 tasks (queue: process)
 ─────────────────────────────────────────────────────────────────────────
-Flow (continued from scrape.py):
+Flow (continued from ingest.py):
   download_pdf  →  parse_pdf  →  clean_text  →  chunk_document
                                                       └─► generate_embeddings
 ─────────────────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ log = structlog.get_logger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.process.parse_pdf",
+    name="atlazer.celery_app.tasks.ingestion.process.parse_pdf",
     bind=True,
     max_retries=3,
     default_retry_delay=120,
@@ -152,7 +152,7 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         clean_text.s(metadata).set(queue="process")
         | chunk_document.s().set(queue="process")
         | signature(
-            "atlazer.celery_app.tasks.embed.generate_embeddings",
+            "atlazer.celery_app.tasks.ingestion.embed.generate_embeddings",
             queue="embed",
             immutable=False,
         )
@@ -166,7 +166,7 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.process.clean_text",
+    name="atlazer.celery_app.tasks.ingestion.process.clean_text",
     bind=True,
     max_retries=2,
     queue="process",
@@ -209,7 +209,7 @@ def clean_text(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.process.chunk_document",
+    name="atlazer.celery_app.tasks.ingestion.process.chunk_document",
     bind=True,
     max_retries=2,
     queue="process",
