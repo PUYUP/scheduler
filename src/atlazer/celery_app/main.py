@@ -206,12 +206,12 @@ def _configure_beat_schedule(app: Celery) -> None:
         #     "schedule": settings.ingestion_interval_seconds,
         #     "options": {"queue": "iaescore"},
         # },
-        "iaescore-retry-failed": {
-            "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
-            "schedule": 3600,
-            "args": ["dlx.iaescore"],
-            "options": {"queue": "default"},
-        },
+        # "iaescore-retry-failed": {
+        #     "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
+        #     "schedule": 3600,
+        #     "args": ["dlx.iaescore"],
+        #     "options": {"queue": "default"},
+        # },
 
         # ── Housekeeping (purge_old_pdfs, pipeline_health) ──
         **MAINTENANCE_BEAT_SCHEDULE,

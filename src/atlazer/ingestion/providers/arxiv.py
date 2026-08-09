@@ -40,7 +40,12 @@ class ArxivProvider(BaseRepositoryProvider):
     def can_handle(self, target: str) -> bool:
         return "arxiv.org" in target
 
-    def fetch_page(self) -> Dict[str, Any]:
+    def fetch_page(
+        self,
+        journal: str | None = None,
+        issue_number: str | None = None,
+        article_number: str | None = None,
+    ) -> Dict[str, Any]:
         log.info(
             f"{self.provider_name}.fetch_page.start", 
             offset=self.offset, 
@@ -151,11 +156,19 @@ class ArxivProvider(BaseRepositoryProvider):
             "papers": papers,
         }
 
-    def extract_paper(self, url: str | None, paper_id: str) -> PaperMetadata:
+    def extract_paper(
+        self,
+        url: str | None = None,
+        paper_id: str | None = None,
+        paper: Dict[str, Any] | None = None,
+    ) -> PaperMetadata:
         log.info(
             f"{self.provider_name}.extract_paper.start", 
             paper_id=paper_id
         )
+
+        if paper_id is None:
+            raise ValueError("Either paper_id must be provided")
 
         try:
             paper = self._fetch_single_paper(paper_id)
@@ -182,7 +195,6 @@ class ArxivProvider(BaseRepositoryProvider):
             doi=paper.doi or "",
             journal_ref=paper.journal_ref or "",
             primary_category=paper.primary_category if paper.primary_category else "",
-            metadata={"doi": "10.1000/182"}
         )
 
     def download_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:

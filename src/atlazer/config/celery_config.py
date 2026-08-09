@@ -165,7 +165,9 @@ task_routes = {
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.download_pdf":     {"queue": "arxiv"},
 
     # ── IaeScore Task ──
-    "atlazer.celery_app.tasks.ingestion.extractors.iaescore.fetch_page":    {"queue": "iaescore"},
+    "atlazer.celery_app.tasks.ingestion.extractors.iaescore.fetch_page":       {"queue": "iaescore"},
+    "atlazer.celery_app.tasks.ingestion.extractors.iaescore.extract_metadata": {"queue": "iaescore"},
+    "atlazer.celery_app.tasks.ingestion.extractors.iaescore.download_pdf":     {"queue": "iaescore"},
     
     # ── Maintenance ──
     "atlazer.celery_app.tasks.maintenance.*":   {"queue": "default"},

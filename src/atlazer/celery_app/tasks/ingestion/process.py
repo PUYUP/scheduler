@@ -78,7 +78,7 @@ def parse_pdf(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("parse_pdf.start", paper_id=paper_id, repository=repository)
 
     # Ensure output directory exists
-    target_dir = Path(settings.pdf_download_dir) / repository / paper_id
+    target_dir = pdf_path.parent
     out_dir = target_dir / "out"
     target_dir.mkdir(exist_ok=True, parents=True)
 

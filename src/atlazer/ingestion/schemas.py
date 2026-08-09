@@ -18,6 +18,7 @@ class PaperMetadata(BaseModel):
     """
     paper_id:         str
     repository:       str
+    journal:          str                = ""
     title:            str
     abstract:         str
     authors:          List[str]          = Field(default_factory=list)
@@ -26,8 +27,10 @@ class PaperMetadata(BaseModel):
     published:        str                = ""   # ISO 8601
     updated:          str                = ""   # ISO 8601
     pdf_url:          str                = ""
+    download_url:     str                = ""
     doi:              str                = ""
     journal_ref:      str                = ""
+    attributes:       Optional[dict]     = None
 
     # Populated by downstream tasks
     local_pdf_path:   Optional[str]      = None

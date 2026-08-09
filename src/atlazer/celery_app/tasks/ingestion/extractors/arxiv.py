@@ -10,6 +10,7 @@ from atlazer.ingestion.providers.arxiv import ArxivProvider
 log = structlog.get_logger(__name__)
 provider = ArxivProvider()
 repository = provider.provider_name
+QUEUE = "arxiv"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -21,7 +22,9 @@ repository = provider.provider_name
     bind=True,
     max_retries=3,
     default_retry_delay=300,
-    queue="arxiv",
+    time_limit=600,
+    soft_time_limit=540,
+    queue=QUEUE,
     ignore_result=False,
 )
 def fetch_page(self) -> Dict[str, Any]:
@@ -36,7 +39,7 @@ def fetch_page(self) -> Dict[str, Any]:
         extract_metadata.s(
             url=p.get("pdf_url", None),
             paper_id=p.get("id", None),
-        ).set(queue="arxiv") for p in papers
+        ).set(queue=QUEUE) for p in papers
     )
     job.apply_async()
 
@@ -54,7 +57,9 @@ def fetch_page(self) -> Dict[str, Any]:
     bind=True,
     max_retries=5,
     default_retry_delay=60,
-    queue="arxiv",
+    time_limit=600,
+    soft_time_limit=540,
+    queue=QUEUE,
     ignore_result=False,
 )
 def extract_metadata(
@@ -75,7 +80,7 @@ def extract_metadata(
 
     # process to next tasks
     (
-        download_pdf.s(metadata=metadata_dict).set(queue="arxiv")
+        download_pdf.s(metadata=metadata_dict).set(queue=QUEUE)
         | signature(
             "atlazer.celery_app.tasks.ingestion.process.parse_pdf",
             queue="process",
@@ -84,6 +89,7 @@ def extract_metadata(
     ).apply_async()
 
     return metadata_dict
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Task 3 of 5 — download_pdf
@@ -94,7 +100,9 @@ def extract_metadata(
     bind=True,
     max_retries=5,
     default_retry_delay=60,
-    queue="arxiv",
+    time_limit=600,
+    soft_time_limit=540,
+    queue=QUEUE,
     ignore_result=False,
 )
 def download_pdf(

@@ -314,3 +314,239 @@ def reset_topic_start(repository: str, topic: str) -> None:
             exc_info=True,
         )
         return
+
+
+def set_ingestion_process(
+    repository: str,
+    journal: str,
+    page: int,
+    issue_number: int,
+    paper_id: str,
+) -> Dict[str, Any]:
+    process = {
+        "repository": repository,
+        "journal": journal,
+        "page": page,
+        "issue_number": issue_number,
+        "paper_id": paper_id,
+    }
+
+    log.info("dedup.set_ingestion_process.start", process=process)
+
+    safe_process = {
+        k: (v if v is not None else "") for k, v in process.items()
+    }
+
+    r = get_redis()
+    r.hset(
+        name=f"ingest_process:{repository}:{journal}",
+        mapping=safe_process
+    )
+
+    log.info(
+        "dedup.set_ingestion_process",
+        repository=repository,
+        journal=journal,
+        page=page,
+        issue_number=issue_number,
+        paper_id=paper_id,
+    )
+
+    return process
+
+
+def get_ingestion_process(repository: str, journal: str) -> Optional[Dict[str, Any]]:
+    r = get_redis()
+    key = f"ingest_process:{repository}:{journal}"
+    raw = cast(Dict[Any, Any], r.hgetall(key))
+    if not raw:
+        return None
+    return _decode_mapping(raw)
+
+
+def set_current_issue(
+    repository: str, 
+    journal: str, 
+    issue_number: str
+):
+    """Set status of a specific issue.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+        issue_number (str): issue number
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:issues"
+    r.hset(key, "current", issue_number)
+
+
+def get_current_issue(
+    repository: str,
+    journal: str,
+) -> Optional[str]:
+    """Get status of a specific issue.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+
+    Returns:
+        Optional[str]: status of the issue (running, finished, etc.)
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:issues"
+    raw = cast(Optional[bytes], r.hget(key, "current"))
+    return _decode(raw) if raw is not None else None
+
+
+def set_current_issue_status(
+    repository: str, 
+    journal: str, 
+    issue_number: str,
+    status: str = "running"
+):
+    """Set status of a specific issue.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+        issue_number (str): issue number
+        status (str): status of the issue (running, finished, etc.)
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:issues"
+    r.hset(key, issue_number, status)
+
+
+def get_current_issue_status(
+    repository: str,
+    journal: str,
+    issue_number: str,
+) -> Optional[str]:
+    """Get status of a specific issue.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+        issue_number (str): issue number
+
+    Returns:
+        Optional[str]: status of the issue (running, finished, etc.)
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:issues"
+    raw = cast(Optional[bytes], r.hget(key, issue_number))
+    return _decode(raw) if raw is not None else None
+
+
+def set_current_page(
+    repository: str, 
+    journal: str, 
+    page: str,
+):
+    """Set current page of a specific journal.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+        page (str): page number
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:pages"
+    r.hset(key, "current", page)
+
+
+def get_current_page(
+    repository: str,
+    journal: str,
+) -> Optional[str]:
+    """Get page of a specific journal.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+
+    Returns:
+        Optional[str]: page number
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:pages"
+    raw = cast(Optional[bytes], r.hget(key, "current"))
+    return _decode(raw) if raw is not None else None
+
+
+def set_current_paper(
+    repository: str, 
+    journal: str, 
+    paper_id: str,
+):
+    """Set current paper of a specific journal.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+        paper_id (str): paper id
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:papers"
+    r.hset(key, "current", paper_id)
+
+
+def get_current_paper(
+    repository: str,
+    journal: str,
+) -> Optional[str]:
+    """Get paper of a specific journal.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+
+    Returns:
+        Optional[str]: paper id
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:papers"
+    raw = cast(Optional[bytes], r.hget(key, "current"))
+    return _decode(raw) if raw is not None else None
+
+
+def set_current_paper_status(
+    repository: str, 
+    journal: str, 
+    paper_id: str,
+    status: str = "running"
+):
+    """Set status of a specific paper.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+        paper_id (str): paper id
+        status (str): status of the paper (running, finished, etc.)
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:papers"
+    r.hset(key, paper_id, status)
+
+
+def get_current_paper_status(
+    repository: str,
+    journal: str,
+    paper_id: str,
+) -> Optional[str]:
+    """Get status of a specific paper.
+
+    Args:
+        repository (str): repository name
+        journal (str): journal name
+        paper_id (str): paper id
+
+    Returns:
+        Optional[str]: status of the issue (running, finished, etc.)
+    """
+    r = get_redis()
+    key = f"ingest:{repository}:{journal}:papers"
+    raw = cast(Optional[bytes], r.hget(key, paper_id))
+    return _decode(raw) if raw is not None else None
