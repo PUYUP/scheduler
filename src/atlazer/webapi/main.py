@@ -10,7 +10,7 @@ from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
 from atlazer.celery_app.tasks.challenge import chunk_answer
-from atlazer.celery_app.tasks.workspace import chunk_context
+from atlazer.celery_app.tasks.workspace import chunk_context, chunk_note
 from atlazer.celery_app.tasks.evaluation import save_evaluation
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
@@ -22,6 +22,7 @@ from atlazer.webapi.schemas import (
     EmbedAnswerRequest,
     EvaluateAnswerRequest,
     EmbedContextRequest,
+    EmbedNoteRequest,
 )
 from atlazer.utils.gemini_batch import get_batch_results
 from atlazer.storage.challenge import ChallengeDepot
@@ -263,4 +264,48 @@ def embed_context(payload: EmbedContextRequest):
         return TaskExecutionResponse(task_id=job.id)
     except Exception as e:
         log.error("webapi.embed-context.error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/embed-note")
+def embed_note(payload: EmbedNoteRequest):
+    if embedder_service is None:
+        raise HTTPException(status_code=503, detail="Service is not ready yet.")
+
+    try:
+        log.info("webapi.embed-note.start", payload=payload.model_dump())
+
+        job = (
+            chunk_note.s(payload.model_dump()).set(queue="workspace")
+            | signature(
+                "atlazer.celery_app.tasks.workspace.embed_note",
+                queue="workspace",
+                immutable=False,
+            )
+            | signature(
+                "atlazer.celery_app.tasks.workspace.save_embedding_note",
+                queue="workspace",
+                immutable=False,
+            )
+            | signature(
+                "atlazer.celery_app.tasks.workspace.match_papers_by_note",
+                queue="workspace",
+                immutable=False,
+            )
+            | signature(
+                "atlazer.celery_app.tasks.workspace.save_note_papers",
+                queue="workspace",
+                immutable=False,
+            )
+            | signature(
+                "atlazer.celery_app.tasks.workspace.save_note_similarities",
+                queue="workspace",
+                immutable=False,
+            )
+        ).apply_async()
+
+        log.info("webapi.embed-note.success", task_id=job.id)
+        return TaskExecutionResponse(task_id=job.id)
+    except Exception as e:
+        log.error("webapi.embed-note.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

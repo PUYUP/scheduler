@@ -45,3 +45,11 @@ class EmbedContextRequest(BaseModel):
     context_id: str
     content: str
     language_code: str = 'en'
+
+
+class EmbedNoteRequest(BaseModel):
+    user_id: str
+    workspace_id: str
+    note_id: str
+    content: str
+    language_code: str = 'en'
