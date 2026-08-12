@@ -21,7 +21,6 @@ imports = (
     "atlazer.celery_app.tasks.challenge",
     "atlazer.celery_app.tasks.evaluation",
     "atlazer.celery_app.tasks.workspace",
-    
     "atlazer.celery_app.tasks.maintenance",
 )
 
@@ -156,9 +155,16 @@ task_routes = {
     "atlazer.celery_app.tasks.workspace.embed_context":             {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.save_embedding_context":    {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.match_papers_by_context":   {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.save_matched_papers":       {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.save_context_papers":       {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.save_context_similarities": {"queue": "workspace"},
-    
+
+    "atlazer.celery_app.tasks.workspace.chunk_note":                {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.embed_note":                {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.save_embedding_note":       {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.match_papers_by_note":      {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.save_note_papers":          {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.save_note_similarities":    {"queue": "workspace"},
+
     # ── Arxiv Task ──
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.fetch_page":       {"queue": "arxiv"},
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.extract_metadata": {"queue": "arxiv"},

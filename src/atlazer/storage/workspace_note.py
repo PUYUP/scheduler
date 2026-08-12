@@ -6,7 +6,7 @@ from atlazer.models.paper import PaperORM
 
 from typing import List, Any, Dict, TypedDict
 from atlazer.storage.db import DatabasePool
-from atlazer.models.workspace import ContextChunkORM, ContextPaperORM, ContextSimilarityORM
+from atlazer.models.workspace import NoteChunkORM, NotePaperORM, NoteSimilarityORM
 from atlazer.models.document import DocumentChunkORM
 
 from sqlalchemy import tuple_, insert, select, func
@@ -32,18 +32,18 @@ class MatchResultDict(TypedDict):
     similar_chunks: List[SimilarChunkDict]
 
 
-class WorkspaceDepot:
+class WorkspaceNoteDepot:
 
     def __init__(self, db_pool: DatabasePool):
         self._db_pool = db_pool
 
-    def bulk_insert_chunks(self, values: List[ContextChunkORM]) -> None:
+    def bulk_insert_chunks(self, values: List[NoteChunkORM]) -> None:
         if not values:
-            log.info("workspace.bulk_insert_context_chunks.empty_list")
+            log.info("workspace.bulk_insert_chunks.empty_list")
             return
 
-        context_keys = list({
-            (chunk.user_id, chunk.context_id, chunk.workspace_id) 
+        note_keys = list({
+            (chunk.user_id, chunk.note_id, chunk.workspace_id) 
             for chunk in values
         })
 
@@ -51,7 +51,7 @@ class WorkspaceDepot:
             {
                 "user_id": chunk.user_id,
                 "workspace_id": chunk.workspace_id,
-                "context_id": chunk.context_id,
+                "note_id": chunk.note_id,
                 "chunk_index": chunk.chunk_index,
                 "content": chunk.content,
                 "embedding": chunk.embedding,
@@ -62,41 +62,41 @@ class WorkspaceDepot:
 
         with self._db_pool.session() as session:
             try:
-                session.query(ContextChunkORM).filter(
+                session.query(NoteChunkORM).filter(
                     tuple_(
-                        ContextChunkORM.user_id, 
-                        ContextChunkORM.context_id,
-                        ContextChunkORM.workspace_id,
-                    ).in_(context_keys)
+                        NoteChunkORM.user_id, 
+                        NoteChunkORM.note_id,
+                        NoteChunkORM.workspace_id,
+                    ).in_(note_keys)
                 ).delete(synchronize_session=False)
 
-                session.execute(insert(ContextChunkORM), rows)
+                session.execute(insert(NoteChunkORM), rows)
                 session.commit()
 
                 log.info(
-                    "workspace.bulk_insert_context_chunks.finish_upsert",
+                    "workspace.bulk_insert_note_chunks.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.bulk_insert_context_chunks.error_upsert",
+                    "workspace.bulk_insert_chunks.error_upsert",
                     error=str(e),
                 )
                 raise e
 
-    def bulk_insert_papers(self, values: List[ContextPaperORM]) -> None:
+    def bulk_insert_papers(self, values: List[NotePaperORM]) -> None:
         if not values:
-            log.info("workspace.bulk_insert_context_papers.empty_list")
+            log.info("workspace.bulk_insert_note_papers.empty_list")
             return
 
-        context_keys = list({(chunk.user_id, chunk.context_id) for chunk in values})
+        note_keys = list({(chunk.user_id, chunk.note_id) for chunk in values})
         rows = [
             {
                 "user_id": chunk.user_id,
                 "workspace_id": chunk.workspace_id,
-                "context_id": chunk.context_id,
+                "note_id": chunk.note_id,
                 "paper_id": chunk.paper_id,
             }
             for chunk in values
@@ -104,45 +104,45 @@ class WorkspaceDepot:
 
         with self._db_pool.session() as session:
             try:
-                session.query(ContextPaperORM).filter(
+                session.query(NotePaperORM).filter(
                     tuple_(
-                        ContextPaperORM.user_id, 
-                        ContextPaperORM.context_id
-                    ).in_(context_keys)
+                        NotePaperORM.user_id, 
+                        NotePaperORM.note_id
+                    ).in_(note_keys)
                 ).delete(synchronize_session=False)
 
-                session.execute(insert(ContextPaperORM), rows)
+                session.execute(insert(NotePaperORM), rows)
                 session.commit()
 
                 log.info(
-                    "workspace.bulk_insert_context_papers.finish_upsert",
+                    "workspace.bulk_insert_notes_papers.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.bulk_insert_context_papers.error_upsert",
+                    "workspace.bulk_insert_notes_papers.error_upsert",
                     error=str(e),
                 )
                 raise e
 
     def bulk_insert_similarities(
         self,
-        values: List[ContextSimilarityORM]
+        values: List[NoteSimilarityORM]
     ) -> None:
         if not values:
-            log.info("workspace.bulk_insert_context_similarities.empty_list")
+            log.info("workspace.bulk_insert_notes_similarities.empty_list")
             return
 
-        context_keys = list({(chunk.user_id, chunk.context_id, chunk.workspace_id, chunk.context_chunk_id) for chunk in values})
+        note_keys = list({(chunk.user_id, chunk.note_id, chunk.workspace_id, chunk.note_chunk_id) for chunk in values})
         rows = [
             {
                 "user_id": chunk.user_id,
                 "workspace_id": chunk.workspace_id,
-                "context_id": chunk.context_id,
-                "context_chunk_id": chunk.context_chunk_id,
-                "context_content": chunk.context_content,
+                "note_id": chunk.note_id,
+                "note_chunk_id": chunk.note_chunk_id,
+                "note_content": chunk.note_content,
                 "paper_id": chunk.paper_id,
                 "document_chunk_id": chunk.document_chunk_id,
                 "document_content": chunk.document_content,
@@ -154,54 +154,54 @@ class WorkspaceDepot:
 
         with self._db_pool.session() as session:
             try:
-                session.query(ContextSimilarityORM).filter(
+                session.query(NoteSimilarityORM).filter(
                     tuple_(
-                        ContextSimilarityORM.user_id, 
-                        ContextSimilarityORM.context_id,
-                        ContextSimilarityORM.workspace_id,
-                        ContextSimilarityORM.context_chunk_id,
-                    ).in_(context_keys)
+                        NoteSimilarityORM.user_id, 
+                        NoteSimilarityORM.note_id,
+                        NoteSimilarityORM.workspace_id,
+                        NoteSimilarityORM.note_chunk_id,
+                    ).in_(note_keys)
                 ).delete(synchronize_session=False)
 
-                session.execute(insert(ContextSimilarityORM), rows)
+                session.execute(insert(NoteSimilarityORM), rows)
                 session.commit()
 
                 log.info(
-                    "workspace.bulk_insert_context_similarities.finish_upsert",
+                    "workspace.bulk_insert_notes_similarities.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.bulk_insert_similarities.error_upsert",
+                    "workspace.bulk_insert_notes_similarities.error_upsert",
                     error=str(e),
                 )
                 raise e
 
-    def get_chunks_by_context_id(self, context_id: str) -> List[ContextChunkORM]:
+    def get_chunks_by_note_id(self, note_id: str) -> List[NoteChunkORM]:
         try:
-            context_uuid: UUID = uuid.UUID(context_id)
+            note_uuid: UUID = uuid.UUID(note_id)
         except ValueError:
-            raise ValueError(f"Invalid UUID string format: {context_id}")
+            raise ValueError(f"Invalid UUID string format: {note_id}")
 
         try:
             with self._db_pool.session() as session:
-                stmt = select(ContextChunkORM).where(ContextChunkORM.context_id == context_uuid)
+                stmt = select(NoteChunkORM).where(NoteChunkORM.note_id == note_uuid)
                 result = session.execute(stmt).scalars().all()
                 return list(result)
 
         except SQLAlchemyError as e:
             log.error(
-                "context_chunk.error_get_chunks_by_context_id",
-                context_id=context_id,
+                "workspace_note.error_get_chunks_by_note_id",
+                note_id=note_id,
                 error=str(e),
             )
             raise e
 
-    def match_context_with_papers(
+    def match_note_with_papers(
         self,
-        chunks: List[ContextChunkORM],
+        chunks: List[NoteChunkORM],
         top_k: int = 15,
     ) -> Dict[Any, MatchResultDict]:
 
@@ -212,7 +212,7 @@ class WorkspaceDepot:
                 for chunk in chunks:
                     if not chunk.embedding:
                         log.warning(
-                            "context_chunk.empty_embedding",
+                            "workspace_note.empty_embedding",
                             chunk=chunk,
                         )
 
@@ -321,12 +321,12 @@ class WorkspaceDepot:
 
         except SQLAlchemyError:
             log.exception(
-                "context_chunk.error_match_context_with_papers",
+                "workspace_note.error_match_note_with_papers",
             )
             raise
 
         log.info(
-            "context_chunk.match_context_with_papers",
+            "workspace_note.match_note_with_papers",
             chunks=len(results),
         )
 

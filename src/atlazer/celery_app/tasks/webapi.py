@@ -64,9 +64,11 @@ def generate_embeddings(
     # store chunks for profile interest embedding
     if provision is not None:
         profile_id = provision.get("profile_id")
-        next_processed_at = provision.get("next_processed_at", datetime.now(timezone.utc) + timedelta(hours=48))
 
         if profile_id is not None:
+            next_processed_at = provision.get("next_processed_at", datetime.now(timezone.utc) + timedelta(hours=48))
+            
+            # Take first chunk as interest embedding
             result = embedded_chunks[0]
             embedding = result["embedding"]
             log.info("webapi.generate_embeddings.profile_interest", embedding=embedding)

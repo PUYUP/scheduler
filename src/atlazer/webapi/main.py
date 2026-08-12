@@ -248,7 +248,7 @@ def embed_context(payload: EmbedContextRequest):
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.save_matched_papers",
+                "atlazer.celery_app.tasks.workspace.save_context_papers",
                 queue="workspace",
                 immutable=False,
             )

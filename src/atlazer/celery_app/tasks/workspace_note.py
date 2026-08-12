@@ -5,29 +5,26 @@ import structlog
 from typing import Dict, Any, List
 
 from atlazer.celery_app.main import app, db_pool
-from atlazer.utils.stanza_chunker import chunk_content as stanza_chunk_context
+from atlazer.utils.stanza_chunker import chunk_content as stanza_chunk_note
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
-from atlazer.storage.workspace import WorkspaceDepot
+from atlazer.storage.workspace_note import WorkspaceNoteDepot
 from atlazer.models.workspace import (
-    ChunkContextMetadata,
-    ContextChunkORM,
-    ContextPaperORM,
-    ContextSimilarityORM,
+    ChunkNoteMetadata,
+    NoteChunkORM,
+    NotePaperORM,
+    NoteSimilarityORM,
 )
 
 log = structlog.get_logger()
 
-# import workspace note tasks
-from .workspace_note import *
-
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 1 of 6 — chunk_context
+# Task 1 of 7 — chunk_note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.chunk_context",
+    name="atlazer.celery_app.tasks.workspace.chunk_note",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -36,14 +33,14 @@ from .workspace_note import *
     soft_time_limit=1700,
     ignore_result=False,
 )
-def chunk_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    validated = ChunkContextMetadata.model_validate(metadata)
+def chunk_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    validated = ChunkNoteMetadata.model_validate(metadata)
     content = validated.content
     language_code = validated.language_code
 
-    log.info("workspace.chunk_context.start", metadata=validated.model_dump())
+    log.info("workspace.chunk_note.start", metadata=validated.model_dump())
 
-    chunks = stanza_chunk_context(
+    chunks = stanza_chunk_note(
         text=content,
         lang=language_code,
         semantic=True,
@@ -56,7 +53,7 @@ def chunk_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     validated.chunks = [{"text": chunk} for chunk in chunks]
 
     log.info(
-        "workspace.chunk_context.done",
+        "workspace.chunk_note.done",
         chunk_count=len(validated.chunks),
         metadata=validated.model_dump()
     )
@@ -65,11 +62,11 @@ def chunk_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 2 of 6 — embed_context
+# Task 2 of 6 — embed_note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.embed_context",
+    name="atlazer.celery_app.tasks.workspace.embed_note",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -78,7 +75,7 @@ def chunk_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def embed_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+def embed_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     chunks = metadata.get("chunks", [])
 
     if not chunks:
@@ -88,7 +85,7 @@ def embed_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         embedded_chunks = chunks_to_vector(chunks)
     except Exception as exc:
         log.error(
-            "workspace.embed_context.failed",
+            "workspace.embed_note.failed",
             metadata=metadata,
             error=str(exc),
             attempt=self.request.retries,
@@ -97,7 +94,7 @@ def embed_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
     log.info(
-        "workspace.embed_context.done",
+        "workspace.embed_note.done",
         embedded=len(embedded_chunks),
         dim=embedded_chunks[0]["embedding_dim"] if embedded_chunks else 0,
         metadata=metadata,
@@ -108,11 +105,11 @@ def embed_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 3 of 6 — save embedding context
+# Task 3 of 6 — save embedding note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.save_embedding_context",
+    name="atlazer.celery_app.tasks.workspace.save_embedding_note",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -121,32 +118,32 @@ def embed_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_embedding_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.save_embedding_context.start")
+def save_embedding_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.save_embedding_note.start")
 
     chunks = metadata.get('chunks')
     user_id = metadata.get('user_id')
-    context_id = metadata.get('context_id')
+    note_id = metadata.get('note_id')
     workspace_id = metadata.get('workspace_id')
 
     if not chunks:
-        log.warning("workspace.save_embedding_context.no_chunks", metadata=metadata)
+        log.warning("workspace.save_embedding_note.no_chunks", metadata=metadata)
         raise ValueError("No chunks to save")
 
-    if not user_id or not context_id or not workspace_id:
-        log.warning("workspace.save_embedding_context.missing_user_id_or_context_id_or_workspace_id", metadata=metadata)
-        raise ValueError("Missing user_id or context_id or workspace_id")
+    if not user_id or not note_id or not workspace_id:
+        log.warning("workspace.save_embedding_note.missing_user_id_or_note_id_or_workspace_id", metadata=metadata)
+        raise ValueError("Missing user_id or note_id or workspace_id")
     
     try:
         user_uuid = uuid.UUID(str(user_id))
-        context_uuid = uuid.UUID(str(context_id))
+        note_uuid = uuid.UUID(str(note_id))
         workspace_uuid = uuid.UUID(str(workspace_id))
     except ValueError as exc:
-        log.error("workspace.save_embedding_context.invalid_uuid", metadata=metadata, error=str(exc))
+        log.error("workspace.save_embedding_note.invalid_uuid", metadata=metadata, error=str(exc))
         raise ValueError("Invalid UUID string format")
 
-    log.info("workspace.save_embedding_context.mapping_payloads")
-    payloads: List[ContextChunkORM] = []
+    log.info("workspace.save_embedding_note.mapping_payloads")
+    payloads: List[NoteChunkORM] = []
     for chunk in chunks:
         attributes = {
             "embedding_dim": chunk.get("embedding_dim"),
@@ -157,9 +154,9 @@ def save_embedding_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             "word_count": chunk.get("word_count"),
         }
 
-        payloads.append(ContextChunkORM(
+        payloads.append(NoteChunkORM(
             user_id=user_uuid,
-            context_id=context_uuid,
+            note_id=note_uuid,
             workspace_id=workspace_uuid,
             content=chunk.get('text'),
             embedding=chunk.get('embedding'),
@@ -168,28 +165,28 @@ def save_embedding_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         ))
 
     try:
-        depot = WorkspaceDepot(db_pool)
+        depot = WorkspaceNoteDepot(db_pool)
         depot.bulk_insert_chunks(payloads)
     except Exception as exc:
         log.error(
-            "workspace.save_embedding_context.failed",
+            "workspace.save_embedding_note.failed",
             metadata=metadata,
             error=str(exc),
             attempt=self.request.retries,
         )
         raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
-    log.info("workspace.save_embedding_context.done", metadata=metadata)
+    log.info("workspace.save_embedding_note.done", metadata=metadata)
 
     return metadata
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 4 of 6 — context paper matcher
+# Task 4 of 6 — note paper matcher
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.match_papers_by_context",
+    name="atlazer.celery_app.tasks.workspace.match_papers_by_note",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -198,20 +195,20 @@ def save_embedding_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.match_papers_by_context.start", metadata=metadata)
+def match_papers_by_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.match_papers_by_note.start", metadata=metadata)
 
-    context_id = metadata.get("context_id")
+    note_id = metadata.get("note_id")
     workspace_id = metadata.get("workspace_id")
 
-    if not context_id or not workspace_id:
+    if not note_id or not workspace_id:
         log.info("workspace.missing_required_field")
-        raise ValueError("Missing context_id or workspace_id")
+        raise ValueError("Missing note_id or workspace_id")
 
     try:
-        depot = WorkspaceDepot(db_pool)
-        chunks = depot.get_chunks_by_context_id(context_id)
-        matcher = depot.match_context_with_papers(chunks)
+        depot = WorkspaceNoteDepot(db_pool)
+        chunks = depot.get_chunks_by_note_id(note_id)
+        matcher = depot.match_note_with_papers(chunks)
 
         # collect all the matched data
         papers = []
@@ -235,7 +232,7 @@ def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         }
     except Exception as exc:
         log.error(
-            "workspace.match_papers_by_context.failed",
+            "workspace.match_papers_by_note.failed",
             metadata=metadata,
             error=str(exc),
             attempt=self.request.retries,
@@ -244,12 +241,13 @@ def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     return metadata
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 5 of 6 — save mathced papers
+# Task 5 of 6 — save matched papers for notes
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.save_context_papers",
+    name="atlazer.celery_app.tasks.workspace.save_note_papers",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -258,35 +256,35 @@ def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_context_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.save_context_papers.start")
+def save_note_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.save_note_papers.start")
 
-    context_id = metadata.get("context_id")
+    note_id = metadata.get("note_id")
     workspace_id = metadata.get("workspace_id")
     user_id = metadata.get("user_id")
     matched_result = metadata.get("matched_result", {})
     papers = matched_result.get("papers", [])
 
     if papers:
-        log.info("workspace.save_context_papers.inserting_data", payload_count=len(papers))
-        payloads: List[ContextPaperORM] = []
+        log.info("workspace.save_note_papers.inserting_data", payload_count=len(papers))
+        payloads: List[NotePaperORM] = []
 
         # payloads enrichment
         for paper in papers:
-            payload = ContextPaperORM(
+            payload = NotePaperORM(
                 paper_id=paper.get("id"),
-                context_id=context_id,
+                note_id=note_id,
                 workspace_id=workspace_id,
                 user_id=user_id,
             )
             payloads.append(payload)
 
         try:
-            depot = WorkspaceDepot(db_pool)
+            depot = WorkspaceNoteDepot(db_pool)
             depot.bulk_insert_papers(payloads)
         except Exception as exc:
             log.error(
-                "workspace.save_context_papers.failed",
+                "workspace.save_note_papers.failed",
                 metadata=metadata,
                 error=str(exc),
                 attempt=self.request.retries,
@@ -297,11 +295,11 @@ def save_context_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 6 of 6 — save context similarities
+# Task 6 of 6 — save note similarities
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.save_context_similarities",
+    name="atlazer.celery_app.tasks.workspace.save_note_similarities",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -310,28 +308,28 @@ def save_context_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_context_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.save_context_similarities.start")
+def save_note_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.save_note_similarities.start")
 
-    context_id = metadata.get("context_id")
+    note_id = metadata.get("note_id")
     workspace_id = metadata.get("workspace_id")
     user_id = metadata.get("user_id")
     matched_result = metadata.get("matched_result", {})
     similar_chunks = matched_result.get("similar_chunks", [])
 
     if similar_chunks:
-        log.info("workspace.save_context_similarities.inserting_data", payload_count=len(similar_chunks))
-        payloads: List[ContextSimilarityORM] = []
+        log.info("workspace.save_note_similarities.inserting_data", payload_count=len(similar_chunks))
+        payloads: List[NoteSimilarityORM] = []
 
         # payloads enrichment
         for similarity in similar_chunks:
-            payload = ContextSimilarityORM(
+            payload = NoteSimilarityORM(
                 workspace_id=workspace_id,
                 user_id=user_id,
                 paper_id=similarity.get("paper_id"),
-                context_id=context_id,
-                context_chunk_id=similarity.get("chunk_id"),
-                context_content=similarity.get("chunk_content"),
+                note_id=note_id,
+                note_chunk_id=similarity.get("chunk_id"),
+                note_content=similarity.get("chunk_content"),
                 document_chunk_id=similarity.get("document_id"),
                 document_content=similarity.get("document_content"),
                 similarity_score=similarity.get("similarity_score"),
@@ -340,11 +338,11 @@ def save_context_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             payloads.append(payload)
 
         try:
-            depot = WorkspaceDepot(db_pool)
+            depot = WorkspaceNoteDepot(db_pool)
             depot.bulk_insert_similarities(payloads)
         except Exception as exc:
             log.error(
-                "workspace.save_context_similarities.failed",
+                "workspace.save_note_similarities.failed",
                 metadata=metadata,
                 error=str(exc),
                 attempt=self.request.retries,

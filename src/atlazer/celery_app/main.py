@@ -186,7 +186,13 @@ def _configure_beat_schedule(app: Celery) -> None:
             "args": ["dlx.evaluation"],
             "options": {"queue": "default"},
         },
-
+        "retry-failed-workspace": {
+            "task": "atlazer.celery_app.tasks.maintenance.retry_dead_letters",
+            "schedule": 3600,
+            "args": ["dlx.workspace"],
+            "options": {"queue": "default"},
+        },
+        
         # ── Arxiv Provider Ingestion ──
         "arxiv-fetch-page": {
             "task": "atlazer.celery_app.tasks.ingestion.extractors.arxiv.fetch_page",
