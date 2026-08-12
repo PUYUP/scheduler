@@ -128,11 +128,11 @@ class ContextSimilarityORM(Base):
 
 
 class NoteChunkORM(Base):
-    __tablename__ = "workspace_note_chunks"
+    __tablename__ = "workspace_notes_chunks"
     __table_args__ = (
         # 1. Vector Index (HNSW)
         Index(
-            "idx_workspace_note_chunks_embedding",
+            "idx_workspace_notes_chunks_embedding",
             "embedding",
             postgresql_using="hnsw",
             postgresql_with={"m": 16, "ef_construction": 64},
@@ -140,20 +140,20 @@ class NoteChunkORM(Base):
         ),
 
         # 2. Filtering Indexes (B-Tree)
-        Index("idx_workspace_note_chunks_workspace_id", "workspace_id"),
-        Index("idx_workspace_note_chunks_user_id", "user_id"),
-        Index("idx_workspace_note_chunks_note_id", "note_id"),
-        Index("idx_workspace_note_chunks_workspace_note", "workspace_id", "note_id"),
+        Index("idx_workspace_notes_chunks_workspace_id", "workspace_id"),
+        Index("idx_workspace_notes_chunks_user_id", "user_id"),
+        Index("idx_workspace_notes_chunks_note_id", "note_id"),
+        Index("idx_workspace_notes_chunks_workspace_note", "workspace_id", "note_id"),
 
         # 3. Metadata Index (GIN) - JSONB FILTERING
         Index(
-            "idx_workspace_note_chunks_attributes",
+            "idx_workspace_notes_chunks_attributes",
             "attributes",
             postgresql_using="gin"
         ),
 
         # 4. Sorting Index
-        Index("ix_workspace_note_chunks_note_chunk", "note_id", "chunk_index"),
+        Index("ix_workspace_notes_chunks_note_chunk", "note_id", "chunk_index"),
 
         # 5. Unique Constraint Index
         UniqueConstraint(
@@ -161,7 +161,7 @@ class NoteChunkORM(Base):
             "workspace_id", 
             "note_id", 
             "chunk_index", 
-            name="uq_workspace_note_chunks_identity"
+            name="uq_workspace_notes_chunks_identity"
         ),
     )
 
