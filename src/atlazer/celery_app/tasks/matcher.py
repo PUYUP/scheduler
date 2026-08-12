@@ -22,9 +22,9 @@ def _serialize_matches(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     return [
         {
-            "id": m["paper"].id,
-            "pdf_url": m["paper"].pdf_url,
-            "title": m["paper"].title,
+            "id": m["paper"]["id"],
+            "pdf_url": m["paper"]["pdf_url"],
+            "title": m["paper"]["title"],
             "distance": m["distance"],
             "relevance_score": m["relevance_score"],
         }
@@ -112,7 +112,7 @@ def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         for label, matches in results.items():
             for m in matches:
                 paper = m["paper"]
-                paper_id = str(paper.id)
+                paper_id = str(paper["id"])
                 challenge_paper_id = paper_to_challenge.get(paper_id)
 
                 log.info(
@@ -121,8 +121,8 @@ def single_user(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                     label=label,
                     paper_id=paper_id,
                     challenge_paper_id=challenge_paper_id,
-                    pdf_url=paper.pdf_url,
-                    title=paper.title,
+                    pdf_url=paper["pdf_url"],
+                    title=paper["title"],
                     relevance_score=m["relevance_score"],
                 )
 
