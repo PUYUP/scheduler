@@ -4,7 +4,7 @@ import structlog
 from uuid import UUID
 from atlazer.models.paper import PaperORM
 
-from typing import List, Any, Dict, TypedDict
+from typing import List, Any, Dict, TypedDict, Optional
 from atlazer.storage.db import DatabasePool
 from atlazer.models.workspace import ContextChunkORM, ContextPaperORM, ContextSimilarityORM
 from atlazer.models.document import DocumentChunkORM
@@ -203,8 +203,16 @@ class WorkspaceDepot:
         self,
         chunks: List[ContextChunkORM],
         top_k: int = 15,
+        candidate_pool_size: Optional[int] = None,
     ) -> Dict[Any, MatchResultDict]:
+        """Mencari paper yang paling relevan untuk setiap chunk dari context.
 
+        Menggunakan Opsi B (Weighted Score):
+        - Basis utama: Kualitas chunk terbaik (MIN distance / MAX similarity).
+        - Bonus kepadatan: Dibagi dengan LN(matched_chunk_count + 1) untuk memberikan
+        peringkat lebih baik bagi paper dengan banyak chunk relevan tanpa
+        menciptakan long-paper bias secara ekstrem.
+        """
         results: Dict[Any, MatchResultDict] = {}
 
         try:
@@ -212,10 +220,9 @@ class WorkspaceDepot:
                 for chunk in chunks:
                     if not chunk.embedding:
                         log.warning(
-                            "context_chunk.empty_embedding",
-                            chunk=chunk,
+                            "workspace_context.empty_embedding",
+                            chunk_id=getattr(chunk, "id", None),
                         )
-
                         results[chunk.id] = {
                             "id": chunk.id,
                             "chunk_content": chunk.content,
@@ -224,63 +231,117 @@ class WorkspaceDepot:
                         }
                         continue
 
-                    # Jarak cosine
-                    distance_expr = (
-                        DocumentChunkORM.embedding.cosine_distance(chunk.embedding)
+                    # Buffer kandidat awal untuk pencarian pgvector HNSW/IVFFlat index.
+                    # Disarankan minimal top_k * 10 agar ada cukup sampel multi-chunk per paper.
+                    pool_size = candidate_pool_size or (top_k * 10)
+
+                    # Expression pgvector cosine distance (1 - cosine similarity)
+                    distance_expr = DocumentChunkORM.embedding.cosine_distance(
+                        chunk.embedding
                     )
 
-                    # --- 2. Perbaikan Query (Memaksa penggunaan Vector Index) ---
-                    # Ambil kandidat awal dengan LIMIT agar pgvector (atau ekstensilain) menggunakan Index.
-                    # Kita buffer (top_k * 5) karena beberapa chunk mungkin berasal dari paper yang sama.
+                    # -------------------------------------------------------------
+                    # 1. CTE: Ambil kandidat chunk terdekat (Memaksa penggunaan Vector Index)
+                    # -------------------------------------------------------------
                     top_candidates = (
                         select(
                             DocumentChunkORM.id.label("document_chunk_id"),
                             DocumentChunkORM.paper_id.label("paper_id"),
-                            DocumentChunkORM.content.label("document_chunk_content"),
+                            DocumentChunkORM.content.label(
+                                "document_chunk_content"
+                            ),
                             distance_expr.label("distance"),
                         )
                         .order_by(distance_expr.asc())
-                        .limit(top_k * 5) 
+                        .limit(pool_size)
                         .cte("top_candidates")
                     )
 
-                    # Lakukan pemeringkatan (window function) dari kandidat yang sudah di-limit
-                    ranked_chunks = (
+                    # -------------------------------------------------------------
+                    # 2. CTE: Agregasi per paper & Hitung Weighted Score (Opsi B)
+                    #    Formula: weighted_score = min_distance / LN(count + 1.0)
+                    #    (Semakin KECIL weighted_score, semakin RELEVAN paper tersebut)
+                    # -------------------------------------------------------------
+                    paper_metrics = (
                         select(
-                            top_candidates.c.document_chunk_id,
                             top_candidates.c.paper_id,
-                            top_candidates.c.document_chunk_content,
-                            top_candidates.c.distance,
-                            func.row_number()
-                            .over(
-                                partition_by=top_candidates.c.paper_id,
-                                order_by=top_candidates.c.distance.asc(),
-                            )
-                            .label("rank"),
+                            func.min(top_candidates.c.distance).label(
+                                "min_distance"
+                            ),
+                            func.count(top_candidates.c.document_chunk_id).label(
+                                "matched_chunk_count"
+                            ),
+                            (
+                                func.min(top_candidates.c.distance)
+                                / func.ln(
+                                    func.count(top_candidates.c.document_chunk_id)
+                                    + 1.0
+                                )
+                            ).label("weighted_score"),
                         )
-                        .cte("ranked_chunks")
+                        .group_by(top_candidates.c.paper_id)
+                        .cte("paper_metrics")
                     )
 
-                    # Ambil paper unik terbaik
+                    # -------------------------------------------------------------
+                    # 3. CTE: Ranking Paper berdasarkan weighted_score
+                    # -------------------------------------------------------------
+                    ranked_papers = (
+                        select(
+                            paper_metrics.c.paper_id,
+                            paper_metrics.c.min_distance,
+                            paper_metrics.c.matched_chunk_count,
+                            paper_metrics.c.weighted_score,
+                            func.row_number()
+                            .over(order_by=paper_metrics.c.weighted_score.asc())
+                            .label("paper_rank"),
+                        )
+                        .cte("ranked_papers")
+                    )
+
+                    # Filter hanya top_k paper terbaik
+                    top_papers = (
+                        select(
+                            ranked_papers.c.paper_id,
+                            ranked_papers.c.min_distance,
+                            ranked_papers.c.matched_chunk_count,
+                            ranked_papers.c.weighted_score,
+                        )
+                        .where(ranked_papers.c.paper_rank <= top_k)
+                        .cte("top_papers")
+                    )
+
+                    # -------------------------------------------------------------
+                    # 4. QUERY UTAMA: Join Detail PaperORM + SEMUA Chunk Relevan
+                    # -------------------------------------------------------------
                     stmt = (
                         select(
                             PaperORM,
-                            ranked_chunks.c.document_chunk_id,
-                            ranked_chunks.c.document_chunk_content,
-                            ranked_chunks.c.distance,
+                            top_candidates.c.document_chunk_id,
+                            top_candidates.c.document_chunk_content,
+                            top_candidates.c.distance,
+                            top_papers.c.min_distance,
+                            top_papers.c.matched_chunk_count,
+                            top_papers.c.weighted_score,
                         )
+                        .join(top_papers, top_papers.c.paper_id == PaperORM.id)
                         .join(
-                            ranked_chunks,
-                            ranked_chunks.c.paper_id == PaperORM.id,
+                            top_candidates,
+                            top_candidates.c.paper_id == PaperORM.id,
                         )
-                        .where(ranked_chunks.c.rank == 1)
-                        .order_by(ranked_chunks.c.distance.asc())
-                        .limit(top_k)
+                        .order_by(
+                            top_papers.c.weighted_score.asc(),
+                            top_candidates.c.distance.asc(),
+                        )
                     )
 
                     rows = session.execute(stmt).all()
-                    
-                    papers = []
+
+                    # -------------------------------------------------------------
+                    # 5. Formatting Hasil & Menghindari DetachedInstanceError
+                    # -------------------------------------------------------------
+                    papers_by_id: Dict[Any, Dict[str, Any]] = {}
+                    paper_order: List[Any] = []
                     similar_chunks: List[SimilarChunkDict] = []
 
                     for (
@@ -288,19 +349,27 @@ class WorkspaceDepot:
                         document_chunk_id,
                         document_chunk_content,
                         distance,
+                        min_distance,
+                        matched_chunk_count,
+                        weighted_score,
                     ) in rows:
-                        
-                        # --- 3. Mencegah DetachedInstanceError ---
-                        # Ubah ORM object menjadi dictionary biasa sebelum session ditutup
-                        # Anda bisa memanggil spesifik atribut (contoh: id, title, abstract)
-                        # atau menggunakan pendekatan dinamis seperti di bawah ini:
-                        paper_dict = {
-                            column.name: getattr(paper_orm, column.name)
-                            for column in paper_orm.__table__.columns
-                        }
-                        
-                        papers.append(paper_dict)
-                        
+                        if paper_orm.id not in papers_by_id:
+                            # Ekstrak atribut ORM ke dictionary sebelum session ditutup
+                            paper_dict = {
+                                column.name: getattr(paper_orm, column.name)
+                                for column in paper_orm.__table__.columns
+                            }
+
+                            # Tambahkan metrik kustom ke objek paper
+                            paper_dict["best_similarity_score"] = float(
+                                1 - min_distance
+                            )
+                            paper_dict["matched_chunk_count"] = matched_chunk_count
+                            paper_dict["weighted_score"] = float(weighted_score)
+
+                            papers_by_id[paper_orm.id] = paper_dict
+                            paper_order.append(paper_orm.id)
+
                         similar_chunks.append(
                             {
                                 "document_content": document_chunk_content,
@@ -312,6 +381,8 @@ class WorkspaceDepot:
                             }
                         )
 
+                    papers = [papers_by_id[pid] for pid in paper_order]
+
                     results[chunk.id] = {
                         "id": chunk.id,
                         "chunk_content": chunk.content,
@@ -320,14 +391,9 @@ class WorkspaceDepot:
                     }
 
         except SQLAlchemyError:
-            log.exception(
-                "context_chunk.error_match_context_with_papers",
-            )
+            log.exception("workspace_context.error_match_context_with_papers")
             raise
 
-        log.info(
-            "context_chunk.match_context_with_papers",
-            chunks=len(results),
-        )
+        log.info("workspace_context.match_context_with_papers", chunks=len(results))
 
         return results

@@ -8,7 +8,7 @@ from atlazer.celery_app.main import app, db_pool
 from atlazer.utils.stanza_chunker import chunk_content as stanza_chunk_note
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
-from atlazer.storage.workspace_note import WorkspaceNoteDepot
+from atlazer.storage.workspace_notes import WorkspaceNoteDepot
 from atlazer.models.workspace import (
     ChunkNoteMetadata,
     NoteChunkORM,
@@ -208,7 +208,7 @@ def match_papers_by_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     try:
         depot = WorkspaceNoteDepot(db_pool)
         chunks = depot.get_chunks_by_note_id(note_id)
-        matcher = depot.match_note_with_papers(chunks)
+        matcher = depot.match_note_with_papers(chunks=chunks, candidate_pool_size=1000)
 
         # collect all the matched data
         papers = []

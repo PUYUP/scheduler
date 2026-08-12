@@ -39,107 +39,219 @@ class MatcherDepot:
         self,
         user_id: str,
         intereset_embedding: List[float],
+        candidate_pool_size: int = 1000,
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Mencari paper yang embedding chunk-nya paling MIRIP dan paling TIDAK
-        MIRIP dengan embedding minat user, beserta relevance score-nya.
+        """Mencari paper yang paling MIRIP ( closest ) dan paling TIDAK MIRIP
 
-        Args:
-            user_id: UUID dari user yang sedang dicarikan paper (dalam bentuk string).
-            intereset_embedding: vector embedding minat user (dari profile user).
+        ( farthest ) berdasarkan embedding minat user.
 
-        Returns:
-            Dict[str, List[Dict[str, Any]]]: dict dengan 2 key -> "closest" dan
-            "farthest". Tiap key berisi list maksimal 1 item dengan struktur:
-                {
-                    "paper": PaperORM,
-                    "distance": float,          # cosine distance mentah
-                    "relevance_score": float,   # 1 - distance
-                }
-            - "closest": paper paling mirip (list kosong jika tidak ada data).
-            - "farthest": paper paling tidak mirip. Jika hanya ada 1 paper unik
-              di database (closest == farthest), "farthest" dikembalikan
-              sebagai list kosong untuk menghindari duplikasi paper yang sama.
+        Metode:
+        - Closest: Menggunakan Weighted Scoring (Opsi B) -> `min_distance /
+        LN(chunk_count + 1)`.
+                Meminimalkan bobot agar paper dengan topik relevan mendalam
+                mendapatkan peringkat teratas.
+        - Farthest: Mencari paper yang bahkan chunk TERBAIK-nya memiliki jarak
+        terjauh
+                    (`min_distance DESC`), memastikan paper tersebut secara
+                    keseluruhan
+                    sama sekali tidak berkaitan dengan minat user.
         """
+        results: Dict[str, List[Dict[str, Any]]] = {
+            "closest": [],
+            "farthest": [],
+        }
+
         try:
             with self._db_pool.session() as session:
-                distance = DocumentChunkORM.embedding.cosine_distance(intereset_embedding)
+                distance_expr = DocumentChunkORM.embedding.cosine_distance(
+                    intereset_embedding
+                )
 
-                # Subquery untuk paper yang sudah dichallenge user
+                # 1. Subquery paper yang sudah di-challenge oleh user (Eksklusi)
                 challenged_subq = (
                     select(ChallengePaperORM.paper_id)
-                        .join(ChallengeORM, ChallengeORM.id == ChallengePaperORM.challenge_id)
-                        .where(ChallengeORM.user_id == user_id)
+                    .join(
+                        ChallengeORM, ChallengeORM.id == ChallengePaperORM.challenge_id
+                    )
+                    .where(ChallengeORM.user_id == user_id)
                 )
 
-                # Query untuk mencari paper yang paling mirip, mengecualikan yang sudah ada
-                closest_stmt = (
-                    select(PaperORM, distance.label("distance"))
-                        .join(DocumentChunkORM, DocumentChunkORM.paper_id == PaperORM.id)
-                        .where(PaperORM.id.not_in(challenged_subq))
-                        .order_by(distance.asc())
-                        .limit(1)
+                # -----------------------------------------------------------------
+                # A. QUERY CLOSEST PAPER (Opsi B - Weighted Score)
+                # -----------------------------------------------------------------
+                closest_candidates = (
+                    select(
+                        DocumentChunkORM.paper_id.label("paper_id"),
+                        distance_expr.label("distance"),
+                    )
+                    .where(DocumentChunkORM.paper_id.not_in(challenged_subq))
+                    .order_by(distance_expr.asc())
+                    .limit(candidate_pool_size)
+                    .cte("closest_candidates")
                 )
 
-                # Query untuk mencari paper yang paling tidak mirip, mengecualikan yang sudah ada
-                farthest_stmt = (
-                    select(PaperORM, distance.label("distance"))
-                        .join(DocumentChunkORM, DocumentChunkORM.paper_id == PaperORM.id)
-                        .where(PaperORM.id.not_in(challenged_subq))
-                        .order_by(distance.desc())
-                        .limit(1)
-                )
+                closest_weighted = (
+                    select(
+                        closest_candidates.c.paper_id,
+                        func.min(closest_candidates.c.distance).label(
+                            "min_distance"
+                        ),
+                        func.count(closest_candidates.c.paper_id).label(
+                            "chunk_count"
+                        ),
+                        (
+                            func.min(closest_candidates.c.distance)
+                            / func.ln(
+                                func.count(closest_candidates.c.paper_id) + 1.0
+                            )
+                        ).label("weighted_score"),
+                    )
+                    .group_by(closest_candidates.c.paper_id)
+                    .order_by(
+                        (
+                            func.min(closest_candidates.c.distance)
+                            / func.ln(
+                                func.count(closest_candidates.c.paper_id) + 1.0
+                            )
+                        ).asc()
+                    )
+                    .limit(1)
+                ).cte("closest_weighted")
+
+                closest_stmt = select(
+                    PaperORM,
+                    closest_weighted.c.min_distance,
+                    closest_weighted.c.weighted_score,
+                    closest_weighted.c.chunk_count,
+                ).join(closest_weighted, PaperORM.id == closest_weighted.c.paper_id)
 
                 closest_row = session.execute(closest_stmt).first()
+
+                # -----------------------------------------------------------------
+                # B. QUERY FARTHEST PAPER (Mencari paper yang paling bertolak belakang)
+                # -----------------------------------------------------------------
+                farthest_candidates = (
+                    select(
+                        DocumentChunkORM.paper_id.label("paper_id"),
+                        distance_expr.label("distance"),
+                    )
+                    .where(DocumentChunkORM.paper_id.not_in(challenged_subq))
+                    .order_by(distance_expr.desc())
+                    .limit(candidate_pool_size)
+                    .cte("farthest_candidates")
+                )
+
+                # Cari paper yang bahkan chunk terbaiknya paling jauh dari interest
+                farthest_grouped = (
+                    select(
+                        farthest_candidates.c.paper_id,
+                        func.min(farthest_candidates.c.distance).label(
+                            "best_distance"
+                        ),
+                        func.max(farthest_candidates.c.distance).label(
+                            "worst_distance"
+                        ),
+                    )
+                    .group_by(farthest_candidates.c.paper_id)
+                    .order_by(
+                        func.min(farthest_candidates.c.distance).desc()
+                    )  # min_distance paling besar
+                    .limit(1)
+                ).cte("farthest_grouped")
+
+                farthest_stmt = select(
+                    PaperORM,
+                    farthest_grouped.c.best_distance,
+                    farthest_grouped.c.worst_distance,
+                ).join(
+                    farthest_grouped, PaperORM.id == farthest_grouped.c.paper_id
+                )
+
                 farthest_row = session.execute(farthest_stmt).first()
 
-                closest_paper = closest_row[0] if closest_row is not None else None
-                closest_distance = closest_row[1] if closest_row is not None else None
+                # -----------------------------------------------------------------
+                # C. DRAFT DATA & EKSKLUSI DUPLIKASI
+                # -----------------------------------------------------------------
+                closest_paper_id = closest_row[0].id if closest_row else None
+                farthest_paper_id = farthest_row[0].id if farthest_row else None
 
-                farthest_paper = farthest_row[0] if farthest_row is not None else None
-                farthest_distance = farthest_row[1] if farthest_row is not None else None
+                # Hindari duplikasi jika farthest sama dengan closest
+                if (
+                    closest_paper_id
+                    and farthest_paper_id
+                    and closest_paper_id == farthest_paper_id
+                ):
+                    farthest_row = None
+                    farthest_paper_id = None
 
-                # Ambil semua chunk untuk paper_id yang relevan dalam SATU query,
-                # lalu kelompokkan per paper_id di sisi Python.
-                paper_ids = {p.id for p in (closest_paper, farthest_paper) if p is not None}
+                # -----------------------------------------------------------------
+                # D. FETCH CHUNKS TERKAIT DALAM 1 QUERY
+                # -----------------------------------------------------------------
+                target_paper_ids = {
+                    pid
+                    for pid in (closest_paper_id, farthest_paper_id)
+                    if pid is not None
+                }
+                chunks_by_paper_id: Dict[Any, List[Dict[str, Any]]] = {}
 
-                chunks_by_paper_id: Dict[Any, List[DocumentChunkORM]] = {}
-                if paper_ids:
+                if target_paper_ids:
                     chunks_stmt = (
-                        select(DocumentChunkORM)
-                        .where(DocumentChunkORM.paper_id.in_(paper_ids))
+                        select(
+                            DocumentChunkORM,
+                            distance_expr.label("distance"),
+                        )
+                        .where(DocumentChunkORM.paper_id.in_(target_paper_ids))
                         .order_by(
                             DocumentChunkORM.paper_id.asc(),
-                            DocumentChunkORM.id.asc(),  # ganti ke chunk_index jika ada
+                            distance_expr.asc(),
                         )
                     )
-                    for chunk in session.execute(chunks_stmt).scalars().all():
-                        chunks_by_paper_id.setdefault(chunk.paper_id, []).append(chunk)
 
-                results: Dict[str, List[Dict[str, Any]]] = {
-                    "closest": [],
-                    "farthest": [],
-                }
+                    for chunk_orm, dist in session.execute(chunks_stmt).all():
+                        chunk_dict = {
+                            column.name: getattr(chunk_orm, column.name)
+                            for column in chunk_orm.__table__.columns
+                        }
+                        chunk_dict["distance"] = float(dist)
+                        chunk_dict["similarity_score"] = float(1 - dist)
+                        chunks_by_paper_id.setdefault(
+                            chunk_orm.paper_id, []
+                        ).append(chunk_dict)
 
-                if closest_paper is not None and closest_distance is not None:
+                # -----------------------------------------------------------------
+                # E. FORMAT HASIL (Mencegah DetachedInstanceError)
+                # -----------------------------------------------------------------
+                if closest_row:
+                    paper_orm, min_dist, weighted_score, count = closest_row
+                    paper_dict = {
+                        column.name: getattr(paper_orm, column.name)
+                        for column in paper_orm.__table__.columns
+                    }
+                    paper_dict["weighted_score"] = float(weighted_score)
+                    paper_dict["matched_chunk_count"] = count
+
                     results["closest"].append(
                         {
-                            "paper": closest_paper,
-                            "distance": closest_distance,
-                            "relevance_score": 1 - closest_distance,
-                            "chunks": chunks_by_paper_id.get(closest_paper.id, []),
+                            "paper": paper_dict,
+                            "distance": float(min_dist),
+                            "relevance_score": float(1 - min_dist),
+                            "chunks": chunks_by_paper_id.get(paper_orm.id, []),
                         }
                     )
 
-                if farthest_paper is not None and farthest_distance is not None and (
-                    closest_paper is None or farthest_paper.id != closest_paper.id
-                ):
+                if farthest_row:
+                    paper_orm, best_dist, worst_dist = farthest_row
+                    paper_dict = {
+                        column.name: getattr(paper_orm, column.name)
+                        for column in paper_orm.__table__.columns
+                    }
+
                     results["farthest"].append(
                         {
-                            "paper": farthest_paper,
-                            "distance": farthest_distance,
-                            "relevance_score": 1 - farthest_distance,
-                            "chunks": chunks_by_paper_id.get(farthest_paper.id, []),
+                            "paper": paper_dict,
+                            "distance": float(best_dist),
+                            "relevance_score": float(1 - best_dist),
+                            "chunks": chunks_by_paper_id.get(paper_orm.id, []),
                         }
                     )
 

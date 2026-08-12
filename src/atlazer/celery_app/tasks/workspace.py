@@ -19,7 +19,7 @@ from atlazer.models.workspace import (
 log = structlog.get_logger()
 
 # import workspace note tasks
-from .workspace_note import *
+from .workspace_notes import *
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ def match_papers_by_context(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     try:
         depot = WorkspaceDepot(db_pool)
         chunks = depot.get_chunks_by_context_id(context_id)
-        matcher = depot.match_context_with_papers(chunks)
+        matcher = depot.match_context_with_papers(chunks=chunks, candidate_pool_size=1000)
 
         # collect all the matched data
         papers = []
