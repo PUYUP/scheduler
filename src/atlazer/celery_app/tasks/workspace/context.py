@@ -580,7 +580,7 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.context.save_paper_summaries",
+    name="atlazer.celery_app.tasks.workspace.context.save_summaries",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -589,8 +589,8 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_paper_summaries(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.context.save_paper_summaries.start")
+def save_summaries(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.context.save_summaries.start")
 
     context_id = metadata.get("context_id")
     workspace_id = metadata.get("workspace_id")
@@ -603,11 +603,11 @@ def save_paper_summaries(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         if results is None:
             raise ValueError("Failed to get results from batch")
     except Exception as e:
-        log.error("workspace.context.save_paper_summaries.error", error=str(e))
+        log.error("workspace.context.save_summaries.error", error=str(e))
         raise ValueError(str(e))
 
     log.info(
-        "workspace.context.save_paper_summaries.batch_results",
+        "workspace.context.save_summaries.batch_results",
         results_count=len(results)
     )
 
@@ -635,8 +635,8 @@ def save_paper_summaries(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             depot = WorkspaceContextDepot(db_pool)
             depot.insert_paper_summaries(payloads)
         except Exception as e:
-            log.error("workspace.context.save_paper_summaries.error", error=str(e))
+            log.error("workspace.context.save_summaries.error", error=str(e))
             raise ValueError(str(e))
 
-    log.info("workspace.context.save_paper_summaries.success", metadata=metadata)
+    log.info("workspace.context.save_summaries.success", metadata=metadata)
     return metadata

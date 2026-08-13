@@ -167,6 +167,7 @@ task_routes = {
     "atlazer.celery_app.tasks.workspace.context.summarize_similarities": {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.context.generate_jsonl":    {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.context.process_jsonl":     {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.context.save_summaries":    {"queue": "workspace"},
 
     # ── Workspace notes tier ──
     "atlazer.celery_app.tasks.workspace.notes.chunking":            {"queue": "workspace"},
