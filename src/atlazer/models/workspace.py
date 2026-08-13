@@ -1,3 +1,4 @@
+from sqlalchemy import TIMESTAMP
 from uuid import UUID
 from sqlalchemy import Integer, String, Index, Float, func, UniqueConstraint
 from sqlalchemy.orm import mapped_column, Mapped
@@ -192,6 +193,11 @@ class NoteChunkORM(Base):
     content: Mapped[str] = mapped_column(String, nullable=False)
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
 
 
 class NotePaperORM(Base):

@@ -20,7 +20,7 @@ log = structlog.get_logger()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 1 of 6 — chunk_note
+# Task 1 of 10 — chunk_note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -62,7 +62,7 @@ def chunking(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 2 of 6 — embed_note
+# Task 2 of 10 — embed_note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -106,7 +106,7 @@ def embedding(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 3 of 6 — save embedding note
+# Task 3 of 10 — save embedding note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -183,7 +183,7 @@ def save_embedding(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 4 of 6 — note paper matcher
+# Task 4 of 10 — note paper matcher
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -244,7 +244,7 @@ def match_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 5 of 6 — save matched papers for notes
+# Task 5 of 10 — save matched papers for notes
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -296,7 +296,7 @@ def save_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 6 of 6 — save note similarities
+# Task 6 of 10 — save note similarities
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -350,4 +350,23 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             )
             raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 7 of 10 — process notes each single day
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.notes.process_daily_notes",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def process_daily_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.notes.process_daily_notes.start")
     return metadata
