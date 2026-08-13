@@ -6,6 +6,7 @@ from datetime import datetime
 from celery import signature
 from fastapi import FastAPI, HTTPException, Request
 
+from atlazer.config.settings import settings
 from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
@@ -131,15 +132,20 @@ async def gemini_batch_webhook(request: Request):
         )
 
         batch_id = data.get("id")
-        user_id = user_metadata.get("user_id")
-        challenge_paper_id = user_metadata.get("challenge_paper_id")
-        paper_summary_id = user_metadata.get("paper_summary_id")
         action = user_metadata.get("action")
 
+        # paper summarizing for challenge
         if action == 'paper_summary_generation':
-            log.info("webapi.gemini-batch-webhook.paper_summary_generation.start", user_metadata=user_metadata)
+            log.info(
+                "webapi.gemini-batch-webhook.paper_summary_generation.start",
+                user_metadata=user_metadata
+            )
 
-            if batch_id and user_id and challenge_paper_id:
+            user_id = user_metadata.get("user_id")
+            challenge_paper_id = user_metadata.get("challenge_paper_id")
+            paper_summary_id = user_metadata.get("paper_summary_id")
+            
+            if user_id and challenge_paper_id:
                 try:
                     results = get_batch_results(batch_id)
                     log.info("webapi.gemini-batch-webhook.result", batch_id=batch_id)
@@ -151,7 +157,7 @@ async def gemini_batch_webhook(request: Request):
                         update_data={
                             "results": results,
                             "tool": "google-gemini",
-                            "model": "gemini-3.1-flash-lite",
+                            "model": settings.gemini_model,
                             "status": "completed",
                             "job_id": batch_id,
                             "finished_at": datetime.now(),
@@ -163,8 +169,12 @@ async def gemini_batch_webhook(request: Request):
                     log.error("webapi.gemini-batch-webhook.error", error=str(e))
                     raise HTTPException(status_code=500, detail=str(e))
 
+        # challenge answer scoring
         if action == "answer_score_generation":
-            log.info("webapi.gemini-batch-webhook.answer_score_generation.start", user_metadata=user_metadata)
+            log.info(
+                "webapi.gemini-batch-webhook.answer_score_generation.start",
+                user_metadata=user_metadata
+            )
 
             metadata = {
                 "job_id": batch_id,
@@ -179,6 +189,22 @@ async def gemini_batch_webhook(request: Request):
 
             log.info("webapi.gemini-batch-webhook.answer_score_generation.success", task_id=job.id)
             return TaskExecutionResponse(task_id=job.id)
+
+        # paper summarizing for papers inside context
+        if action == 'context_papers_summary_generation':
+            log.info(
+                "webapi.gemini-batch-webhook.context_papers_summary_generation.start",
+                user_metadata=user_metadata
+            )
+
+            metadata = {
+                "job_id": batch_id,
+                "output_file_uri": data.get("output_file_uri"),
+                **user_metadata,
+            }
+
+            results = get_batch_results(batch_id)
+            log.info("webapi.gemini-batch-webhook.result", results=results)
 
     return {"ok": True}
 

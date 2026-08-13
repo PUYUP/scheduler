@@ -124,6 +124,21 @@ class ContextSimilarityORM(Base):
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
 
+class ContextPaperSummaryORM(Base):
+    __tablename__ = "context_papers_summaries"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    context_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    paper_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+
+
 """ WORKSPACE NOTES """
 
 

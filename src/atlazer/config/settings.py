@@ -231,6 +231,7 @@ class Settings(BaseSettings):
     onnx_cache_dir: str         = "/app/data/onnx_cache"
 
     # ── Scoring ────────────────────────────────────────────────
+    gemini_model: str           = "gemini-3.6-flash"
     gemini_batch_dir: str       = "/app/gemini_batch"
     
     # ── Logging ────────────────────────────────────────────────

@@ -12,6 +12,7 @@ from atlazer.storage.user import UserDepot
 from atlazer.storage.paper import PaperDepot
 from atlazer.storage.challenge import ChallengeDepot
 from atlazer.utils.gemini_batch import create_batch_job
+from atlazer.config.settings import settings
 
 log = structlog.get_logger(__name__)
 
@@ -306,7 +307,8 @@ def summarize_paper(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             paper_id=paper_id,
             challenge_id=challenge_id,
             challenge_paper_id=challenge_paper_id,
-            paper_summary_id=str(summary.id)
+            paper_summary_id=str(summary.id),
+            model=settings.gemini_model,
         )
 
         metadata.update({

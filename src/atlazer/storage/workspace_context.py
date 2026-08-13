@@ -4,6 +4,7 @@ import structlog
 from uuid import UUID
 from atlazer.models.paper import PaperORM
 
+from collections import defaultdict
 from typing import List, Any, Dict, TypedDict, Optional
 from atlazer.storage.db import DatabasePool
 from atlazer.models.workspace import ContextChunkORM, ContextPaperORM, ContextSimilarityORM
@@ -179,7 +180,10 @@ class WorkspaceContextDepot:
                 )
                 raise e
 
-    def get_chunks_by_context_id(self, context_id: str) -> List[ContextChunkORM]:
+    def get_chunks_by_context_id(
+        self,
+        context_id: str
+    ) -> List[ContextChunkORM]:
         try:
             context_uuid: UUID = uuid.UUID(context_id)
         except ValueError:
@@ -194,6 +198,34 @@ class WorkspaceContextDepot:
         except SQLAlchemyError as e:
             log.error(
                 "context_chunk.error_get_chunks_by_context_id",
+                context_id=context_id,
+                error=str(e),
+            )
+            raise e
+
+    def get_similarities_by_context_id(
+        self, 
+        context_id: str
+    ) -> Dict[Any, List[ContextSimilarityORM]]:
+        try:
+            context_uuid: uuid.UUID = uuid.UUID(context_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {context_id}")
+
+        try:
+            with self._db_pool.session() as session:
+                stmt = select(ContextSimilarityORM).where(ContextSimilarityORM.context_id == context_uuid)
+                result = session.execute(stmt).scalars().all()
+                
+                grouped_result = defaultdict(list)
+                for item in result:
+                    grouped_result[item.paper_id].append(item)
+                    
+                return dict(grouped_result)
+
+        except SQLAlchemyError as e:
+            log.error(
+                "workspace_context.error_get_similarities_by_context_id",
                 context_id=context_id,
                 error=str(e),
             )

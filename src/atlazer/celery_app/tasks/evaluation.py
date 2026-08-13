@@ -10,7 +10,7 @@ from atlazer.storage.paper import PaperDepot
 from atlazer.storage.challenge import ChallengeDepot
 from atlazer.models.evaluation import EvaluationORM
 from atlazer.config.settings import settings
-from atlazer.utils.gemini_batch import upload_chunk_file, scoring_chunk_file, get_batch_results
+from atlazer.utils.gemini_batch import upload_chunk_file, process_jsonl_file, get_batch_results
 from atlazer.models.evaluation import CognitiveAssessment
 
 log = structlog.get_logger()
@@ -228,9 +228,9 @@ def scoring_answer(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         "action": "answer_score_generation",
     }
 
-    job_name = scoring_chunk_file(
+    job_name = process_jsonl_file(
         file_name,
-        model="gemini-3.1-flash-lite",
+        model=settings.gemini_model,
         user_metadata=user_metadata
     )
 

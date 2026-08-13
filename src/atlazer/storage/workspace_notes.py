@@ -4,6 +4,7 @@ import structlog
 from uuid import UUID
 from atlazer.models.paper import PaperORM
 
+from collections import defaultdict
 from typing import List, Any, Dict, TypedDict, Optional
 from atlazer.storage.db import DatabasePool
 from atlazer.models.workspace import NoteChunkORM, NotePaperORM, NoteSimilarityORM
@@ -194,6 +195,34 @@ class WorkspaceNoteDepot:
         except SQLAlchemyError as e:
             log.error(
                 "workspace_note.error_get_chunks_by_note_id",
+                note_id=note_id,
+                error=str(e),
+            )
+            raise e
+
+    def get_similarities_by_note_id(
+        self, 
+        note_id: str
+    ) -> Dict[Any, List[NoteSimilarityORM]]:
+        try:
+            note_uuid: uuid.UUID = uuid.UUID(note_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {note_id}")
+
+        try:
+            with self._db_pool.session() as session:
+                stmt = select(NoteSimilarityORM).where(NoteSimilarityORM.note_id == note_uuid)
+                result = session.execute(stmt).scalars().all()
+                
+                grouped_result = defaultdict(list)
+                for item in result:
+                    grouped_result[item.paper_id].append(item)
+                    
+                return dict(grouped_result)
+
+        except SQLAlchemyError as e:
+            log.error(
+                "workspace_note.error_get_similarities_by_note_id",
                 note_id=note_id,
                 error=str(e),
             )

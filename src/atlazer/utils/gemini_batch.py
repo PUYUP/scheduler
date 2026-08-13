@@ -160,7 +160,7 @@ def _create_jsonl_file(
 
 def create_batch_job(
     documents: Sequence[Sequence[str]],
-    model: str = "gemini-3.1-flash-lite",
+    model: str = "gemini-3.1-pro-preview",
     display_name: Optional[str] = None,
     language_code: str = 'en',
     user_id: Optional[str] = None,
@@ -363,6 +363,7 @@ def get_batch_results(job_name: str) -> list[dict[str, Any]]:
                 line_obj = json.loads(line)
             except json.JSONDecodeError:
                 results.append({
+                    "key": None,
                     "result": f"JSON_ERROR: Gagal parse baris {line_num} -> {line}",
                     "metadata": dict(empty_metadata),
                 })
@@ -370,6 +371,7 @@ def get_batch_results(job_name: str) -> list[dict[str, Any]]:
 
             if line_obj.get("error"):
                 results.append({
+                    "key": line_obj.get("key", None),
                     "result": f"ERROR: {line_obj['error']}",
                     "metadata": dict(empty_metadata),
                 })
@@ -378,6 +380,7 @@ def get_batch_results(job_name: str) -> list[dict[str, Any]]:
             response_dict = line_obj.get("response", {})
             response_text = _extract_text_from_file_line(response_dict)
             results.append({
+                "key": line_obj.get("key", None),
                 "result": _parse_response_text(response_text),
                 "metadata": _metadata_from_file_line(response_dict),
             })
@@ -389,13 +392,17 @@ def get_batch_results(job_name: str) -> list[dict[str, Any]]:
         logger.info(f"Hasil batch job {job_name} bersifat inline.")
 
         for inline_response in job.dest.inlined_responses:
+            key = getattr(inline_response, "key", None)
+
             if inline_response.response:
                 results.append({
+                    "key": key,
                     "result": _parse_response_text(inline_response.response.text),
                     "metadata": _metadata_from_sdk_response(inline_response.response),
                 })
             else:
                 results.append({
+                    "key": key,
                     "result": f"ERROR: {inline_response.error}",
                     "metadata": dict(empty_metadata),
                 })
@@ -433,9 +440,9 @@ def upload_chunk_file(local_file_path: str, display_name: str) -> str | None:
         return None
 
 
-def scoring_chunk_file(
+def process_jsonl_file(
     file_name: str,
-    model: str = "gemini-3.1-flash-lite",
+    model: str = "gemini-3.1-pro-preview",
     user_metadata: Optional[Dict[str, Any]] = None
 ) -> str | None:
     try:
