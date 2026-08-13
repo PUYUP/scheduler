@@ -10,7 +10,8 @@ from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
 from atlazer.celery_app.tasks.challenge import chunk_answer
-from atlazer.celery_app.tasks.workspace import chunk_context, chunk_note
+from atlazer.celery_app.tasks.workspace.context import chunking as chunking_context
+from atlazer.celery_app.tasks.workspace.notes import chunking as chunking_notes
 from atlazer.celery_app.tasks.evaluation import save_evaluation
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
@@ -232,29 +233,29 @@ def embed_context(payload: EmbedContextRequest):
         log.info("webapi.embed-context.start", payload=payload.model_dump())
 
         job = (
-            chunk_context.s(payload.model_dump()).set(queue="workspace")
+            chunking_context.s(payload.model_dump()).set(queue="workspace")
             | signature(
-                "atlazer.celery_app.tasks.workspace.embed_context",
+                "atlazer.celery_app.tasks.workspace.context.embedding",
                 queue="workspace",
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.save_embedding_context",
+                "atlazer.celery_app.tasks.workspace.context.save_embedding",
                 queue="workspace",
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.match_papers_by_context",
+                "atlazer.celery_app.tasks.workspace.context.match_papers",
                 queue="workspace",
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.save_context_papers",
+                "atlazer.celery_app.tasks.workspace.context.save_papers",
                 queue="workspace",
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.save_context_similarities",
+                "atlazer.celery_app.tasks.workspace.context.save_similarities",
                 queue="workspace",
                 immutable=False,
             )
@@ -276,29 +277,29 @@ def embed_note(payload: EmbedNoteRequest):
         log.info("webapi.embed-note.start", payload=payload.model_dump())
 
         job = (
-            chunk_note.s(payload.model_dump()).set(queue="workspace")
+            chunking_notes.s(payload.model_dump()).set(queue="workspace")
             | signature(
-                "atlazer.celery_app.tasks.workspace.embed_note",
+                "atlazer.celery_app.tasks.workspace.notes.embedding",
                 queue="workspace",
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.save_embedding_note",
+                "atlazer.celery_app.tasks.workspace.notes.save_embedding",
                 queue="workspace",
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.match_papers_by_note",
+                "atlazer.celery_app.tasks.workspace.notes.match_papers",
                 queue="workspace",
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.save_note_papers",
+                "atlazer.celery_app.tasks.workspace.notes.save_papers",
                 queue="workspace",
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.save_note_similarities",
+                "atlazer.celery_app.tasks.workspace.notes.save_similarities",
                 queue="workspace",
                 immutable=False,
             )

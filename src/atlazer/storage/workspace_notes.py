@@ -37,9 +37,9 @@ class WorkspaceNoteDepot:
     def __init__(self, db_pool: DatabasePool):
         self._db_pool = db_pool
 
-    def bulk_insert_chunks(self, values: List[NoteChunkORM]) -> None:
+    def insert_note_chunks(self, values: List[NoteChunkORM]) -> None:
         if not values:
-            log.info("workspace.bulk_insert_chunks.empty_list")
+            log.info("workspace.insert_note_chunks.empty_list")
             return
 
         note_keys = list({
@@ -74,21 +74,21 @@ class WorkspaceNoteDepot:
                 session.commit()
 
                 log.info(
-                    "workspace.bulk_insert_note_chunks.finish_upsert",
+                    "workspace.insert_note_chunks.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.bulk_insert_chunks.error_upsert",
+                    "workspace.insert_chunks.error_upsert",
                     error=str(e),
                 )
                 raise e
 
-    def bulk_insert_papers(self, values: List[NotePaperORM]) -> None:
+    def insert_note_papers(self, values: List[NotePaperORM]) -> None:
         if not values:
-            log.info("workspace.bulk_insert_note_papers.empty_list")
+            log.info("workspace.insert_note_papers.empty_list")
             return
 
         note_keys = list({(chunk.user_id, chunk.note_id) for chunk in values})
@@ -115,24 +115,24 @@ class WorkspaceNoteDepot:
                 session.commit()
 
                 log.info(
-                    "workspace.bulk_insert_notes_papers.finish_upsert",
+                    "workspace.insert_notes_papers.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.bulk_insert_notes_papers.error_upsert",
+                    "workspace.insert_note_papers.error_upsert",
                     error=str(e),
                 )
                 raise e
 
-    def bulk_insert_similarities(
+    def insert_note_similarities(
         self,
         values: List[NoteSimilarityORM]
     ) -> None:
         if not values:
-            log.info("workspace.bulk_insert_notes_similarities.empty_list")
+            log.info("workspace.insert_note_similarities.empty_list")
             return
 
         note_keys = list({(chunk.user_id, chunk.note_id, chunk.workspace_id, chunk.note_chunk_id) for chunk in values})
@@ -167,14 +167,14 @@ class WorkspaceNoteDepot:
                 session.commit()
 
                 log.info(
-                    "workspace.bulk_insert_notes_similarities.finish_upsert",
+                    "workspace.insert_notes_similarities.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.bulk_insert_notes_similarities.error_upsert",
+                    "workspace.insert_notes_similarities.error_upsert",
                     error=str(e),
                 )
                 raise e

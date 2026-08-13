@@ -1,8 +1,8 @@
-from atlazer.celery_app.tasks.workspace import (
-    chunk_context,
-    embed_context,
-    save_embedding_context,
-    match_papers_by_context,
+from atlazer.celery_app.tasks.workspace.context import (
+    chunking,
+    embedding,
+    save_embedding,
+    match_papers,
 )
 
 
@@ -21,14 +21,14 @@ def main():
         "language_code": language_code
     }
 
-    # chunk_result = chunk_context(metadata=metadata)
+    # chunk_result = chunking(metadata=metadata)
     # metadata.update({"chunks": chunk_result["chunks"]})
 
-    # embedded_result = embed_context(metadata=metadata)
+    # embedded_result = embedding(metadata=metadata)
     # metadata.update({"chunks": embedded_result["chunks"]})
 
-    # save_embedding_context(metadata=metadata)
-    res = match_papers_by_context(metadata=metadata)
+    # save_embedding(metadata=metadata)
+    res = match_papers(metadata=metadata)
     print(res)
 
 if __name__ == "__main__":

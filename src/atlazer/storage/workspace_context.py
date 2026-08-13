@@ -32,14 +32,14 @@ class MatchResultDict(TypedDict):
     similar_chunks: List[SimilarChunkDict]
 
 
-class WorkspaceDepot:
+class WorkspaceContextDepot:
 
     def __init__(self, db_pool: DatabasePool):
         self._db_pool = db_pool
 
-    def bulk_insert_chunks(self, values: List[ContextChunkORM]) -> None:
+    def insert_context_chunks(self, values: List[ContextChunkORM]) -> None:
         if not values:
-            log.info("workspace.bulk_insert_context_chunks.empty_list")
+            log.info("workspace.insert_context_chunks.empty_list")
             return
 
         context_keys = list({
@@ -74,21 +74,21 @@ class WorkspaceDepot:
                 session.commit()
 
                 log.info(
-                    "workspace.bulk_insert_context_chunks.finish_upsert",
+                    "workspace.insert_context_chunks.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.bulk_insert_context_chunks.error_upsert",
+                    "workspace.insert_context_chunks.error_upsert",
                     error=str(e),
                 )
                 raise e
 
-    def bulk_insert_papers(self, values: List[ContextPaperORM]) -> None:
+    def insert_context_papers(self, values: List[ContextPaperORM]) -> None:
         if not values:
-            log.info("workspace.bulk_insert_context_papers.empty_list")
+            log.info("workspace.insert_context_papers.empty_list")
             return
 
         context_keys = list({(chunk.user_id, chunk.context_id) for chunk in values})
@@ -115,24 +115,24 @@ class WorkspaceDepot:
                 session.commit()
 
                 log.info(
-                    "workspace.bulk_insert_context_papers.finish_upsert",
+                    "workspace.insert_context_papers.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.bulk_insert_context_papers.error_upsert",
+                    "workspace.insert_context_papers.error_upsert",
                     error=str(e),
                 )
                 raise e
 
-    def bulk_insert_similarities(
+    def insert_context_similarities(
         self,
         values: List[ContextSimilarityORM]
     ) -> None:
         if not values:
-            log.info("workspace.bulk_insert_context_similarities.empty_list")
+            log.info("workspace.insert_context_similarities.empty_list")
             return
 
         context_keys = list({(chunk.user_id, chunk.context_id, chunk.workspace_id, chunk.context_chunk_id) for chunk in values})
@@ -167,14 +167,14 @@ class WorkspaceDepot:
                 session.commit()
 
                 log.info(
-                    "workspace.bulk_insert_context_similarities.finish_upsert",
+                    "workspace.insert_context_similarities.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.bulk_insert_similarities.error_upsert",
+                    "workspace.insert_similarities.error_upsert",
                     error=str(e),
                 )
                 raise e

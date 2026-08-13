@@ -48,7 +48,8 @@ def create_celery_app() -> Celery:
         "atlazer.celery_app.tasks.matcher",
         "atlazer.celery_app.tasks.challenge",
         "atlazer.celery_app.tasks.evaluation",
-        "atlazer.celery_app.tasks.workspace",
+        "atlazer.celery_app.tasks.workspace.context",
+        "atlazer.celery_app.tasks.workspace.notes",
     ]
     _configure_queues(app)
     _configure_beat_schedule(app)
@@ -279,7 +280,8 @@ _TIER_PREFIXES = {
     "atlazer.celery_app.tasks.matcher.":    "matcher",
     "atlazer.celery_app.tasks.challenge.":  "challenge",
     "atlazer.celery_app.tasks.evaluation.": "evaluation",
-    "atlazer.celery_app.tasks.workspace.":  "workspace",
+    "atlazer.celery_app.tasks.workspace.context.": "workspace",
+    "atlazer.celery_app.tasks.workspace.notes.":   "workspace",
 }
 
 

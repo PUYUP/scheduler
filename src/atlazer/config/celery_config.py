@@ -20,7 +20,8 @@ imports = (
     "atlazer.celery_app.tasks.matcher",
     "atlazer.celery_app.tasks.challenge",
     "atlazer.celery_app.tasks.evaluation",
-    "atlazer.celery_app.tasks.workspace",
+    "atlazer.celery_app.tasks.workspace.context",
+    "atlazer.celery_app.tasks.workspace.notes",
     "atlazer.celery_app.tasks.maintenance",
 )
 
@@ -94,7 +95,13 @@ task_annotations = {
         "time_limit": 3600,
         "soft_time_limit": 3300,
     },
-    "atlazer.celery_app.tasks.workspace.*": {
+    "atlazer.celery_app.tasks.workspace.context.*": {
+        "max_retries": 3,
+        "default_retry_delay": 60,
+        "time_limit": 3600,
+        "soft_time_limit": 3300,
+    },
+    "atlazer.celery_app.tasks.workspace.notes.*": {
         "max_retries": 3,
         "default_retry_delay": 60,
         "time_limit": 3600,
@@ -150,20 +157,21 @@ task_routes = {
     "atlazer.celery_app.tasks.evaluation.scoring_answer":           {"queue": "evaluation"},
     "atlazer.celery_app.tasks.evaluation.save_evaluation":          {"queue": "evaluation"},
 
-    # ── Workspace tier ──
-    "atlazer.celery_app.tasks.workspace.chunk_context":             {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.embed_context":             {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.save_embedding_context":    {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.match_papers_by_context":   {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.save_context_papers":       {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.save_context_similarities": {"queue": "workspace"},
+    # ── Workspace context tier ──
+    "atlazer.celery_app.tasks.workspace.context.chunking":          {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.context.embedding":         {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.context.save_embedding":    {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.context.match_papers":      {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.context.save_papers":       {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.context.save_similarities": {"queue": "workspace"},
 
-    "atlazer.celery_app.tasks.workspace.chunk_note":                {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.embed_note":                {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.save_embedding_note":       {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.match_papers_by_note":      {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.save_note_papers":          {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.save_note_similarities":    {"queue": "workspace"},
+    # ── Workspace notes tier ──
+    "atlazer.celery_app.tasks.workspace.notes.chunking":            {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.embedding":           {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.save_embedding":      {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.match_papers":        {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.save_papers":         {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.save_similarities":   {"queue": "workspace"},
 
     # ── Arxiv Task ──
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.fetch_page":       {"queue": "arxiv"},

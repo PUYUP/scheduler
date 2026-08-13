@@ -5,7 +5,7 @@ import structlog
 from typing import Dict, Any, List
 
 from atlazer.celery_app.main import app, db_pool
-from atlazer.utils.stanza_chunker import chunk_content as stanza_chunk_note
+from atlazer.utils.stanza_chunker import chunk_content
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
 from atlazer.storage.workspace_notes import WorkspaceNoteDepot
@@ -20,11 +20,11 @@ log = structlog.get_logger()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 1 of 7 — chunk_note
+# Task 1 of 6 — chunk_note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.chunk_note",
+    name="atlazer.celery_app.tasks.workspace.notes.chunking",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -33,14 +33,14 @@ log = structlog.get_logger()
     soft_time_limit=1700,
     ignore_result=False,
 )
-def chunk_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+def chunking(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     validated = ChunkNoteMetadata.model_validate(metadata)
     content = validated.content
     language_code = validated.language_code
 
-    log.info("workspace.chunk_note.start", metadata=validated.model_dump())
+    log.info("workspace.notes.chunking.start", metadata=validated.model_dump())
 
-    chunks = stanza_chunk_note(
+    chunks = chunk_content(
         text=content,
         lang=language_code,
         semantic=True,
@@ -53,7 +53,7 @@ def chunk_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     validated.chunks = [{"text": chunk} for chunk in chunks]
 
     log.info(
-        "workspace.chunk_note.done",
+        "workspace.notes.chunking.done",
         chunk_count=len(validated.chunks),
         metadata=validated.model_dump()
     )
@@ -66,7 +66,7 @@ def chunk_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.embed_note",
+    name="atlazer.celery_app.tasks.workspace.notes.embedding",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -75,8 +75,9 @@ def chunk_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def embed_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+def embedding(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     chunks = metadata.get("chunks", [])
+    log.info("workspace.notes.embedding.start", metadata=metadata)
 
     if not chunks:
         raise ValueError("No chunks to embed")
@@ -85,7 +86,7 @@ def embed_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         embedded_chunks = chunks_to_vector(chunks)
     except Exception as exc:
         log.error(
-            "workspace.embed_note.failed",
+            "workspace.notes.embedding.failed",
             metadata=metadata,
             error=str(exc),
             attempt=self.request.retries,
@@ -94,7 +95,7 @@ def embed_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
     log.info(
-        "workspace.embed_note.done",
+        "workspace.notes.embedding.done",
         embedded=len(embedded_chunks),
         dim=embedded_chunks[0]["embedding_dim"] if embedded_chunks else 0,
         metadata=metadata,
@@ -109,7 +110,7 @@ def embed_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.save_embedding_note",
+    name="atlazer.celery_app.tasks.workspace.notes.save_embedding",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -118,8 +119,8 @@ def embed_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_embedding_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.save_embedding_note.start")
+def save_embedding(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.notes.save_embedding.start")
 
     chunks = metadata.get('chunks')
     user_id = metadata.get('user_id')
@@ -127,11 +128,11 @@ def save_embedding_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     workspace_id = metadata.get('workspace_id')
 
     if not chunks:
-        log.warning("workspace.save_embedding_note.no_chunks", metadata=metadata)
+        log.warning("workspace.save_embedding_notes.no_chunks", metadata=metadata)
         raise ValueError("No chunks to save")
 
     if not user_id or not note_id or not workspace_id:
-        log.warning("workspace.save_embedding_note.missing_user_id_or_note_id_or_workspace_id", metadata=metadata)
+        log.warning("workspace.save_embedding_notes.missing_user_id_or_note_id_or_workspace_id", metadata=metadata)
         raise ValueError("Missing user_id or note_id or workspace_id")
     
     try:
@@ -139,10 +140,10 @@ def save_embedding_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         note_uuid = uuid.UUID(str(note_id))
         workspace_uuid = uuid.UUID(str(workspace_id))
     except ValueError as exc:
-        log.error("workspace.save_embedding_note.invalid_uuid", metadata=metadata, error=str(exc))
+        log.error("workspace.notes.save_embedding.invalid_uuid", metadata=metadata, error=str(exc))
         raise ValueError("Invalid UUID string format")
 
-    log.info("workspace.save_embedding_note.mapping_payloads")
+    log.info("workspace.notes.save_embedding.mapping_payloads")
     payloads: List[NoteChunkORM] = []
     for chunk in chunks:
         attributes = {
@@ -166,17 +167,17 @@ def save_embedding_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         depot = WorkspaceNoteDepot(db_pool)
-        depot.bulk_insert_chunks(payloads)
+        depot.insert_note_chunks(payloads)
     except Exception as exc:
         log.error(
-            "workspace.save_embedding_note.failed",
+            "workspace.notes.save_embedding.failed",
             metadata=metadata,
             error=str(exc),
             attempt=self.request.retries,
         )
         raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
-    log.info("workspace.save_embedding_note.done", metadata=metadata)
+    log.info("workspace.notes.save_embedding.done", metadata=metadata)
 
     return metadata
 
@@ -186,7 +187,7 @@ def save_embedding_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.match_papers_by_note",
+    name="atlazer.celery_app.tasks.workspace.notes.match_papers",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -195,14 +196,14 @@ def save_embedding_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def match_papers_by_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.match_papers_by_note.start", metadata=metadata)
+def match_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.notes.match_papers.start", metadata=metadata)
 
     note_id = metadata.get("note_id")
     workspace_id = metadata.get("workspace_id")
 
     if not note_id or not workspace_id:
-        log.info("workspace.missing_required_field")
+        log.info("workspace.notes.match_papers.missing_required_field")
         raise ValueError("Missing note_id or workspace_id")
 
     try:
@@ -232,7 +233,7 @@ def match_papers_by_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         }
     except Exception as exc:
         log.error(
-            "workspace.match_papers_by_note.failed",
+            "workspace.notes.match_papers.failed",
             metadata=metadata,
             error=str(exc),
             attempt=self.request.retries,
@@ -247,7 +248,7 @@ def match_papers_by_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.save_note_papers",
+    name="atlazer.celery_app.tasks.workspace.notes.save_papers",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -256,8 +257,8 @@ def match_papers_by_note(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_note_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.save_note_papers.start")
+def save_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.notes.save_papers.start")
 
     note_id = metadata.get("note_id")
     workspace_id = metadata.get("workspace_id")
@@ -266,7 +267,7 @@ def save_note_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     papers = matched_result.get("papers", [])
 
     if papers:
-        log.info("workspace.save_note_papers.inserting_data", payload_count=len(papers))
+        log.info("workspace.notes.save_papers.inserting_data", payload_count=len(papers))
         payloads: List[NotePaperORM] = []
 
         # payloads enrichment
@@ -281,10 +282,10 @@ def save_note_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             depot = WorkspaceNoteDepot(db_pool)
-            depot.bulk_insert_papers(payloads)
+            depot.insert_note_papers(payloads)
         except Exception as exc:
             log.error(
-                "workspace.save_note_papers.failed",
+                "workspace.notes.save_papers.failed",
                 metadata=metadata,
                 error=str(exc),
                 attempt=self.request.retries,
@@ -299,7 +300,7 @@ def save_note_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.save_note_similarities",
+    name="atlazer.celery_app.tasks.workspace.notes.save_similarities",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -308,8 +309,8 @@ def save_note_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_note_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.save_note_similarities.start")
+def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.notes.save_similarities.start")
 
     note_id = metadata.get("note_id")
     workspace_id = metadata.get("workspace_id")
@@ -318,7 +319,7 @@ def save_note_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     similar_chunks = matched_result.get("similar_chunks", [])
 
     if similar_chunks:
-        log.info("workspace.save_note_similarities.inserting_data", payload_count=len(similar_chunks))
+        log.info("workspace.notes.save_similarities.inserting_data", payload_count=len(similar_chunks))
         payloads: List[NoteSimilarityORM] = []
 
         # payloads enrichment
@@ -339,10 +340,10 @@ def save_note_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             depot = WorkspaceNoteDepot(db_pool)
-            depot.bulk_insert_similarities(payloads)
+            depot.insert_note_similarities(payloads)
         except Exception as exc:
             log.error(
-                "workspace.save_note_similarities.failed",
+                "workspace.notes.save_similarities.failed",
                 metadata=metadata,
                 error=str(exc),
                 attempt=self.request.retries,
