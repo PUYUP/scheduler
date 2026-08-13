@@ -4,7 +4,7 @@ from atlazer.utils.gemini_batch import get_batch_results
 
 def batching_check():
     client = genai.Client()
-    job_name = "batches/fbzf7ytlyh4ta0ygibm5o6a4xanof5o6k0s7"
+    job_name = "batches/3tto78dkeshbyyqv3dhzkjv5llu9gvq46nvz"
     batch_job = client.batches.get(name=job_name)
     xxxxx = get_batch_results(job_name)
     print(xxxxx)

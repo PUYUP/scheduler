@@ -7,7 +7,12 @@ from atlazer.models.paper import PaperORM
 from collections import defaultdict
 from typing import List, Any, Dict, TypedDict, Optional
 from atlazer.storage.db import DatabasePool
-from atlazer.models.workspace import ContextChunkORM, ContextPaperORM, ContextSimilarityORM
+from atlazer.models.workspace import (
+    ContextChunkORM,
+    ContextPaperORM,
+    ContextSimilarityORM,
+    ContextPaperSummaryORM
+)
 from atlazer.models.document import DocumentChunkORM
 
 from sqlalchemy import tuple_, insert, select, func
@@ -176,6 +181,51 @@ class WorkspaceContextDepot:
                 session.rollback()
                 log.error(
                     "workspace.insert_similarities.error_upsert",
+                    error=str(e),
+                )
+                raise e
+
+    def insert_paper_summaries(
+        self,
+        values: List[ContextPaperSummaryORM]
+    ) -> None:
+        if not values:
+            log.info("workspace.insert_paper_summaries.empty_list")
+            return
+
+        context_keys = list({(chunk.context_id, chunk.workspace_id) for chunk in values})
+        rows = [
+            {
+                "workspace_id": chunk.workspace_id,
+                "context_id": chunk.context_id,
+                "content": chunk.content,
+                "paper_id": chunk.paper_id,
+                "attributes": chunk.attributes,
+            }
+            for chunk in values
+        ]
+
+        with self._db_pool.session() as session:
+            try:
+                session.query(ContextPaperSummaryORM).filter(
+                    tuple_(
+                        ContextPaperSummaryORM.context_id,
+                        ContextPaperSummaryORM.workspace_id,
+                    ).in_(context_keys)
+                ).delete(synchronize_session=False)
+
+                session.execute(insert(ContextPaperSummaryORM), rows)
+                session.commit()
+
+                log.info(
+                    "workspace.insert_paper_summaries.finish_upsert",
+                    count=len(values),
+                )
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace.insert_paper_summaries.error_upsert",
                     error=str(e),
                 )
                 raise e

@@ -456,6 +456,11 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                                 "text": "You are a scientific research assistant."
                             },
                             {
+                                "text": f"Analyze the provided excerpts from a scientific paper based on the given context. First, infer the main research topic or field represented by the excerpts. Then, summarize only the key findings, concepts, methods, or evidence that are explicitly supported by the provided excerpts and relevant to the context. Briefly explain why the excerpts are relevant to the context, using only evidence found in the excerpts.\n"
+                                        f"Do not assume, invent, or infer specific facts that are not supported by the excerpts. Do not present general knowledge, speculation, or assumptions as findings from the paper. If the excerpts are insufficient to determine something, explicitly state that the available excerpts do not provide enough information. Do not treat these excerpts as representative of the entire paper.\n"
+                                        f"Use cautious language when making interpretations, such as 'the excerpts suggest' or 'the provided excerpts indicate', when the evidence is indirect or incomplete. Use Markdown formatting when it improves clarity or organization."
+                            },
+                            {
                                 "text": f"1. Translate and write all the values in the JSON output strictly in the "
                                         f"language corresponding to this language code/name: '{language_code}'. "
                                         "Only translate the values, keep the JSON keys strictly as defined in the schema.\n"
@@ -468,6 +473,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                                         "'machine learning', 'zero-shot learning', 'overfitting', 'framework', etc.) if translating "
                                         "them would make the text sound awkward, forced, or lose its precise scientific meaning "
                                         "in the target language. Keep these terms in their original English/technical form."
+                                        "4. Do not embed images using Base64, data URIs, or any other encoded image format. If a visual representation is necessary, use inline SVG instead."
                             },
                             {
                                 "text": document
@@ -586,6 +592,8 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 def save_paper_summaries(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("workspace.context.save_paper_summaries.start")
 
+    context_id = metadata.get("context_id")
+    workspace_id = metadata.get("workspace_id")
     job_id = metadata.get("job_id")
     if job_id is None:
         raise ValueError("Failed to get job id from metadata")
@@ -608,23 +616,27 @@ def save_paper_summaries(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     for res in results:
         key = res.get("key", None)  # <workspace_id>_<context_id>_<paper_id>
         if key:
-            workspace_id, context_id, paper_id = key.split("_", 2)
+            paper_id = key.split("_")[-1]
             result = res.get("result", {})
-            summary = result.get("summary", None)
-            metadata = res.get("metadata", {})
-            usage_metadata = res.get("usage_metadata", {})
+            summary = result.get("summary", None) if isinstance(result, dict) else None
+            attributes = res.get("metadata", {})
 
             payload: ContextPaperSummaryORM = ContextPaperSummaryORM(
                 workspace_id=workspace_id,
                 context_id=context_id,
                 paper_id=paper_id,
                 content=summary,
-                attributes={"metadata": usage_metadata}
+                attributes=attributes
             )
             payloads.append(payload)
 
     if payloads:
-        pass
+        try:
+            depot = WorkspaceContextDepot(db_pool)
+            depot.insert_paper_summaries(payloads)
+        except Exception as e:
+            log.error("workspace.context.save_paper_summaries.error", error=str(e))
+            raise ValueError(str(e))
 
     log.info("workspace.context.save_paper_summaries.success", metadata=metadata)
     return metadata
