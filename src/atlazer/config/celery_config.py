@@ -180,6 +180,7 @@ task_routes = {
     "atlazer.celery_app.tasks.workspace.notes.generate_jsonl":      {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.process_jsonl":       {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.save_enrichments":    {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.update_next_processing": {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.process_workspaces":  {"queue": "workspace"},
 
     # ── Arxiv Task ──

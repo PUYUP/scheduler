@@ -6,6 +6,7 @@ Import this module everywhere: `celery -A atlazer.celery_app.main ...`
 """
 
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import (
     setup_logging,
     worker_ready,
@@ -140,8 +141,6 @@ def _configure_beat_schedule(app: Celery) -> None:
         "matcher-batch": {
             "task": "atlazer.celery_app.tasks.matcher.batch_user",
             "schedule": 7200,
-            "args": [],
-            "kwargs": {},
             "options": {"queue": "matcher"},
         },
         # ── Retry dead-letter queue items every hour ──
@@ -219,6 +218,12 @@ def _configure_beat_schedule(app: Celery) -> None:
         #     "args": ["dlx.iaescore"],
         #     "options": {"queue": "default"},
         # },
+
+        "process-workspaces-notes-midnight": {
+            "task": "atlazer.celery_app.tasks.workspace.notes.process_workspaces",
+            "schedule": crontab(hour=0, minute=0),
+            "options": {"queue": "workspace"},
+        },
 
         # ── Housekeeping (purge_old_pdfs, pipeline_health) ──
         **MAINTENANCE_BEAT_SCHEDULE,

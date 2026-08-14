@@ -12,7 +12,7 @@ from pathlib import Path
 from decimal import Decimal
 from uuid import UUID
 from collections import defaultdict
-from celery import group
+from celery import group, chord
 
 from atlazer.utils.gemini_batch import upload_chunk_file, process_jsonl_file, get_batch_results
 from atlazer.utils.notes_clustering import NotesClusteringService
@@ -35,7 +35,7 @@ log = structlog.get_logger()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 1 of 11 — chunk_note
+# Task 1 of 12 — chunk_note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -77,7 +77,7 @@ def chunking(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 2 of 11 — embed_note
+# Task 2 of 12 — embed_note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -121,7 +121,7 @@ def embedding(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 3 of 11 — save embedding note
+# Task 3 of 12 — save embedding note
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -198,7 +198,7 @@ def save_embedding(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 4 of 11 — note paper matcher
+# Task 4 of 12 — note paper matcher
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -259,7 +259,7 @@ def match_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 5 of 11 — save matched papers for notes
+# Task 5 of 12 — save matched papers for notes
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -311,7 +311,7 @@ def save_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 6 of 11 — save note similarities
+# Task 6 of 12 — save note similarities
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -369,7 +369,7 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 7 of 11 — dedup daily notes
+# Task 7 of 12 — dedup daily notes
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -459,7 +459,7 @@ def deduplicate_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 8 of 11 — generate jsonl
+# Task 8 of 12 — generate jsonl
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -528,7 +528,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 9 of 11 — process jsonl file
+# Task 9 of 12 — process jsonl file
 # ─────────────────────────────────────────────────────────────────────────────#
 
 @app.task(
@@ -575,7 +575,7 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 10 of 11 — save notes content enrichments to database
+# Task 10 of 12 — save notes content enrichments to database
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -686,7 +686,66 @@ def save_enrichments(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 11 of 11 — getting workspace next notes processing
+# Task 11 of 12 — update next processing workspace
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.notes.update_next_processing",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+)
+def update_next_processing(
+    self,
+    results,
+    processed_workspaces: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Callback chord: dijalankan otomatis setelah SEMUA task
+    deduplicate_notes di grup selesai (sukses).
+    `results` = list hasil balik dari tiap task deduplicate_notes.
+    """
+    log.info(
+        "workspace.notes.update_next_processing.start",
+        results_count=len(results) if results else 0,
+    )
+
+    try:
+        now = datetime.now()
+        today_midnight = datetime.combine(now.date(), time.min)
+        default_next = today_midnight + timedelta(days=1)
+
+        updates = []
+        for ws in processed_workspaces:
+            current_next_str = ws.get("next_notes_processing_at")
+
+            if current_next_str:
+                current_next = datetime.fromisoformat(current_next_str)
+                new_next = current_next + timedelta(hours=24)
+            else:
+                new_next = default_next
+
+            updates.append(
+                WorkspaceORM(id=ws.get("id"), next_notes_processing_at=new_next)
+            )
+
+        depot = WorkspaceDepot(db_pool)
+        depot.update_bulk(updates)
+
+        log.info(
+            "workspace.notes.update_next_processing.done",
+            updated_count=len(updates),
+        )
+    except Exception as e:
+        log.error("workspace.notes.update_next_processing.error", error=str(e))
+        raise ValueError(str(e))
+
+    return {"updated_workspaces_count": len(updates)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 12 of 12 — getting workspace next notes processing
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -708,7 +767,7 @@ def process_workspaces(self) -> Dict[str, Any]:
     try:
         depot = WorkspaceDepot(db_pool)
         workspaces = depot.get_for_notes_processing()
-        
+
         log.info(
             "workspace.notes.process_workspaces.workspaces",
             workspaces_count=len(workspaces)
@@ -730,30 +789,18 @@ def process_workspaces(self) -> Dict[str, Any]:
         raise ValueError(str(e))
 
     if processed_workspaces:
-        # process each workspace
-        job = group(
+        header = group(
             deduplicate_notes.s(
                 workspace_id=ws.get("id", None),
                 language_code=ws.get("language_code", "en"),
-            ).set(queue="workspace") for ws in processed_workspaces
+            ).set(queue="workspace")
+            for ws in processed_workspaces
         )
 
-        job.apply_async()
+        callback = update_next_processing.s(processed_workspaces).set(queue="workspace")
+
+        job = chord(header)(callback)
         metadata["process_workspaces_job_id"] = job.id
-
-        # update workspaces next_processing time
-        try:
-            now = datetime.now()
-            today_midnight = datetime.combine(now.date(), time.min)
-            tomorrow_midnight = today_midnight + timedelta(days=1)
-
-            depot = WorkspaceDepot(db_pool)
-            depot.update_bulk(
-                [WorkspaceORM(id=ws.get("id"), next_notes_processing_at=tomorrow_midnight) for ws in processed_workspaces]
-            )
-        except Exception as e:
-            log.error("workspace.notes.process_workspaces.error", error=str(e))
-            raise ValueError(str(e))
 
     return metadata
 
