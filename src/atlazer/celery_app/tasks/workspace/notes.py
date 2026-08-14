@@ -648,6 +648,7 @@ def save_enrichments(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         workspace_id, cdate, clabel, note_id = match.groups()
 
         # map raw chunks
+        chunks = chunk_groups[clabel]
         if clabel == '-1' and note_id:
             chunks = [c for c in chunks if c["note_id"] == note_id]
 

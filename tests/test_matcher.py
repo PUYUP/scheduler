@@ -49,12 +49,12 @@ def main():
     #     user_depot = UserDepot(db_pool)
     #     # Set next processed at to 48 hours from now, to prevent updating
     #     # frequently
-    #     next_processed_at = datetime.now(timezone.utc) + timedelta(hours=48)
+    #     next_processing_at = datetime.now(timezone.utc) + timedelta(hours=48)
     #     user_depot.update_profile(
     #         profile_id, 
     #         ProfileUpdate(
     #             interest_embedding=embedding, 
-    #             next_processed_at=next_processed_at
+    #             next_processing_at=next_processing_at
     #         )
     #     )
     #     print('OK')

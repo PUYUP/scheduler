@@ -186,7 +186,7 @@ def batch_user(self) -> Dict[str, int]:
             language_code = prof.get("language_code", "en")
             subscription_attributes = prof.get("subscription_attributes", {})
             challenge_interval = subscription_attributes.get("challengeInterval", 168)
-            next_processed_at = datetime.now() + timedelta(hours=challenge_interval)
+            next_processing_at = datetime.now() + timedelta(hours=challenge_interval)
 
             if embed is None or len(embed) == 0:
                 log.error("matcher.batch_user.no_embedding", profile_id=profile_id)
@@ -209,7 +209,7 @@ def batch_user(self) -> Dict[str, int]:
             tasks_to_run.append(single_user.s(payload).set(queue="matcher"))
 
             # collect profile id for bulk update
-            payload = ProfileUpdate(next_processed_at=next_processed_at)
+            payload = ProfileUpdate(next_processing_at=next_processing_at)
             profile_update_payloads.append((profile_id, payload))
 
         processed_count = len(tasks_to_run)

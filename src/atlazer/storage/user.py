@@ -27,7 +27,7 @@ class UserDepot:
     def _values(self, payload: ProfileUpdate) -> dict:
         return {
             "interest_embedding": payload.interest_embedding,
-            "next_processed_at": payload.next_processed_at
+            "next_processing_at": payload.next_processing_at
         }
 
     def get_profiles_for_paper_matching(self) -> List[Dict[str, Any]]:
@@ -40,8 +40,8 @@ class UserDepot:
             .outerjoin(SubscriptionORM, SubscriptionORM.user_id == ProfileORM.user_id)
             .where(
                 or_(
-                    ProfileORM.next_processed_at.is_(None),
-                    ProfileORM.next_processed_at < current_time,
+                    ProfileORM.next_processing_at.is_(None),
+                    ProfileORM.next_processing_at < current_time,
                 )
             )
             .limit(10)
@@ -58,7 +58,7 @@ class UserDepot:
                         "interest": p.interest,
                         "interest_embedding": p.interest_embedding,
                         "language_code": p.language_code,
-                        "next_processed_at": p.next_processed_at.isoformat() if p.next_processed_at else None,
+                        "next_processing_at": p.next_processing_at.isoformat() if p.next_processing_at else None,
                         "subscription_attributes": attributes if attributes is not None else {},
                     }
                     for p, attributes in rows

@@ -23,17 +23,17 @@ def main():
     # result = ncs.find_duplicates(notes_ids=notes_ids, embeddings=embeddings)
     # print(result)
 
-    # dedup_daily_notes(metadata={"workspace_id": workspace_id})
+    dedup_daily_notes(metadata={"workspace_id": workspace_id})
     # print(result)
 
-    result = save_enrichments(
-        metadata={
-            "key": f"notes/91439e8d-7858-4ccc-8c87-3a160b904678/2026/08/14",
-            "job_id": "batches/nk22ufgsj1q8vwunlvl0naqluu3laxz0sf33",
-            "workspace_id": workspace_id
-        }
-    )
-    print(result)
+    # result = save_enrichments(
+    #     metadata={
+    #         "key": f"notes/91439e8d-7858-4ccc-8c87-3a160b904678/2026/08/14",
+    #         "job_id": "batches/nk22ufgsj1q8vwunlvl0naqluu3laxz0sf33",
+    #         "workspace_id": workspace_id
+    #     }
+    # )
+    # print(result)
 
 
 if __name__ == "__main__":
