@@ -1,15 +1,15 @@
 import numpy as np
 
 from atlazer.celery_app.main import db_pool
-from atlazer.storage.workspace_notes import WorkspaceNoteDepot
+from atlazer.storage.workspace.notes import WorkspaceNoteDepot
 from atlazer.utils.notes_clustering import NotesClusteringService
-from atlazer.celery_app.tasks.workspace.notes import dedup_daily_notes, save_enrichments
+from atlazer.celery_app.tasks.workspace.notes import deduplicate_notes, save_enrichments, process_workspace
 
 
 def main():
     workspace_id = "91439e8d-7858-4ccc-8c87-3a160b904678"
     # note_depot = WorkspaceNoteDepot(db_pool)
-    # today_chunks = note_depot.get_chunks_daily(workspace_id)
+    # today_chunks = note_depot.get_chunks_by_workspace(workspace_id)
     # embeddings = []
     # notes_ids = []
 
@@ -23,7 +23,7 @@ def main():
     # result = ncs.find_duplicates(notes_ids=notes_ids, embeddings=embeddings)
     # print(result)
 
-    dedup_daily_notes(metadata={"workspace_id": workspace_id})
+    # deduplicate_notes(metadata={"workspace_id": workspace_id})
     # print(result)
 
     # result = save_enrichments(
@@ -34,6 +34,9 @@ def main():
     #     }
     # )
     # print(result)
+
+    xx = process_workspace()
+    print(xx)
 
 
 if __name__ == "__main__":

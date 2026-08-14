@@ -176,10 +176,11 @@ task_routes = {
     "atlazer.celery_app.tasks.workspace.notes.match_papers":        {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.save_papers":         {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.save_similarities":   {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.notes.dedup_daily_notes":   {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.deduplicate_notes":   {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.generate_jsonl":      {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.process_jsonl":       {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.save_enrichments":    {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.process_workspaces":  {"queue": "workspace"},
 
     # ── Arxiv Task ──
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.fetch_page":       {"queue": "arxiv"},

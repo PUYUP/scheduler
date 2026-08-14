@@ -2,7 +2,6 @@ import uuid
 import structlog
 
 from uuid import UUID
-from datetime import datetime, timedelta
 from atlazer.models.paper import PaperORM
 
 from collections import defaultdict
@@ -314,7 +313,7 @@ class WorkspaceNoteDepot:
             )
             raise e
 
-    def get_chunks_daily(self, workspace_id: str) -> List[NoteChunkORM]:
+    def get_chunks_by_workspace(self, workspace_id: str) -> List[NoteChunkORM]:
         try:
             workspace_uuid: UUID = uuid.UUID(workspace_id)
         except ValueError:
@@ -322,16 +321,13 @@ class WorkspaceNoteDepot:
 
         try:
             with self._db_pool.session() as session:
-                # stmt = select(NoteChunkORM).where(
-                #     NoteChunkORM.created_at >= datetime.now() - timedelta(days=1)
-                # )
                 stmt = select(NoteChunkORM).where(NoteChunkORM.workspace_id == workspace_uuid)
                 result = session.execute(stmt).scalars().all()
                 return list(result)
 
         except SQLAlchemyError as e:
             log.error(
-                "workspace_note.error_get_chunks_daily",
+                "workspace_note.error_get_chunks_by_workspace",
                 error=str(e),
             )
             raise e

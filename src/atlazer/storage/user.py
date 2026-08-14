@@ -130,10 +130,10 @@ class UserDepot:
 
         stmt = (
             update(ProfileORM)
-            .where(ProfileORM.id == profile_uuid)
-            .values(**values)
-            .returning(ProfileORM.id)
-            .execution_options(synchronize_session="fetch")
+                .where(ProfileORM.id == profile_uuid)
+                .values(**values)
+                .returning(ProfileORM.id)
+                .execution_options(synchronize_session="fetch")
         )
 
         try:

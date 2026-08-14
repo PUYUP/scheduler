@@ -12,7 +12,7 @@ from atlazer.celery_app.main import app, db_pool
 from atlazer.utils.stanza_chunker import chunk_content
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
-from atlazer.storage.workspace_context import WorkspaceContextDepot
+from atlazer.storage.workspace.context import WorkspaceContextDepot
 from atlazer.models.workspace import (
     ChunkContextMetadata,
     ContextChunkORM,

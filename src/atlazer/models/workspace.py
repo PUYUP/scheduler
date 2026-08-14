@@ -26,6 +26,22 @@ class ChunkNoteMetadata(ChunkBaseModel):
     note_id: str
 
 
+class WorkspaceORM(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+    next_notes_processing_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True
+    )
+    scope: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    language_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
 class ContextChunkORM(Base):
     __tablename__ = "context_chunks"
     __table_args__ = (
