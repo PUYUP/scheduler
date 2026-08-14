@@ -1,6 +1,7 @@
 from sqlalchemy import TIMESTAMP
+from datetime import datetime, date
 from uuid import UUID
-from sqlalchemy import Integer, String, Index, Float, func, UniqueConstraint
+from sqlalchemy import Integer, String, Index, Float, func, UniqueConstraint, Date
 from sqlalchemy.orm import mapped_column, Mapped
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from pgvector.sqlalchemy import Vector
@@ -193,6 +194,11 @@ class NoteChunkORM(Base):
     content: Mapped[str] = mapped_column(String, nullable=False)
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    cluster_label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    clustered_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True
+    )
     created_at: Mapped[TIMESTAMP] = mapped_column(
         TIMESTAMP(timezone=True),
         server_default=func.now(),
@@ -246,3 +252,24 @@ class NoteSimilarityORM(Base):
     document_content: Mapped[str] = mapped_column(String, nullable=False)
     similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+
+
+class NoteEnrichmentORM(Base):
+    __tablename__ = "workspace_notes_enrichments"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    cluster_label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    clustered_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    chunks: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )

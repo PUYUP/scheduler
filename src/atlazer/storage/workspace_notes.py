@@ -8,10 +8,10 @@ from atlazer.models.paper import PaperORM
 from collections import defaultdict
 from typing import List, Any, Dict, TypedDict, Optional
 from atlazer.storage.db import DatabasePool
-from atlazer.models.workspace import NoteChunkORM, NotePaperORM, NoteSimilarityORM
+from atlazer.models.workspace import NoteChunkORM, NotePaperORM, NoteSimilarityORM, NoteEnrichmentORM
 from atlazer.models.document import DocumentChunkORM
 
-from sqlalchemy import tuple_, insert, select, func
+from sqlalchemy import tuple_, insert, select, func, update, Date
 from sqlalchemy.exc import SQLAlchemyError
 
 log = structlog.get_logger()
@@ -181,6 +181,92 @@ class WorkspaceNoteDepot:
                 )
                 raise e
 
+    def insert_note_enrichments(self, values: List[NoteEnrichmentORM]) -> None:
+        if not values:
+            log.info("workspace.insert_note_enrichments.empty_list")
+            return
+
+        note_keys = list({
+            (chunk.clustered_date, chunk.cluster_label, chunk.workspace_id) 
+            for chunk in values
+        })
+
+        rows = [
+            {
+                "workspace_id": chunk.workspace_id,
+                "cluster_label": chunk.cluster_label,
+                "clustered_date": chunk.clustered_date,
+                "chunks": chunk.chunks,
+                "content": chunk.content,
+                "attributes": chunk.attributes,
+            }
+            for chunk in values
+        ]
+
+        with self._db_pool.session() as session:
+            try:
+                session.query(NoteEnrichmentORM).filter(
+                    tuple_(
+                        NoteEnrichmentORM.clustered_date, 
+                        NoteEnrichmentORM.cluster_label,
+                        NoteEnrichmentORM.workspace_id,
+                    ).in_(note_keys)
+                ).delete(synchronize_session=False)
+
+                session.execute(insert(NoteEnrichmentORM), rows)
+                session.commit()
+
+                log.info(
+                    "workspace.insert_note_enrichments.finish_upsert",
+                    count=len(values),
+                )
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace.insert_note_enrichments.error_upsert",
+                    error=str(e),
+                )
+                raise e
+
+    def update_chunks_with_label(self, values: List[NoteChunkORM]) -> List[NoteChunkORM]:
+        if not values:
+            log.info("workspace_note.update_chunks_with_label.empty_list")
+            return []
+
+        rows = [
+            {
+                "id": chunk.id,
+                "attributes": chunk.attributes,
+                "cluster_label": chunk.cluster_label,
+                "clustered_at": chunk.clustered_at,
+            }
+            for chunk in values
+            if chunk.id is not None
+        ]
+
+        if not rows:
+            return values
+
+        with self._db_pool.session() as session:
+            try:
+                session.execute(update(NoteChunkORM), rows)
+                session.commit()
+
+                log.info(
+                    "workspace_note.update_chunks_with_label.finish",
+                    count=len(rows),
+                )
+                return values
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace_note.update_chunks_with_label.error",
+                    error=str(e),
+                )
+                raise e
+
     def get_chunks_by_note_id(self, note_id: str) -> List[NoteChunkORM]:
         try:
             note_uuid: UUID = uuid.UUID(note_id)
@@ -201,13 +287,45 @@ class WorkspaceNoteDepot:
             )
             raise e
 
-    def get_chunks_daily(self) -> List[NoteChunkORM]:
+    def get_chunks_by_clustered_date(
+        self, 
+        date: str, 
+        workspace_id: str
+    ) -> List[NoteChunkORM]:
+        try:
+            workspace_uuid: UUID = uuid.UUID(workspace_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {workspace_id}")
+
+        try:
+            with self._db_pool.session() as session:
+                stmt = select(NoteChunkORM).where(
+                    NoteChunkORM.clustered_at.cast(Date) == date,
+                    NoteChunkORM.workspace_id == workspace_uuid,
+                )
+                result = session.execute(stmt).scalars().all()
+                return list(result)
+
+        except SQLAlchemyError as e:
+            log.error(
+                "workspace_note.error_get_chunks_by_date",
+                date=date,
+                error=str(e),
+            )
+            raise e
+
+    def get_chunks_daily(self, workspace_id: str) -> List[NoteChunkORM]:
+        try:
+            workspace_uuid: UUID = uuid.UUID(workspace_id)
+        except ValueError:
+            raise ValueError(f"Invalid UUID string format: {workspace_id}")
+
         try:
             with self._db_pool.session() as session:
                 # stmt = select(NoteChunkORM).where(
                 #     NoteChunkORM.created_at >= datetime.now() - timedelta(days=1)
                 # )
-                stmt = select(NoteChunkORM)
+                stmt = select(NoteChunkORM).where(NoteChunkORM.workspace_id == workspace_uuid)
                 result = session.execute(stmt).scalars().all()
                 return list(result)
 
@@ -258,8 +376,8 @@ class WorkspaceNoteDepot:
         - Basis utama: Kualitas chunk terbaik (MIN distance / MAX similarity).
         - Bonus kepadatan: Dibagi dengan LN(matched_chunk_count + 1) untuk memberikan
         peringkat lebih baik bagi paper dengan banyak chunk relevan tanpa
-        menciptakan long-paper bias secara ekstrem.
-        """
+        menciptakan long-paper bias secara ekstrem."""
+
         results: Dict[Any, MatchResultDict] = {}
 
         try:

@@ -53,7 +53,7 @@ class NotesClusteringService:
         # 1. Validasi Input
         if not notes_ids or embeddings.size == 0:
             logger.warning("Data input kosong. Mengembalikan hasil kosong.")
-            return {"unique_notes": [], "duplicate_clusters": {}}
+            return {"unique": [], "duplicate": {}}
             
         if len(notes_ids) != embeddings.shape[0]:
             raise ValueError(
@@ -63,7 +63,7 @@ class NotesClusteringService:
         # Jika data kurang dari min_cluster_size, tidak mungkin ada cluster
         if len(notes_ids) < self.min_cluster_size:
             logger.info("Jumlah data terlalu sedikit untuk di-cluster. Semua dianggap unik.")
-            return {"unique_notes": notes_ids, "duplicate_clusters": {}}
+            return {"unique": notes_ids, "duplicate": {}}
 
         try:
             # 2. Normalisasi L2 (Best Practice untuk Text Embeddings)
@@ -96,8 +96,8 @@ class NotesClusteringService:
             )
 
             return {
-                "unique_notes": unique_notes,
-                "duplicate_clusters": duplicate_clusters
+                "unique": unique_notes,
+                "duplicate": duplicate_clusters
             }
 
         except Exception as e:

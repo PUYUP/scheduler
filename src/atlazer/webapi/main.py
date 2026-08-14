@@ -12,7 +12,7 @@ from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
 from atlazer.celery_app.tasks.challenge import chunk_answer
 from atlazer.celery_app.tasks.workspace.context import chunking as chunking_context, save_summaries
-from atlazer.celery_app.tasks.workspace.notes import chunking as chunking_notes
+from atlazer.celery_app.tasks.workspace.notes import chunking as chunking_notes, save_enrichments
 from atlazer.celery_app.tasks.evaluation import save_evaluation
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
@@ -209,6 +209,27 @@ async def gemini_batch_webhook(request: Request):
             )
 
             log.info("webapi.gemini-batch-webhook.context_papers_summary_generation.success", task_id=job.id)
+            return TaskExecutionResponse(task_id=job.id)
+
+        # notes content enrichments
+        if action == 'notes_content_enrichment':
+            log.info(
+                "webapi.gemini-batch-webhook.notes_content_enrichment.start",
+                user_metadata=user_metadata
+            )
+
+            metadata = {
+                "job_id": batch_id,
+                "output_file_uri": data.get("output_file_uri"),
+                **user_metadata,
+            }
+
+            job = save_enrichments.apply_async(
+                kwargs={"metadata": metadata},
+                queue="workspace"
+            )
+
+            log.info("webapi.gemini-batch-webhook.notes_content_enrichment.success", task_id=job.id)
             return TaskExecutionResponse(task_id=job.id)
 
     return {"ok": True}

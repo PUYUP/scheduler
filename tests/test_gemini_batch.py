@@ -4,10 +4,10 @@ from atlazer.utils.gemini_batch import get_batch_results
 
 def batching_check():
     client = genai.Client()
-    job_name = "batches/3tto78dkeshbyyqv3dhzkjv5llu9gvq46nvz"
+    job_name = "batches/nk22ufgsj1q8vwunlvl0naqluu3laxz0sf33"
     batch_job = client.batches.get(name=job_name)
-    xxxxx = get_batch_results(job_name)
-    print(xxxxx)
+    res = get_batch_results(job_name)
+    print(res)
 
     # if batch_job is None:
     #     print("Job not found")
