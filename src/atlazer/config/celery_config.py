@@ -170,7 +170,7 @@ task_routes = {
     "atlazer.celery_app.tasks.workspace.context.save_embedding":    {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.context.find_relevant_papers": {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.context.save_papers":       {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.context.save_similarities": {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.context.save_documents":    {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.context.summarize_similarities": {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.context.generate_jsonl":    {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.context.process_jsonl":     {"queue": "workspace"},
@@ -182,7 +182,7 @@ task_routes = {
     "atlazer.celery_app.tasks.workspace.notes.save_embedding":      {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.find_relevant_papers": {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.save_papers":         {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.notes.save_similarities":   {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.save_documents":      {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.deduplicate_notes":   {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.generate_jsonl":      {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.process_jsonl":       {"queue": "workspace"},
@@ -195,7 +195,7 @@ task_routes = {
 
     # ── Workspace material tier ──
     "atlazer.celery_app.tasks.workspace.material.find_relevant_papers": {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.material.save_similarities":    {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.material.save_documentss":      {"queue": "workspace"},
 
     # ── Arxiv Task ──
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.fetch_page":       {"queue": "arxiv"},

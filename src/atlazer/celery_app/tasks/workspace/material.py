@@ -22,11 +22,12 @@ from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
 from atlazer.storage.workspace.notes import WorkspaceNoteDepot, LearningMaterialChunkORM
 from atlazer.storage.workspace.context import WorkspaceContextDepot
+from atlazer.storage.workspace.material import LearningMaterialDepot
 from atlazer.models.workspace import (
     ChunkNoteMetadata,
     NoteChunkORM,
     NotePaperORM,
-    NoteSimilarityORM,
+    NoteDocumentORM,
     LearningMaterialNoteORM,
     WorkspaceORM,
     LearningMaterialDocumentORM,
@@ -97,11 +98,11 @@ def find_relevant_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 2 of 10 — save context similarities
+# Task 2 of 10 — save save documents
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.material.save_similarities",
+    name="atlazer.celery_app.tasks.workspace.material.save_documents",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -110,8 +111,8 @@ def find_relevant_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.material.save_similarities.start")
+def save_documents(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.material.save_documents.start")
 
     material_note_id = metadata.get("material_note_id")
     workspace_id = metadata.get("workspace_id")
@@ -120,7 +121,7 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     if similar_chunks:
         log.info(
-            "workspace.context.save_similarities.inserting_data",
+            "workspace.material.save_documents.inserting_data",
             payload_count=len(similar_chunks)
         )
 
@@ -143,14 +144,58 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             depot = WorkspaceNoteDepot(db_pool)
-            depot.insert_enriched_similarities(payloads)
+            depot.insert_material_documents(payloads)
         except Exception as exc:
             log.error(
-                "workspace.material.save_similarities.failed",
+                "workspace.material.save_documents.failed",
                 metadata=metadata,
                 error=str(exc),
                 attempt=self.request.retries,
             )
             raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
+
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 3 of 10 — deduplicate the material-document similarities
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.material.documents_deduplication",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def documents_deduplication(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.material.documents_deduplication.start")
+
+    workspace_id = metadata.get("workspace_id")
+    processing_date = metadata.get("processing_date")
+
+    if not workspace_id or not processing_date:
+        log.warning("workspace.material.documents_deduplication.missing_required_field")
+        raise ValueError("Missing workspace_id or processing_date")
+
+    try:
+        depot = LearningMaterialDepot(db_pool)
+        documents = depot.get_documents(workspace_id, processing_date)
+
+        if not documents:
+            log.warning("workspace.material.documents_deduplication.no_documents")
+            raise ValueError("No documents found for the given workspace_id and processing_date")
+
+    except Exception as exc:
+        log.error(
+            "workspace.material.documents_deduplication.failed",
+            metadata=metadata,
+            error=str(exc),
+            attempt=self.request.retries,
+        )
+        raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
     return metadata

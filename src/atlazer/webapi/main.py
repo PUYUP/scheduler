@@ -307,7 +307,7 @@ def embed_context(payload: EmbedContextRequest):
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.context.save_similarities",
+                "atlazer.celery_app.tasks.workspace.context.save_documents",
                 queue="workspace",
                 immutable=False,
             )
@@ -356,7 +356,7 @@ def embed_note(payload: EmbedNoteRequest):
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.notes.save_similarities",
+                "atlazer.celery_app.tasks.workspace.notes.save_documentss",
                 queue="workspace",
                 immutable=False,
             )

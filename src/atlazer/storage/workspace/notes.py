@@ -11,7 +11,7 @@ from atlazer.storage.db import DatabasePool
 from atlazer.models.workspace import (
     NoteChunkORM, 
     NotePaperORM, 
-    NoteSimilarityORM, 
+    NoteDocumentORM, 
     LearningMaterialNoteORM,
     LearningMaterialChunkORM,
     LearningMaterialDocumentORM,
@@ -136,12 +136,12 @@ class WorkspaceNoteDepot:
                 )
                 raise e
 
-    def insert_note_similarities(
+    def insert_note_documents(
         self,
-        values: List[NoteSimilarityORM]
+        values: List[NoteDocumentORM]
     ) -> None:
         if not values:
-            log.info("workspace.insert_note_similarities.empty_list")
+            log.info("workspace.insert_note_documents.empty_list")
             return
 
         note_keys = list({(chunk.user_id, chunk.note_id, chunk.workspace_id, chunk.note_chunk_id) for chunk in values})
@@ -163,16 +163,16 @@ class WorkspaceNoteDepot:
 
         with self._db_pool.session() as session:
             try:
-                session.query(NoteSimilarityORM).filter(
+                session.query(NoteDocumentORM).filter(
                     tuple_(
-                        NoteSimilarityORM.user_id, 
-                        NoteSimilarityORM.note_id,
-                        NoteSimilarityORM.workspace_id,
-                        NoteSimilarityORM.note_chunk_id,
+                        NoteDocumentORM.user_id, 
+                        NoteDocumentORM.note_id,
+                        NoteDocumentORM.workspace_id,
+                        NoteDocumentORM.note_chunk_id,
                     ).in_(note_keys)
                 ).delete(synchronize_session=False)
 
-                session.execute(insert(NoteSimilarityORM), rows)
+                session.execute(insert(NoteDocumentORM), rows)
                 session.commit()
 
                 log.info(
@@ -188,12 +188,12 @@ class WorkspaceNoteDepot:
                 )
                 raise e
 
-    def insert_enriched_similarities(
+    def insert_material_documents(
         self,
         values: List[LearningMaterialDocumentORM]
     ) -> None:
         if not values:
-            log.info("workspace.insert_enriched_similarities.empty_list")
+            log.info("workspace.insert_material_documents.empty_list")
             return
 
         enriched_keys = list({(chunk.material_note_id, chunk.workspace_id, chunk.material_chunk_id) for chunk in values})
@@ -226,13 +226,13 @@ class WorkspaceNoteDepot:
                 session.commit()
 
                 log.info(
-                    "workspace.insert_enriched_similarities.finish_upsert",
+                    "workspace.insert_material_documents.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
-                log.error("workspace.insert_enriched_similarities.error_upsert")
+                log.error("workspace.insert_material_documents.error_upsert")
                 raise e
 
     def insert_enriched_notes(self, values: List[LearningMaterialNoteORM]) -> None:
@@ -416,7 +416,7 @@ class WorkspaceNoteDepot:
                 "id": chunk.id,
                 "attributes": chunk.attributes,
                 "cluster_label": chunk.cluster_label,
-                "clustered_at": chunk.clustered_at,
+                "clustered_date": chunk.clustered_date,
             }
             for chunk in values
             if chunk.id is not None
@@ -477,7 +477,7 @@ class WorkspaceNoteDepot:
         try:
             with self._db_pool.session() as session:
                 stmt = select(NoteChunkORM).where(
-                    NoteChunkORM.clustered_at.cast(Date) == date,
+                    NoteChunkORM.clustered_date.cast(Date) == date,
                     NoteChunkORM.workspace_id == workspace_uuid,
                 )
                 result = session.execute(stmt).scalars().all()
@@ -513,7 +513,7 @@ class WorkspaceNoteDepot:
     def get_similarities_by_note_id(
         self, 
         note_id: str
-    ) -> Dict[Any, List[NoteSimilarityORM]]:
+    ) -> Dict[Any, List[NoteDocumentORM]]:
         try:
             note_uuid: uuid.UUID = uuid.UUID(note_id)
         except ValueError:
@@ -521,7 +521,7 @@ class WorkspaceNoteDepot:
 
         try:
             with self._db_pool.session() as session:
-                stmt = select(NoteSimilarityORM).where(NoteSimilarityORM.note_id == note_uuid)
+                stmt = select(NoteDocumentORM).where(NoteDocumentORM.note_id == note_uuid)
                 result = session.execute(stmt).scalars().all()
                 
                 grouped_result = defaultdict(list)

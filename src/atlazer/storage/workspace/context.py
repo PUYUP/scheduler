@@ -10,7 +10,7 @@ from atlazer.storage.db import DatabasePool
 from atlazer.models.workspace import (
     ContextChunkORM,
     ContextPaperORM,
-    ContextSimilarityORM,
+    ContextDocumentORM,
     ContextPaperSummaryORM
 )
 from atlazer.models.document import DocumentChunkORM
@@ -133,12 +133,12 @@ class WorkspaceContextDepot:
                 )
                 raise e
 
-    def insert_context_similarities(
+    def insert_context_documents(
         self,
-        values: List[ContextSimilarityORM]
+        values: List[ContextDocumentORM]
     ) -> None:
         if not values:
-            log.info("workspace.insert_context_similarities.empty_list")
+            log.info("workspace.insert_context_documents.empty_list")
             return
 
         context_keys = list({(chunk.user_id, chunk.context_id, chunk.workspace_id, chunk.context_chunk_id) for chunk in values})
@@ -160,27 +160,27 @@ class WorkspaceContextDepot:
 
         with self._db_pool.session() as session:
             try:
-                session.query(ContextSimilarityORM).filter(
+                session.query(ContextDocumentORM).filter(
                     tuple_(
-                        ContextSimilarityORM.user_id, 
-                        ContextSimilarityORM.context_id,
-                        ContextSimilarityORM.workspace_id,
-                        ContextSimilarityORM.context_chunk_id,
+                        ContextDocumentORM.user_id, 
+                        ContextDocumentORM.context_id,
+                        ContextDocumentORM.workspace_id,
+                        ContextDocumentORM.context_chunk_id,
                     ).in_(context_keys)
                 ).delete(synchronize_session=False)
 
-                session.execute(insert(ContextSimilarityORM), rows)
+                session.execute(insert(ContextDocumentORM), rows)
                 session.commit()
 
                 log.info(
-                    "workspace.insert_context_similarities.finish_upsert",
+                    "workspace.insert_context_documents.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.insert_similarities.error_upsert",
+                    "workspace.insert_context_documents.error_upsert",
                     error=str(e),
                 )
                 raise e
@@ -253,10 +253,10 @@ class WorkspaceContextDepot:
             )
             raise e
 
-    def get_similarities_by_context_id(
+    def get_documents_by_context_id(
         self, 
         context_id: str
-    ) -> Dict[Any, List[ContextSimilarityORM]]:
+    ) -> Dict[Any, List[ContextDocumentORM]]:
         try:
             context_uuid: uuid.UUID = uuid.UUID(context_id)
         except ValueError:
@@ -264,7 +264,7 @@ class WorkspaceContextDepot:
 
         try:
             with self._db_pool.session() as session:
-                stmt = select(ContextSimilarityORM).where(ContextSimilarityORM.context_id == context_uuid)
+                stmt = select(ContextDocumentORM).where(ContextDocumentORM.context_id == context_uuid)
                 result = session.execute(stmt).scalars().all()
                 
                 grouped_result = defaultdict(list)
@@ -275,7 +275,7 @@ class WorkspaceContextDepot:
 
         except SQLAlchemyError as e:
             log.error(
-                "workspace_context.error_get_similarities_by_context_id",
+                "workspace_context.error_get_documents_by_context_id",
                 context_id=context_id,
                 error=str(e),
             )

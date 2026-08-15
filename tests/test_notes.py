@@ -9,7 +9,7 @@ from atlazer.celery_app.tasks.workspace.notes import (
     process_workspaces,
     chunk_enriched_notes,
 )
-from atlazer.celery_app.tasks.workspace.material import find_relevant_papers, save_similarities
+from atlazer.celery_app.tasks.workspace.material import find_relevant_papers
 
 
 def main():
@@ -41,8 +41,8 @@ def main():
     # )
     # print(result)
 
-    # xx = process_workspaces()
-    # print(xx)
+    job = process_workspaces.apply_async()
+    print(job.id)
 
     # chunks = chunk_enriched_notes(metadata={
     #     "workspace_id": workspace_id,
@@ -50,12 +50,12 @@ def main():
     # })
     # print(chunks)
 
-    job = chunk_enriched_notes.s(
-        metadata={
-            "workspace_id": workspace_id,
-            "processing_date": "2026-08-14"
-        }
-    ).apply_async()
+    # job = chunk_enriched_notes.s(
+    #     metadata={
+    #         "workspace_id": workspace_id,
+    #         "processing_date": "2026-08-14"
+    #     }
+    # ).apply_async()
 
     # job = find_relevant_papers.s(
     #     metadata={

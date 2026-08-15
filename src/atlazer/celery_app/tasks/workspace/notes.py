@@ -12,7 +12,7 @@ from pathlib import Path
 from decimal import Decimal
 from uuid import UUID
 from collections import defaultdict
-from celery import group, chord, signature
+from celery import group, chord, signature, chain
 
 from atlazer.utils.gemini_batch import upload_chunk_file, process_jsonl_file, get_batch_results
 from atlazer.utils.notes_clustering import NotesClusteringService
@@ -26,7 +26,7 @@ from atlazer.models.workspace import (
     ChunkNoteMetadata,
     NoteChunkORM,
     NotePaperORM,
-    NoteSimilarityORM,
+    NoteDocumentORM,
     LearningMaterialNoteORM,
     WorkspaceORM,
 )
@@ -311,11 +311,11 @@ def save_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 6 of 16 — save note similarities
+# Task 6 of 16 — save note documents
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.notes.save_similarities",
+    name="atlazer.celery_app.tasks.workspace.notes.save_documents",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -324,8 +324,8 @@ def save_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.notes.save_similarities.start")
+def save_documents(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.notes.save_documents.start")
 
     note_id = metadata.get("note_id")
     workspace_id = metadata.get("workspace_id")
@@ -334,12 +334,12 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     similar_chunks = matched_result.get("similar_chunks", [])
 
     if similar_chunks:
-        log.info("workspace.notes.save_similarities.inserting_data", payload_count=len(similar_chunks))
-        payloads: List[NoteSimilarityORM] = []
+        log.info("workspace.notes.save_documents.inserting_data", payload_count=len(similar_chunks))
+        payloads: List[NoteDocumentORM] = []
 
         # payloads enrichment
         for similarity in similar_chunks:
-            payload = NoteSimilarityORM(
+            payload = NoteDocumentORM(
                 workspace_id=workspace_id,
                 user_id=user_id,
                 paper_id=similarity.get("paper_id"),
@@ -355,10 +355,10 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             depot = WorkspaceNoteDepot(db_pool)
-            depot.insert_note_similarities(payloads)
+            depot.insert_note_documents(payloads)
         except Exception as exc:
             log.error(
-                "workspace.notes.save_similarities.failed",
+                "workspace.notes.save_documents.failed",
                 metadata=metadata,
                 error=str(exc),
                 attempt=self.request.retries,
@@ -385,13 +385,15 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 def deduplicate_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("workspace.notes.deduplicate_notes.start")
 
+    processing_date = metadata.get("processing_date")
     workspace_id = metadata.get("workspace_id")
+
     if not workspace_id:
         log.warning("workspace.notes.deduplicate_notes.missing_workspace_id", metadata=metadata)
         raise ValueError("Missing workspace_id")
 
     try:
-        now = datetime.now()
+        clustered_date = datetime.strptime(processing_date, "%Y-%m-%d") if processing_date else datetime.now()
         depot = WorkspaceNoteDepot(db_pool)
         daily_notes = depot.get_chunks_by_workspace(workspace_id)
         notes_ids: List[str] = []
@@ -432,12 +434,12 @@ def deduplicate_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                     if id_str in result_map:
                         chunk = result_map[id_str]
                         chunk.cluster_label = str(key)
-                        chunk.clustered_at = now
+                        chunk.clustered_date = clustered_date
                         update_payloads.append(chunk)
 
             for u in unique:
                 u.cluster_label = "-1"
-                u.clustered_at = now
+                u.clustered_date = clustered_date
                 update_payloads.append(u)
             depot.update_chunks_with_label(update_payloads)
 
@@ -478,12 +480,13 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     workspace_id = metadata.get("workspace_id")
     language_code = metadata.get("language_code", "en")
     dedup_result = metadata.get("dedup_result", {})
-    processing_date = metadata.get("processing_date")
+    processing_date = metadata.get("processing_date", "")
     unique = dedup_result.get("unique", [])
     duplicate = dedup_result.get("duplicate", {})
     
     payloads: List[Any] = []
-    ukey = f"{workspace_id}_{processing_date}_-1"
+    dkey = processing_date.replace("-", "/")
+    ukey = f"{workspace_id}_{dkey}_-1"
 
     if not workspace_id or not language_code:
         raise ValueError("Missing required ids in metadata")
@@ -494,10 +497,10 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     for key, group in duplicate.items():
         combined_content = "\n\n".join([item["content"] for item in group])
-        payload = _build_json(f"{workspace_id}_{processing_date}_{key}", combined_content, language_code)
+        payload = _build_json(f"{workspace_id}_{dkey}_{key}", combined_content, language_code)
         payloads.append(payload)
 
-    key = f"notes/{workspace_id}/{processing_date}"
+    key = f"notes/{workspace_id}/{dkey}"
     target_dir = Path(settings.gemini_batch_dir)
     target_file = target_dir / f"{key}.jsonl"
     target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -956,6 +959,7 @@ def save_material_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     chunks = metadata.get("chunks", [])
     workspace_id = metadata.get('workspace_id')
+    processing_date = metadata.get("processing_date")
 
     if not chunks:
         log.warning(
@@ -1011,8 +1015,8 @@ def save_material_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             results = depot.insert_material_chunks(payloads)
 
             # find relevant papers — satu task per chunk
-            for c in results:
-                (
+            chained_jobs = [
+                chain(
                     signature(
                         "atlazer.celery_app.tasks.workspace.material.find_relevant_papers",
                         args=[
@@ -1023,13 +1027,29 @@ def save_material_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                         ],
                         queue="workspace",
                         immutable=False,
-                    )
-                    | signature(
-                        "atlazer.celery_app.tasks.workspace.material.save_similarities",
+                    ),
+                    signature(
+                        "atlazer.celery_app.tasks.workspace.material.save_documents",
                         queue="workspace",
                         immutable=False,
-                    )
-                ).apply_async()
+                    ),
+                )
+                for c in results
+            ]
+
+            callback = signature(
+                "atlazer.celery_app.tasks.workspace.material.documents_deduplication",
+                args=[
+                    {
+                        "workspace_id": str(workspace_uuid),
+                        "clustered_date": processing_date,
+                    }
+                ],
+                queue="workspace",
+                immutable=True,
+            )
+
+            chord(group(chained_jobs))(callback)
 
         except Exception as exc:
             log.error(

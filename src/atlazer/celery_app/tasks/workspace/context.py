@@ -17,7 +17,7 @@ from atlazer.models.workspace import (
     ChunkContextMetadata,
     ContextChunkORM,
     ContextPaperORM,
-    ContextSimilarityORM,
+    ContextDocumentORM,
     ContextPaperSummaryORM,
 )
 
@@ -304,11 +304,11 @@ def save_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 6 of 10 — save context similarities
+# Task 6 of 10 — save context documents
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.context.save_similarities",
+    name="atlazer.celery_app.tasks.workspace.context.save_documents",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -317,8 +317,8 @@ def save_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.context.save_similarities.start")
+def save_documents(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.context.save_documents.start")
 
     context_id = metadata.get("context_id")
     workspace_id = metadata.get("workspace_id")
@@ -327,12 +327,12 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     similar_chunks = matched_result.get("similar_chunks", [])
 
     if similar_chunks:
-        log.info("workspace.context.save_similarities.inserting_data", payload_count=len(similar_chunks))
-        payloads: List[ContextSimilarityORM] = []
+        log.info("workspace.context.save_documents.inserting_data", payload_count=len(similar_chunks))
+        payloads: List[ContextDocumentORM] = []
 
         # payloads enrichment
         for similarity in similar_chunks:
-            payload = ContextSimilarityORM(
+            payload = ContextDocumentORM(
                 workspace_id=workspace_id,
                 user_id=user_id,
                 paper_id=similarity.get("paper_id"),
@@ -348,10 +348,10 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             depot = WorkspaceContextDepot(db_pool)
-            depot.insert_context_similarities(payloads)
+            depot.insert_context_documents(payloads)
         except Exception as exc:
             log.error(
-                "workspace.context.save_similarities.failed",
+                "workspace.context.save_documents.failed",
                 metadata=metadata,
                 error=str(exc),
                 attempt=self.request.retries,
@@ -385,7 +385,7 @@ def summarize_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         depot = WorkspaceContextDepot(db_pool)
-        similarities = depot.get_similarities_by_context_id(context_id)
+        similarities = depot.get_documents_by_context_id(context_id)
         similarities_papers: List[Dict[str, Any]] = []
 
         for paper_id in similarities:

@@ -112,12 +112,12 @@ class ContextPaperORM(Base):
     paper_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
 
-class ContextSimilarityORM(Base):
-    __tablename__ = "context_similarities"
+class ContextDocumentORM(Base):
+    __tablename__ = "context_documents"
     __table_args__ = (
         Index("idx_context_sim_context_score", "context_id", "similarity_score"),
         Index("idx_context_sim_paper_score", "paper_id", "similarity_score"),
-        Index("idx_context_similarities_attributes", "attributes", postgresql_using="gin"),
+        Index("idx_context_documents_attributes", "attributes", postgresql_using="gin"),
         UniqueConstraint(
             "context_chunk_id", 
             "document_chunk_id", 
@@ -211,10 +211,7 @@ class NoteChunkORM(Base):
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     cluster_label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    clustered_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True
-    )
+    clustered_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[TIMESTAMP] = mapped_column(
         TIMESTAMP(timezone=True),
         server_default=func.now(),
@@ -240,12 +237,12 @@ class NotePaperORM(Base):
     paper_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
 
-class NoteSimilarityORM(Base):
-    __tablename__ = "workspace_notes_similarities"
+class NoteDocumentORM(Base):
+    __tablename__ = "workspace_notes_documents"
     __table_args__ = (
         Index("idx_workspace_notes_sim_note_score", "note_id", "similarity_score"),
         Index("idx_workspace_notes_sim_paper_score", "paper_id", "similarity_score"),
-        Index("idx_workspace_notes_similarities_attributes", "attributes", postgresql_using="gin"),
+        Index("idx_workspace_notes_documents_attributes", "attributes", postgresql_using="gin"),
         UniqueConstraint(
             "note_chunk_id", 
             "document_chunk_id", 
