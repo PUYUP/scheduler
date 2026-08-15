@@ -186,12 +186,12 @@ task_routes = {
     "atlazer.celery_app.tasks.workspace.notes.deduplicate_notes":   {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.generate_jsonl":      {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.process_jsonl":       {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.notes.save_enrichments":    {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.save_enriched_notes": {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.update_next_processing":  {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.process_workspaces":      {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.chunk_enriched_notes":    {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.notes.embed_enriched_notes":    {"queue": "workspace"},
-    "atlazer.celery_app.tasks.workspace.notes.save_embedding_enriched_notes": {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.notes.save_material_chunks":    {"queue": "workspace"},
 
     # ── Workspace material tier ──
     "atlazer.celery_app.tasks.workspace.material.find_relevant_papers": {"queue": "workspace"},

@@ -20,14 +20,14 @@ from atlazer.celery_app.main import app, db_pool
 from atlazer.utils.stanza_chunker import chunk_content
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
-from atlazer.storage.workspace.notes import WorkspaceNoteDepot, NoteEnrichedChunkORM
+from atlazer.storage.workspace.notes import WorkspaceNoteDepot, LearningMaterialChunkORM
 from atlazer.storage.workspace.workspace import WorkspaceDepot
 from atlazer.models.workspace import (
     ChunkNoteMetadata,
     NoteChunkORM,
     NotePaperORM,
     NoteSimilarityORM,
-    NoteEnrichedORM,
+    LearningMaterialNoteORM,
     WorkspaceORM,
 )
 
@@ -579,7 +579,7 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.notes.save_enrichments",
+    name="atlazer.celery_app.tasks.workspace.notes.save_enriched_notes",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -588,8 +588,8 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_enrichments(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.notes.save_enrichments.start")
+def save_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.notes.save_enriched_notes.start")
 
     now = datetime.now()
     processing_date = metadata.get("processing_date", now.strftime("%Y-%m-%d"))
@@ -609,7 +609,7 @@ def save_enrichments(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         log.info(
-            "workspace.notes.save_enrichments.chunks",
+            "workspace.notes.save_enriched_notes.chunks",
             chunks_count=len(note_chunks)
         )
 
@@ -620,12 +620,12 @@ def save_enrichments(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             chunk_groups[cluster_label].append(_orm_to_dict(chunk, exclude={"embedding"}))
 
         log.info(
-            "workspace.notes.save_enrichments.chunks_grouped",
+            "workspace.notes.save_enriched_notes.chunks_grouped",
             chunks_groups_count=len(chunk_groups)
         )
 
     except Exception as e:
-        log.error("workspace.notes.save_enrichments.error", error=str(e))
+        log.error("workspace.notes.save_enriched_notes.error", error=str(e))
         raise ValueError(str(e))
 
     try:
@@ -633,17 +633,17 @@ def save_enrichments(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         if results is None:
             raise ValueError("Failed to get results from batch")
     except Exception as e:
-        log.error("workspace.notes.save_enrichments.error", error=str(e))
+        log.error("workspace.notes.save_enriched_notes.error", error=str(e))
         raise ValueError(str(e))
 
-    payloads: List[NoteEnrichedORM] = []
+    payloads: List[LearningMaterialNoteORM] = []
     for res in results:
         key = res.get("key", "")  # <workspace_id>/<yyyy>/<mm>/<dd>_<hbdscan_label>_<note_id>
         pattern = r"^([0-9a-f-]{36})_(\d{4}/\d{2}/\d{2})_(-?\d+)(?:_([0-9a-f-]{36}))?$"
         match = re.match(pattern, key)
 
         if not match:
-            log.warning("workspace.notes.save_enrichments.invalid_key", key=key)
+            log.warning("workspace.notes.save_enriched_notes.invalid_key", key=key)
             continue
 
         workspace_id, cdate, clabel, note_id = match.groups()
@@ -657,7 +657,7 @@ def save_enrichments(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         summary = result.get("summary", None) if isinstance(result, dict) else None
         attributes = res.get("metadata", {})
 
-        payload: NoteEnrichedORM = NoteEnrichedORM(
+        payload: LearningMaterialNoteORM = LearningMaterialNoteORM(
             attributes=attributes,
             content=summary,
             chunks=chunks,
@@ -672,11 +672,11 @@ def save_enrichments(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             depot = WorkspaceNoteDepot(db_pool)
             depot.insert_enriched_notes(payloads)
         except Exception as e:
-            log.error("workspace.notes.save_enrichments.error", error=str(e))
+            log.error("workspace.notes.save_enriched_notes.error", error=str(e))
             raise ValueError(str(e))
 
     log.info(
-        "workspace.notes.save_enrichments.batch_results",
+        "workspace.notes.save_enriched_notes.batch_results",
         results_count=len(results)
     )
 
@@ -863,7 +863,7 @@ def chunk_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 {
                     "text": chunk, 
                     "metadata": {
-                        "enriched_note_id": str(n.id),
+                        "material_note_id": str(n.id),
                         "workspace_id": str(workspace_id),
                         "processing_date": processing_date,
                     }
@@ -931,18 +931,18 @@ def embed_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     # save embedding enriched notes
     (
-        save_embedding_enriched_notes.s(metadata).set(queue="workspace")
+        save_material_chunks.s(metadata).set(queue="workspace")
     ).apply_async()
 
     return metadata
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 15 of 16 — save embedding enriched notes
+# Task 15 of 16 — save chunked materials base on notes
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.notes.save_embedding_enriched_notes",
+    name="atlazer.celery_app.tasks.workspace.notes.save_material_chunks",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -951,15 +951,15 @@ def embed_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def save_embedding_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.notes.save_embedding_enriched_notes.start")
+def save_material_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.notes.save_material_chunks.start")
 
     chunks = metadata.get("chunks", [])
     workspace_id = metadata.get('workspace_id')
 
     if not chunks:
         log.warning(
-            "workspace.notes.save_embedding_enriched_notes.no_chunks",
+            "workspace.notes.save_material_chunks.no_chunks",
             metadata=metadata
         )
         raise ValueError("No chunks to save")
@@ -968,20 +968,20 @@ def save_embedding_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, A
         workspace_uuid = uuid.UUID(str(workspace_id))
     except ValueError as exc:
         log.error(
-            "workspace.notes.save_embedding_enriched_notes.invalid_uuid",
+            "workspace.notes.save_material_chunks.invalid_uuid",
             metadata=metadata,
             error=str(exc),
         )
         raise ValueError("Invalid UUID string format")
 
-    payloads: List[NoteEnrichedChunkORM] = []
+    payloads: List[LearningMaterialChunkORM] = []
     for chunk in chunks:
-        enriched_note_id = chunk.get("metadata", {}).get('enriched_note_id')
+        material_note_id = chunk.get("metadata", {}).get('material_note_id')
         try:
-            enriched_note_uuid = uuid.UUID(str(enriched_note_id))
+            enriched_note_uuid = uuid.UUID(str(material_note_id))
         except ValueError as exc:
             log.error(
-                "workspace.notes.save_embedding_enriched_notes.invalid_uuid",
+                "workspace.notes.save_material_chunks.invalid_uuid",
                 metadata=metadata,
                 error=str(exc),
             )
@@ -996,8 +996,8 @@ def save_embedding_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, A
             "word_count": chunk.get("word_count"),
         }
 
-        payloads.append(NoteEnrichedChunkORM(
-            enriched_note_id=enriched_note_uuid,
+        payloads.append(LearningMaterialChunkORM(
+            material_note_id=enriched_note_uuid,
             workspace_id=workspace_uuid,
             content=chunk.get('text'),
             embedding=chunk.get('embedding'),
@@ -1008,7 +1008,7 @@ def save_embedding_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, A
     if payloads:
         try:
             depot = WorkspaceNoteDepot(db_pool)
-            results = depot.insert_enriched_chunks(payloads)
+            results = depot.insert_material_chunks(payloads)
 
             # find relevant papers — satu task per chunk
             for c in results:
@@ -1018,7 +1018,7 @@ def save_embedding_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, A
                         args=[
                             {
                                 "workspace_id": str(workspace_uuid),
-                                "enriched_note_id": str(c.enriched_note_id),
+                                "material_note_id": str(c.material_note_id),
                             }
                         ],
                         queue="workspace",
@@ -1033,14 +1033,14 @@ def save_embedding_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, A
 
         except Exception as exc:
             log.error(
-                "workspace.notes.save_embedding_enriched_notes.failed",
+                "workspace.notes.save_material_chunks.failed",
                 metadata=metadata,
                 error=str(exc),
                 attempt=self.request.retries,
             )
             raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
-    log.info("workspace.notes.save_embedding_enriched_notes.done", metadata=metadata)
+    log.info("workspace.notes.save_material_chunks.done", metadata=metadata)
 
     return metadata
 

@@ -12,7 +12,7 @@ from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
 from atlazer.celery_app.tasks.challenge import chunk_answer
 from atlazer.celery_app.tasks.workspace.context import chunking as chunking_context, save_summaries
-from atlazer.celery_app.tasks.workspace.notes import chunking as chunking_notes, save_enrichments
+from atlazer.celery_app.tasks.workspace.notes import chunking as chunking_notes, save_enriched_notes
 from atlazer.celery_app.tasks.evaluation import save_evaluation
 from atlazer.utils.embedder import get_embedder, BaseEmbedder, chunks_to_vector
 from atlazer.webapi.schemas import (
@@ -224,7 +224,7 @@ async def gemini_batch_webhook(request: Request):
                 **user_metadata,
             }
 
-            job = save_enrichments.apply_async(
+            job = save_enriched_notes.apply_async(
                 kwargs={"metadata": metadata},
                 queue="workspace"
             )

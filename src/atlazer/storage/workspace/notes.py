@@ -6,15 +6,15 @@ from datetime import date
 from atlazer.models.paper import PaperORM
 
 from collections import defaultdict
-from typing import List, Any, Dict, TypedDict, Optional
+from typing import List, Any, Dict, TypedDict, Optional, Sequence
 from atlazer.storage.db import DatabasePool
 from atlazer.models.workspace import (
     NoteChunkORM, 
     NotePaperORM, 
     NoteSimilarityORM, 
-    NoteEnrichedORM,
-    NoteEnrichedChunkORM,
-    NoteEnrichedSimilarityORM,
+    LearningMaterialNoteORM,
+    LearningMaterialChunkORM,
+    LearningMaterialDocumentORM,
 )
 from atlazer.models.document import DocumentChunkORM
 
@@ -190,19 +190,19 @@ class WorkspaceNoteDepot:
 
     def insert_enriched_similarities(
         self,
-        values: List[NoteEnrichedSimilarityORM]
+        values: List[LearningMaterialDocumentORM]
     ) -> None:
         if not values:
             log.info("workspace.insert_enriched_similarities.empty_list")
             return
 
-        enriched_keys = list({(chunk.enriched_note_id, chunk.workspace_id, chunk.enriched_chunk_id) for chunk in values})
+        enriched_keys = list({(chunk.material_note_id, chunk.workspace_id, chunk.material_chunk_id) for chunk in values})
         rows = [
             {
                 "workspace_id": chunk.workspace_id,
-                "enriched_note_id": chunk.enriched_note_id,
-                "enriched_chunk_id": chunk.enriched_chunk_id,
-                "enriched_content": chunk.enriched_content,
+                "material_note_id": chunk.material_note_id,
+                "material_chunk_id": chunk.material_chunk_id,
+                "material_note_content": chunk.material_note_content,
                 "paper_id": chunk.paper_id,
                 "document_chunk_id": chunk.document_chunk_id,
                 "document_content": chunk.document_content,
@@ -214,15 +214,15 @@ class WorkspaceNoteDepot:
 
         with self._db_pool.session() as session:
             try:
-                session.query(NoteEnrichedSimilarityORM).filter(
+                session.query(LearningMaterialDocumentORM).filter(
                     tuple_(
-                        NoteEnrichedSimilarityORM.enriched_note_id, 
-                        NoteEnrichedSimilarityORM.workspace_id,
-                        NoteEnrichedSimilarityORM.enriched_chunk_id,
+                        LearningMaterialDocumentORM.material_note_id, 
+                        LearningMaterialDocumentORM.workspace_id,
+                        LearningMaterialDocumentORM.material_chunk_id,
                     ).in_(enriched_keys)
                 ).delete(synchronize_session=False)
 
-                session.execute(insert(NoteEnrichedSimilarityORM), rows)
+                session.execute(insert(LearningMaterialDocumentORM), rows)
                 session.commit()
 
                 log.info(
@@ -232,13 +232,10 @@ class WorkspaceNoteDepot:
 
             except SQLAlchemyError as e:
                 session.rollback()
-                log.error(
-                    "workspace.insert_enriched_similarities.error_upsert",
-                    error=str(e),
-                )
+                log.error("workspace.insert_enriched_similarities.error_upsert")
                 raise e
 
-    def insert_enriched_notes(self, values: List[NoteEnrichedORM]) -> None:
+    def insert_enriched_notes(self, values: List[LearningMaterialNoteORM]) -> None:
         if not values:
             log.info("workspace.insert_enriched_notes.empty_list")
             return
@@ -262,15 +259,15 @@ class WorkspaceNoteDepot:
 
         with self._db_pool.session() as session:
             try:
-                session.query(NoteEnrichedORM).filter(
+                session.query(LearningMaterialNoteORM).filter(
                     tuple_(
-                        NoteEnrichedORM.clustered_date, 
-                        NoteEnrichedORM.cluster_label,
-                        NoteEnrichedORM.workspace_id,
+                        LearningMaterialNoteORM.clustered_date, 
+                        LearningMaterialNoteORM.cluster_label,
+                        LearningMaterialNoteORM.workspace_id,
                     ).in_(note_keys)
                 ).delete(synchronize_session=False)
 
-                session.execute(insert(NoteEnrichedORM), rows)
+                session.execute(insert(LearningMaterialNoteORM), rows)
                 session.commit()
 
                 log.info(
@@ -290,7 +287,7 @@ class WorkspaceNoteDepot:
         self,
         workspace_id: str,
         clustered_date: date,
-    ) -> List[NoteEnrichedORM]:
+    ) -> List[LearningMaterialNoteORM]:
         try:
             workspace_uuid = UUID(workspace_id)
         except ValueError:
@@ -302,9 +299,9 @@ class WorkspaceNoteDepot:
 
         with self._db_pool.session() as session:
             try:
-                return session.query(NoteEnrichedORM).filter(
-                    NoteEnrichedORM.workspace_id == workspace_uuid,
-                    NoteEnrichedORM.clustered_date == clustered_date,
+                return session.query(LearningMaterialNoteORM).filter(
+                    LearningMaterialNoteORM.workspace_id == workspace_uuid,
+                    LearningMaterialNoteORM.clustered_date == clustered_date,
                 ).all()
             except SQLAlchemyError as e:
                 log.error(
@@ -316,8 +313,8 @@ class WorkspaceNoteDepot:
     def get_enriched_chunks(
         self,
         workspace_id: str,
-        enriched_note_id: str,
-    ) -> List[NoteEnrichedChunkORM]:
+        material_note_id: str,
+    ) -> List[LearningMaterialChunkORM]:
         try:
             workspace_uuid = UUID(workspace_id)
         except ValueError:
@@ -328,19 +325,19 @@ class WorkspaceNoteDepot:
             raise ValueError(f"Invalid workspace_id: {workspace_id}")
 
         try:
-            enriched_note_uuid = UUID(enriched_note_id)
+            enriched_note_uuid = UUID(material_note_id)
         except ValueError:
             log.error(
                 "workspace.get_enriched_chunks.error_uuid",
-                enriched_note_id=enriched_note_id,
+                material_note_id=material_note_id,
             )
-            raise ValueError(f"Invalid enriched_note_id: {enriched_note_id}")
+            raise ValueError(f"Invalid material_note_id: {material_note_id}")
 
         with self._db_pool.session() as session:
             try:
-                return session.query(NoteEnrichedChunkORM).filter(
-                    NoteEnrichedChunkORM.workspace_id == workspace_uuid,
-                    NoteEnrichedChunkORM.enriched_note_id == enriched_note_uuid,
+                return session.query(LearningMaterialChunkORM).filter(
+                    LearningMaterialChunkORM.workspace_id == workspace_uuid,
+                    LearningMaterialChunkORM.material_note_id == enriched_note_uuid,
                 ).all()
             except SQLAlchemyError as e:
                 log.error(
@@ -349,23 +346,23 @@ class WorkspaceNoteDepot:
                 )
                 raise e
 
-    def insert_enriched_chunks(
+    def insert_material_chunks(
         self,
-        values: List[NoteEnrichedChunkORM]
-    ) -> List[NoteEnrichedChunkORM]:
+        values: List[LearningMaterialChunkORM]
+    ) -> List[LearningMaterialChunkORM]:
         if not values:
-            log.info("workspace.insert_enriched_chunks.empty_list")
+            log.info("workspace.insert_material_chunks.empty_list")
             return []
 
         note_keys = list({
-            (chunk.workspace_id, chunk.enriched_note_id, chunk.chunk_index) 
+            (chunk.workspace_id, chunk.material_note_id, chunk.chunk_index) 
             for chunk in values
         })
 
         rows = [
             {
                 "workspace_id": chunk.workspace_id,
-                "enriched_note_id": chunk.enriched_note_id,
+                "material_note_id": chunk.material_note_id,
                 "chunk_index": chunk.chunk_index,
                 "content": chunk.content,
                 "embedding": chunk.embedding,
@@ -376,23 +373,23 @@ class WorkspaceNoteDepot:
 
         with self._db_pool.session() as session:
             try:
-                session.query(NoteEnrichedChunkORM).filter(
+                session.query(LearningMaterialChunkORM).filter(
                     tuple_(
-                        NoteEnrichedChunkORM.workspace_id,
-                        NoteEnrichedChunkORM.enriched_note_id,
-                        NoteEnrichedChunkORM.chunk_index,
+                        LearningMaterialChunkORM.workspace_id,
+                        LearningMaterialChunkORM.material_note_id,
+                        LearningMaterialChunkORM.chunk_index,
                     ).in_(note_keys)
                 ).delete(synchronize_session=False)
 
                 result = session.execute(
-                    insert(NoteEnrichedChunkORM).returning(NoteEnrichedChunkORM),
+                    insert(LearningMaterialChunkORM).returning(LearningMaterialChunkORM),
                     rows,
                 )
                 inserted = result.scalars().all()
                 session.commit()
 
                 log.info(
-                    "workspace.insert_enriched_chunks.finish_upsert",
+                    "workspace.insert_material_chunks.finish_upsert",
                     count=len(values),
                 )
 
@@ -401,12 +398,15 @@ class WorkspaceNoteDepot:
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.insert_enriched_chunks.error_upsert",
+                    "workspace.insert_material_chunks.error_upsert",
                     error=str(e),
                 )
                 raise e
 
-    def update_chunks_with_label(self, values: List[NoteChunkORM]) -> List[NoteChunkORM]:
+    def update_chunks_with_label(
+        self,
+        values: List[NoteChunkORM]
+    ) -> List[NoteChunkORM]:
         if not values:
             log.info("workspace_note.update_chunks_with_label.empty_list")
             return []
@@ -540,7 +540,7 @@ class WorkspaceNoteDepot:
 
     def match_note_with_papers(
         self,
-        chunks: List[NoteChunkORM],
+        chunks: Sequence[NoteChunkORM | LearningMaterialChunkORM],
         top_k: int = 15,
         candidate_pool_size: Optional[int] = None,
     ) -> Dict[Any, MatchResultDict]:
@@ -557,7 +557,7 @@ class WorkspaceNoteDepot:
         try:
             with self._db_pool.session() as session:
                 for chunk in chunks:
-                    if not chunk.embedding:
+                    if chunk.embedding is None or len(chunk.embedding) == 0:
                         log.warning(
                             "workspace_note.empty_embedding",
                             chunk_id=getattr(chunk, "id", None),
@@ -575,9 +575,7 @@ class WorkspaceNoteDepot:
                     pool_size = candidate_pool_size or (top_k * 10)
 
                     # Expression pgvector cosine distance (1 - cosine similarity)
-                    distance_expr = DocumentChunkORM.embedding.cosine_distance(
-                        chunk.embedding
-                    )
+                    distance_expr = DocumentChunkORM.embedding.cosine_distance(chunk.embedding)
 
                     # -------------------------------------------------------------
                     # 1. CTE: Ambil kandidat chunk terdekat (Memaksa penggunaan Vector Index)
@@ -586,9 +584,7 @@ class WorkspaceNoteDepot:
                         select(
                             DocumentChunkORM.id.label("document_chunk_id"),
                             DocumentChunkORM.paper_id.label("paper_id"),
-                            DocumentChunkORM.content.label(
-                                "document_chunk_content"
-                            ),
+                            DocumentChunkORM.content.label("document_chunk_content"),
                             distance_expr.label("distance"),
                         )
                         .order_by(distance_expr.asc())

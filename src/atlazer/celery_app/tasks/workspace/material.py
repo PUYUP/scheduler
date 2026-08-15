@@ -20,16 +20,16 @@ from atlazer.celery_app.main import app, db_pool
 from atlazer.utils.stanza_chunker import chunk_content
 from atlazer.config.settings import settings
 from atlazer.utils.embedder import chunks_to_vector
-from atlazer.storage.workspace.notes import WorkspaceNoteDepot, NoteEnrichedChunkORM
+from atlazer.storage.workspace.notes import WorkspaceNoteDepot, LearningMaterialChunkORM
 from atlazer.storage.workspace.context import WorkspaceContextDepot
 from atlazer.models.workspace import (
     ChunkNoteMetadata,
     NoteChunkORM,
     NotePaperORM,
     NoteSimilarityORM,
-    NoteEnrichedORM,
+    LearningMaterialNoteORM,
     WorkspaceORM,
-    NoteEnrichedSimilarityORM,
+    LearningMaterialDocumentORM,
 )
 
 log = structlog.get_logger()
@@ -50,20 +50,19 @@ log = structlog.get_logger()
     ignore_result=False,
 )
 def find_relevant_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.material.find_relevant_papers.start", metadata=metadata)
+    log.info("workspace.material.find_relevant_papers.start")
 
     workspace_id = metadata.get("workspace_id")
-    enriched_note_id = metadata.get("enriched_note_id")
+    material_note_id = metadata.get("material_note_id")
 
-    if not enriched_note_id or not workspace_id:
+    if not material_note_id or not workspace_id:
         log.info("workspace.material.find_relevant_papers.missing_required_field")
-        raise ValueError("Missing enriched_note_id or workspace_id")
+        raise ValueError("Missing material_note_id or workspace_id")
 
     try:
-        depot = WorkspaceContextDepot(db_pool)
-        note_depot = WorkspaceNoteDepot(db_pool)
-        chunks = note_depot.get_enriched_chunks(workspace_id=workspace_id, enriched_note_id=enriched_note_id)
-        matcher = depot.match_context_with_papers(chunks=chunks, candidate_pool_size=1000)
+        depot = WorkspaceNoteDepot(db_pool)
+        chunks = depot.get_enriched_chunks(workspace_id=workspace_id, material_note_id=material_note_id)
+        matcher = depot.match_note_with_papers(chunks=chunks, candidate_pool_size=1000)
 
         # collect all the matched data
         papers = []
@@ -114,6 +113,7 @@ def find_relevant_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("workspace.material.save_similarities.start")
 
+    material_note_id = metadata.get("material_note_id")
     workspace_id = metadata.get("workspace_id")
     matched_result = metadata.get("matched_result", {})
     similar_chunks = matched_result.get("similar_chunks", [])
@@ -125,19 +125,19 @@ def save_similarities(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         # payloads enrichment
-        payloads: List[NoteEnrichedSimilarityORM] = []
+        payloads: List[LearningMaterialDocumentORM] = []
 
-        for similarity in similar_chunks:
-            payload = NoteEnrichedSimilarityORM(
+        for sim in similar_chunks:
+            payload = LearningMaterialDocumentORM(
                 workspace_id=workspace_id,
-                enriched_note_id=similarity.get("enriched_note_id"),
-                enriched_chunk_id=similarity.get("enriched_chunk_id"),
-                paper_id=similarity.get("paper_id"),
-                enriched_content=similarity.get("enriched_content"),
-                document_chunk_id=similarity.get("document_chunk_id"),
-                document_content=similarity.get("document_content"),
-                similarity_score=similarity.get("similarity_score"),
-                attributes=similarity.get("attributes")
+                material_note_id=material_note_id,
+                material_chunk_id=sim.get("chunk_id"),
+                paper_id=sim.get("paper_id"),
+                material_note_content=sim.get("chunk_content", ""),
+                document_chunk_id=sim.get("document_id"),
+                document_content=sim.get("document_content", ""),
+                similarity_score=sim.get("similarity_score", 0.0),
+                attributes=sim.get("attributes", {})
             )
             payloads.append(payload)
 

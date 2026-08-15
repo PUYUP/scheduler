@@ -5,10 +5,11 @@ from atlazer.storage.workspace.notes import WorkspaceNoteDepot
 from atlazer.utils.notes_clustering import NotesClusteringService
 from atlazer.celery_app.tasks.workspace.notes import (
     deduplicate_notes,
-    save_enrichments,
+    save_enriched_notes,
     process_workspaces,
-    chunk_enriched_notes
+    chunk_enriched_notes,
 )
+from atlazer.celery_app.tasks.workspace.material import find_relevant_papers, save_similarities
 
 
 def main():
@@ -31,7 +32,7 @@ def main():
     # deduplicate_notes(metadata={"workspace_id": workspace_id})
     # print(result)
 
-    # result = save_enrichments(
+    # result = save_enriched_notes(
     #     metadata={
     #         "key": f"notes/91439e8d-7858-4ccc-8c87-3a160b904678/2026/08/14",
     #         "job_id": "batches/nk22ufgsj1q8vwunlvl0naqluu3laxz0sf33",
@@ -56,7 +57,23 @@ def main():
         }
     ).apply_async()
 
-    print(job.id)
+    # job = find_relevant_papers.s(
+    #     metadata={
+    #         "workspace_id": workspace_id,
+    #         "material_note_id": "b1e9b9b6-ddaf-40c7-ae54-56afbff39f0f"
+    #     }
+    # ).apply_async()
+
+    # print(job.id)
+
+    # res = find_relevant_papers(metadata={
+    #     "workspace_id": workspace_id,
+    #     "material_note_id": "b1e9b9b6-ddaf-40c7-ae54-56afbff39f0f"
+    # })
+
+    # print(res["matched_result"]["similar_chunks"])
+
+    # save_similarities(metadata=res)
 
 
 if __name__ == "__main__":

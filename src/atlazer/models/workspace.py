@@ -270,8 +270,8 @@ class NoteSimilarityORM(Base):
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
 
-class NoteEnrichedORM(Base):
-    __tablename__ = "workspace_enriched_notes"
+class LearningMaterialNoteORM(Base):
+    __tablename__ = "learning_material_notes"
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -291,13 +291,13 @@ class NoteEnrichedORM(Base):
     )
 
 
-class NoteEnrichedChunkORM(Base):
-    __tablename__ = "workspace_enriched_chunks"
+class LearningMaterialChunkORM(Base):
+    __tablename__ = "learning_material_chunks"
     
     __table_args__ = (
         # 1. Vector Index (HNSW)
         Index(
-            "idx_ws_enriched_chunks_embedding",
+            "idx_ws_material_chunks_embedding",
             "embedding",
             postgresql_using="hnsw",
             postgresql_with={"m": 16, "ef_construction": 64},
@@ -305,15 +305,15 @@ class NoteEnrichedChunkORM(Base):
         ),
 
         # 2. Filtering & Sorting Indexes (B-Tree) - Dioptimalkan
-        # Index ini meng-cover query untuk "workspace_id" DAN "workspace_id + enriched_note_id"
-        Index("idx_ws_enriched_chunks_ws_note", "workspace_id", "enriched_note_id"),
+        # Index ini meng-cover query untuk "workspace_id" DAN "workspace_id + material_note_id"
+        Index("idx_ws_material_chunks_ws_note", "workspace_id", "material_note_id"),
         
-        # Index ini meng-cover query untuk "enriched_note_id" DAN "enriched_note_id + chunk_index"
-        Index("idx_ws_enriched_chunks_note_chunk", "enriched_note_id", "chunk_index"),
+        # Index ini meng-cover query untuk "material_note_id" DAN "material_note_id + chunk_index"
+        Index("idx_ws_material_chunks_note_chunk", "material_note_id", "chunk_index"),
 
         # 3. Metadata Index (GIN) untuk JSONB
         Index(
-            "idx_ws_enriched_chunks_attributes",
+            "idx_ws_material_chunks_attributes",
             "attributes",
             postgresql_using="gin",
         ),
@@ -321,9 +321,9 @@ class NoteEnrichedChunkORM(Base):
         # 4. Unique Constraint Index
         UniqueConstraint(
             "workspace_id", 
-            "enriched_note_id", 
+            "material_note_id", 
             "chunk_index", 
-            name="uq_ws_enriched_chunks_identity"
+            name="uq_ws_material_chunks_identity"
         ),
     )
 
@@ -335,7 +335,7 @@ class NoteEnrichedChunkORM(Base):
     )
     
     workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    enriched_note_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    material_note_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(String, nullable=False)
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
@@ -347,16 +347,16 @@ class NoteEnrichedChunkORM(Base):
     )
 
 
-class NoteEnrichedSimilarityORM(Base):
-    __tablename__ = "workspace_enriched_similarities"
+class LearningMaterialDocumentORM(Base):
+    __tablename__ = "learning_material_documents"
     __table_args__ = (
-        Index("idx_workspace_enriched_sim_note_score", "enriched_note_id", "similarity_score"),
-        Index("idx_workspace_enriched_sim_paper_score", "paper_id", "similarity_score"),
-        Index("idx_workspace_enriched_similarities_attributes", "attributes", postgresql_using="gin"),
+        Index("idx_workspace_material_sim_note_score", "material_note_id", "similarity_score"),
+        Index("idx_workspace_material_sim_paper_score", "paper_id", "similarity_score"),
+        Index("idx_learning_material_documents_attributes", "attributes", postgresql_using="gin"),
         UniqueConstraint(
-            "enriched_chunk_id", 
+            "material_chunk_id", 
             "document_chunk_id", 
-            name="uq_enriched_note_doc_chunk_pair"
+            name="uq_material_note_doc_chunk_pair"
         ),
     )
 
@@ -366,9 +366,9 @@ class NoteEnrichedSimilarityORM(Base):
         server_default=func.gen_random_uuid()
     )
     workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    enriched_note_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    enriched_chunk_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    enriched_content: Mapped[str] = mapped_column(String, nullable=False)
+    material_note_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    material_chunk_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    material_note_content: Mapped[str] = mapped_column(String, nullable=False)
     paper_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_chunk_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_content: Mapped[str] = mapped_column(String, nullable=False)

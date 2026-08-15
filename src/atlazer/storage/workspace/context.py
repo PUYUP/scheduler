@@ -7,7 +7,6 @@ from atlazer.models.paper import PaperORM
 from collections import defaultdict
 from typing import List, Any, Dict, TypedDict, Optional
 from atlazer.storage.db import DatabasePool
-from atlazer.storage.workspace.notes import NoteEnrichedChunkORM
 from atlazer.models.workspace import (
     ContextChunkORM,
     ContextPaperORM,
@@ -284,7 +283,7 @@ class WorkspaceContextDepot:
 
     def match_context_with_papers(
         self,
-        chunks: List[Any],
+        chunks: List[ContextChunkORM],
         top_k: int = 15,
         candidate_pool_size: Optional[int] = None,
     ) -> Dict[Any, MatchResultDict]:
@@ -301,7 +300,7 @@ class WorkspaceContextDepot:
         try:
             with self._db_pool.session() as session:
                 for chunk in chunks:
-                    if not chunk.embedding:
+                    if chunk.embedding is None or len(chunk.embedding) == 0:
                         log.warning(
                             "workspace_context.empty_embedding",
                             chunk_id=getattr(chunk, "id", None),
