@@ -22,6 +22,7 @@ imports = (
     "atlazer.celery_app.tasks.evaluation",
     "atlazer.celery_app.tasks.workspace.context",
     "atlazer.celery_app.tasks.workspace.notes",
+    "atlazer.celery_app.tasks.workspace.material",
     "atlazer.celery_app.tasks.maintenance",
 )
 
@@ -102,6 +103,12 @@ task_annotations = {
         "soft_time_limit": 3300,
     },
     "atlazer.celery_app.tasks.workspace.notes.*": {
+        "max_retries": 3,
+        "default_retry_delay": 60,
+        "time_limit": 3600,
+        "soft_time_limit": 3300,
+    },
+    "atlazer.celery_app.tasks.workspace.material.*": {
         "max_retries": 3,
         "default_retry_delay": 60,
         "time_limit": 3600,
