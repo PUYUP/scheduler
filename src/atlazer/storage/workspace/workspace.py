@@ -81,7 +81,7 @@ class WorkspaceDepot:
             logger.exception("Failed to bulk update workspaces")
             raise
 
-    def get_for_notes_processing(self) -> List[WorkspaceORM]:
+    def get_pre_processing_workspaces(self) -> List[WorkspaceORM]:
         """Get workspaces that are ready for notes processing."""
         current_time = datetime.now(timezone.utc).isoformat()
 
@@ -103,5 +103,5 @@ class WorkspaceDepot:
                 return list(rows)
             except Exception as e:
                 # Menggunakan logger.exception agar merekam stack-trace penuh
-                logger.exception("workspace.get_for_notes_processing.failed: %s", str(e))
+                logger.exception("workspace.get_pre_processing_workspaces.failed: %s", str(e))
                 raise

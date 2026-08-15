@@ -196,7 +196,7 @@ def save_embedding(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
-    name="atlazer.celery_app.tasks.workspace.context.match_papers",
+    name="atlazer.celery_app.tasks.workspace.context.find_relevant_papers",
     bind=True,
     max_retries=3,
     default_retry_delay=30,
@@ -205,8 +205,8 @@ def save_embedding(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     soft_time_limit=1700,
     ignore_result=False,
 )
-def match_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    log.info("workspace.context.match_papers.start", metadata=metadata)
+def find_relevant_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.context.find_relevant_papers.start", metadata=metadata)
 
     context_id = metadata.get("context_id")
     workspace_id = metadata.get("workspace_id")
@@ -242,7 +242,7 @@ def match_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         }
     except Exception as exc:
         log.error(
-            "workspace.context.match_papers.failed",
+            "workspace.context.find_relevant_papers.failed",
             metadata=metadata,
             error=str(exc),
             attempt=self.request.retries,

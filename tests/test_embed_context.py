@@ -2,7 +2,7 @@ from atlazer.celery_app.tasks.workspace.context import (
     chunking,
     embedding,
     save_embedding,
-    match_papers,
+    find_relevant_papers,
 )
 
 
@@ -28,7 +28,7 @@ def main():
     # metadata.update({"chunks": embedded_result["chunks"]})
 
     # save_embedding(metadata=metadata)
-    res = match_papers(metadata=metadata)
+    res = find_relevant_papers(metadata=metadata)
     print(res)
 
 if __name__ == "__main__":

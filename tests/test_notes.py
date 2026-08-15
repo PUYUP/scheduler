@@ -3,7 +3,12 @@ import numpy as np
 from atlazer.celery_app.main import db_pool
 from atlazer.storage.workspace.notes import WorkspaceNoteDepot
 from atlazer.utils.notes_clustering import NotesClusteringService
-from atlazer.celery_app.tasks.workspace.notes import deduplicate_notes, save_enrichments, process_workspace
+from atlazer.celery_app.tasks.workspace.notes import (
+    deduplicate_notes,
+    save_enrichments,
+    process_workspaces,
+    chunk_enriched_notes
+)
 
 
 def main():
@@ -35,8 +40,23 @@ def main():
     # )
     # print(result)
 
-    xx = process_workspace()
-    print(xx)
+    # xx = process_workspaces()
+    # print(xx)
+
+    # chunks = chunk_enriched_notes(metadata={
+    #     "workspace_id": workspace_id,
+    #     "processing_date": "2026-08-14"
+    # })
+    # print(chunks)
+
+    job = chunk_enriched_notes.s(
+        metadata={
+            "workspace_id": workspace_id,
+            "processing_date": "2026-08-14"
+        }
+    ).apply_async()
+
+    print(job.id)
 
 
 if __name__ == "__main__":

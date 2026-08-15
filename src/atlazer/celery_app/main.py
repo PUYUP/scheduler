@@ -285,8 +285,9 @@ _TIER_PREFIXES = {
     "atlazer.celery_app.tasks.matcher.":    "matcher",
     "atlazer.celery_app.tasks.challenge.":  "challenge",
     "atlazer.celery_app.tasks.evaluation.": "evaluation",
-    "atlazer.celery_app.tasks.workspace.context.": "workspace",
-    "atlazer.celery_app.tasks.workspace.notes.":   "workspace",
+    "atlazer.celery_app.tasks.workspace.context.":  "workspace",
+    "atlazer.celery_app.tasks.workspace.notes.":    "workspace",
+    "atlazer.celery_app.tasks.workspace.material.": "workspace",
 }
 
 

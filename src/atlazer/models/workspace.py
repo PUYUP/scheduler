@@ -270,8 +270,8 @@ class NoteSimilarityORM(Base):
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
 
-class NoteEnrichmentORM(Base):
-    __tablename__ = "workspace_notes_enrichments"
+class NoteEnrichedORM(Base):
+    __tablename__ = "workspace_enriched_notes"
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -289,3 +289,88 @@ class NoteEnrichmentORM(Base):
         server_default=func.now(),
         nullable=False
     )
+
+
+class NoteEnrichedChunkORM(Base):
+    __tablename__ = "workspace_enriched_chunks"
+    
+    __table_args__ = (
+        # 1. Vector Index (HNSW)
+        Index(
+            "idx_ws_enriched_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
+            postgresql_ops={"embedding": "vector_cosine_ops"}
+        ),
+
+        # 2. Filtering & Sorting Indexes (B-Tree) - Dioptimalkan
+        # Index ini meng-cover query untuk "workspace_id" DAN "workspace_id + enriched_note_id"
+        Index("idx_ws_enriched_chunks_ws_note", "workspace_id", "enriched_note_id"),
+        
+        # Index ini meng-cover query untuk "enriched_note_id" DAN "enriched_note_id + chunk_index"
+        Index("idx_ws_enriched_chunks_note_chunk", "enriched_note_id", "chunk_index"),
+
+        # 3. Metadata Index (GIN) untuk JSONB
+        Index(
+            "idx_ws_enriched_chunks_attributes",
+            "attributes",
+            postgresql_using="gin",
+        ),
+
+        # 4. Unique Constraint Index
+        UniqueConstraint(
+            "workspace_id", 
+            "enriched_note_id", 
+            "chunk_index", 
+            name="uq_ws_enriched_chunks_identity"
+        ),
+    )
+
+    # --- COLUMNS ---
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+    
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    enriched_note_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
+    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+
+class NoteEnrichedSimilarityORM(Base):
+    __tablename__ = "workspace_enriched_similarities"
+    __table_args__ = (
+        Index("idx_workspace_enriched_sim_note_score", "enriched_note_id", "similarity_score"),
+        Index("idx_workspace_enriched_sim_paper_score", "paper_id", "similarity_score"),
+        Index("idx_workspace_enriched_similarities_attributes", "attributes", postgresql_using="gin"),
+        UniqueConstraint(
+            "enriched_chunk_id", 
+            "document_chunk_id", 
+            name="uq_enriched_note_doc_chunk_pair"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    enriched_note_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    enriched_chunk_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    enriched_content: Mapped[str] = mapped_column(String, nullable=False)
+    paper_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    document_chunk_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    document_content: Mapped[str] = mapped_column(String, nullable=False)
+    similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
+    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")

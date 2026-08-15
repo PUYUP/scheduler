@@ -297,7 +297,7 @@ def embed_context(payload: EmbedContextRequest):
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.context.match_papers",
+                "atlazer.celery_app.tasks.workspace.context.find_relevant_papers",
                 queue="workspace",
                 immutable=False,
             )
@@ -346,7 +346,7 @@ def embed_note(payload: EmbedNoteRequest):
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.notes.match_papers",
+                "atlazer.celery_app.tasks.workspace.notes.find_relevant_papers",
                 queue="workspace",
                 immutable=False,
             )

@@ -2,12 +2,20 @@ import uuid
 import structlog
 
 from uuid import UUID
+from datetime import date
 from atlazer.models.paper import PaperORM
 
 from collections import defaultdict
 from typing import List, Any, Dict, TypedDict, Optional
 from atlazer.storage.db import DatabasePool
-from atlazer.models.workspace import NoteChunkORM, NotePaperORM, NoteSimilarityORM, NoteEnrichmentORM
+from atlazer.models.workspace import (
+    NoteChunkORM, 
+    NotePaperORM, 
+    NoteSimilarityORM, 
+    NoteEnrichedORM,
+    NoteEnrichedChunkORM,
+    NoteEnrichedSimilarityORM,
+)
 from atlazer.models.document import DocumentChunkORM
 
 from sqlalchemy import tuple_, insert, select, func, update, Date
@@ -180,9 +188,59 @@ class WorkspaceNoteDepot:
                 )
                 raise e
 
-    def insert_note_enrichments(self, values: List[NoteEnrichmentORM]) -> None:
+    def insert_enriched_similarities(
+        self,
+        values: List[NoteEnrichedSimilarityORM]
+    ) -> None:
         if not values:
-            log.info("workspace.insert_note_enrichments.empty_list")
+            log.info("workspace.insert_enriched_similarities.empty_list")
+            return
+
+        enriched_keys = list({(chunk.enriched_note_id, chunk.workspace_id, chunk.enriched_chunk_id) for chunk in values})
+        rows = [
+            {
+                "workspace_id": chunk.workspace_id,
+                "enriched_note_id": chunk.enriched_note_id,
+                "enriched_chunk_id": chunk.enriched_chunk_id,
+                "enriched_content": chunk.enriched_content,
+                "paper_id": chunk.paper_id,
+                "document_chunk_id": chunk.document_chunk_id,
+                "document_content": chunk.document_content,
+                "attributes": chunk.attributes,
+                "similarity_score": chunk.similarity_score,
+            }
+            for chunk in values
+        ]
+
+        with self._db_pool.session() as session:
+            try:
+                session.query(NoteEnrichedSimilarityORM).filter(
+                    tuple_(
+                        NoteEnrichedSimilarityORM.enriched_note_id, 
+                        NoteEnrichedSimilarityORM.workspace_id,
+                        NoteEnrichedSimilarityORM.enriched_chunk_id,
+                    ).in_(enriched_keys)
+                ).delete(synchronize_session=False)
+
+                session.execute(insert(NoteEnrichedSimilarityORM), rows)
+                session.commit()
+
+                log.info(
+                    "workspace.insert_enriched_similarities.finish_upsert",
+                    count=len(values),
+                )
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace.insert_enriched_similarities.error_upsert",
+                    error=str(e),
+                )
+                raise e
+
+    def insert_enriched_notes(self, values: List[NoteEnrichedORM]) -> None:
+        if not values:
+            log.info("workspace.insert_enriched_notes.empty_list")
             return
 
         note_keys = list({
@@ -204,26 +262,146 @@ class WorkspaceNoteDepot:
 
         with self._db_pool.session() as session:
             try:
-                session.query(NoteEnrichmentORM).filter(
+                session.query(NoteEnrichedORM).filter(
                     tuple_(
-                        NoteEnrichmentORM.clustered_date, 
-                        NoteEnrichmentORM.cluster_label,
-                        NoteEnrichmentORM.workspace_id,
+                        NoteEnrichedORM.clustered_date, 
+                        NoteEnrichedORM.cluster_label,
+                        NoteEnrichedORM.workspace_id,
                     ).in_(note_keys)
                 ).delete(synchronize_session=False)
 
-                session.execute(insert(NoteEnrichmentORM), rows)
+                session.execute(insert(NoteEnrichedORM), rows)
                 session.commit()
 
                 log.info(
-                    "workspace.insert_note_enrichments.finish_upsert",
+                    "workspace.insert_enriched_notes.finish_upsert",
                     count=len(values),
                 )
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
-                    "workspace.insert_note_enrichments.error_upsert",
+                    "workspace.insert_enriched_notes.error_upsert",
+                    error=str(e),
+                )
+                raise e
+
+    def get_enriched_notes(
+        self,
+        workspace_id: str,
+        clustered_date: date,
+    ) -> List[NoteEnrichedORM]:
+        try:
+            workspace_uuid = UUID(workspace_id)
+        except ValueError:
+            log.error(
+                "workspace.get_enriched_notes.error_uuid",
+                workspace_id=workspace_id,
+            )
+            raise ValueError(f"Invalid workspace_id: {workspace_id}")
+
+        with self._db_pool.session() as session:
+            try:
+                return session.query(NoteEnrichedORM).filter(
+                    NoteEnrichedORM.workspace_id == workspace_uuid,
+                    NoteEnrichedORM.clustered_date == clustered_date,
+                ).all()
+            except SQLAlchemyError as e:
+                log.error(
+                    "workspace.get_enriched_notes.error_select",
+                    error=str(e),
+                )
+                raise e
+
+    def get_enriched_chunks(
+        self,
+        workspace_id: str,
+        enriched_note_id: str,
+    ) -> List[NoteEnrichedChunkORM]:
+        try:
+            workspace_uuid = UUID(workspace_id)
+        except ValueError:
+            log.error(
+                "workspace.get_enriched_chunks.error_uuid",
+                workspace_id=workspace_id,
+            )
+            raise ValueError(f"Invalid workspace_id: {workspace_id}")
+
+        try:
+            enriched_note_uuid = UUID(enriched_note_id)
+        except ValueError:
+            log.error(
+                "workspace.get_enriched_chunks.error_uuid",
+                enriched_note_id=enriched_note_id,
+            )
+            raise ValueError(f"Invalid enriched_note_id: {enriched_note_id}")
+
+        with self._db_pool.session() as session:
+            try:
+                return session.query(NoteEnrichedChunkORM).filter(
+                    NoteEnrichedChunkORM.workspace_id == workspace_uuid,
+                    NoteEnrichedChunkORM.enriched_note_id == enriched_note_uuid,
+                ).all()
+            except SQLAlchemyError as e:
+                log.error(
+                    "workspace.get_enriched_chunks.error_select",
+                    error=str(e),
+                )
+                raise e
+
+    def insert_enriched_chunks(
+        self,
+        values: List[NoteEnrichedChunkORM]
+    ) -> List[NoteEnrichedChunkORM]:
+        if not values:
+            log.info("workspace.insert_enriched_chunks.empty_list")
+            return []
+
+        note_keys = list({
+            (chunk.workspace_id, chunk.enriched_note_id, chunk.chunk_index) 
+            for chunk in values
+        })
+
+        rows = [
+            {
+                "workspace_id": chunk.workspace_id,
+                "enriched_note_id": chunk.enriched_note_id,
+                "chunk_index": chunk.chunk_index,
+                "content": chunk.content,
+                "embedding": chunk.embedding,
+                "attributes": chunk.attributes,
+            }
+            for chunk in values
+        ]
+
+        with self._db_pool.session() as session:
+            try:
+                session.query(NoteEnrichedChunkORM).filter(
+                    tuple_(
+                        NoteEnrichedChunkORM.workspace_id,
+                        NoteEnrichedChunkORM.enriched_note_id,
+                        NoteEnrichedChunkORM.chunk_index,
+                    ).in_(note_keys)
+                ).delete(synchronize_session=False)
+
+                result = session.execute(
+                    insert(NoteEnrichedChunkORM).returning(NoteEnrichedChunkORM),
+                    rows,
+                )
+                inserted = result.scalars().all()
+                session.commit()
+
+                log.info(
+                    "workspace.insert_enriched_chunks.finish_upsert",
+                    count=len(values),
+                )
+
+                return list(inserted)
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace.insert_enriched_chunks.error_upsert",
                     error=str(e),
                 )
                 raise e
