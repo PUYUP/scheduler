@@ -3,11 +3,12 @@ import structlog
 
 from typing import List
 from datetime import date
-from sqlalchemy import update
+from sqlalchemy import update, tuple_, insert
 from sqlalchemy.exc import SQLAlchemyError
 from atlazer.models.workspace import (
     LearningMaterialDocumentORM,
     LearningMaterialNoteORM,
+    LearningMaterialSourceORM,
 )
 from atlazer.storage.db import DatabasePool
 
@@ -100,6 +101,54 @@ class LearningMaterialDepot:
                 session.rollback()
                 log.error(
                     "workspace_document.update_documents_with_label.error",
+                    error=str(e),
+                )
+                raise e
+
+    def insert_sources(self, values: List[LearningMaterialSourceORM]) -> None:
+        if not values:
+            log.info("workspace.material.insert_sources.empty_list")
+            return
+
+        source_keys = list({
+            (chunk.clustered_date, chunk.cluster_label, chunk.workspace_id) 
+            for chunk in values
+        })
+
+        rows = [
+            {
+                "workspace_id": chunk.workspace_id,
+                "cluster_label": chunk.cluster_label,
+                "clustered_date": chunk.clustered_date,
+                "chunks": chunk.chunks,
+                "content": chunk.content,
+                "attributes": chunk.attributes,
+            }
+            for chunk in values
+        ]
+
+        with self._db_pool.session() as session:
+            try:
+                session.query(LearningMaterialSourceORM).filter(
+                    tuple_(
+                        LearningMaterialSourceORM.clustered_date, 
+                        LearningMaterialSourceORM.cluster_label,
+                        LearningMaterialSourceORM.workspace_id,
+                    ).in_(source_keys)
+                ).delete(synchronize_session=False)
+
+                session.execute(insert(LearningMaterialSourceORM), rows)
+                session.commit()
+
+                log.info(
+                    "workspace.material.insert_sources.finish_upsert",
+                    count=len(values),
+                )
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace.material.insert_sources.error_upsert",
                     error=str(e),
                 )
                 raise e

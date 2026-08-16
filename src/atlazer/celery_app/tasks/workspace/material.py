@@ -25,13 +25,9 @@ from atlazer.storage.workspace.notes import WorkspaceNoteDepot, LearningMaterial
 from atlazer.storage.workspace.context import WorkspaceContextDepot
 from atlazer.storage.workspace.material import LearningMaterialDepot
 from atlazer.models.workspace import (
-    ChunkNoteMetadata,
-    NoteChunkORM,
-    NotePaperORM,
-    NoteDocumentORM,
     LearningMaterialNoteORM,
-    WorkspaceORM,
     LearningMaterialDocumentORM,
+    LearningMaterialSourceORM,
 )
 
 log = structlog.get_logger()
@@ -363,7 +359,7 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     user_metadata = {
         "processing_date": metadata.get("processing_date"),
         "workspace_id": metadata.get("workspace_id"),
-        "action": "material_docs_summary_generation",
+        "action": "material_build_sources",
     }
 
     job_name = process_jsonl_file(
@@ -378,6 +374,115 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("workspace.context.process_jsonl.done", job_name=job_name)
 
     metadata["job_name"] = job_name
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 6 of 6 — build sources
+# ─────────────────────────────────────────────────────────────────────────────#
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.material.build_sources",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.material.build_sources.start")
+
+    now = datetime.now()
+    processing_date = metadata.get("processing_date", now.strftime("%Y-%m-%d"))
+    key = metadata.get("key", "")  # notes/<workspace_id>/<yyyy>/<mm>/<dd>
+    date_value = datetime.strptime(processing_date, "%Y-%m-%d").date()
+    workspace_id = metadata.get("workspace_id")
+    job_id = metadata.get("job_id")
+
+    if not workspace_id or job_id is None:
+        raise ValueError("Failed to get workspace_id or job_id from metadata")
+
+    try:
+        depot = LearningMaterialDepot(db_pool)
+        documents = depot.get_documents(
+            workspace_id=workspace_id,
+            processing_date=date_value.strftime("%Y-%m-%d")
+        )
+
+        log.info(
+            "workspace.material.build_sources.documents",
+            documents_count=len(documents)
+        )
+
+        # group chunks with cluster_label
+        document_groups = defaultdict(list)
+        for document in documents:
+            cluster_label = document.cluster_label
+            document_groups[cluster_label].append(orm_to_dict(document, exclude={"embedding"}))
+
+        log.info(
+            "workspace.material.build_sources.documents_grouped",
+            documents_groups_count=len(document_groups)
+        )
+
+    except Exception as e:
+        log.error("workspace.material.build_sources.error", error=str(e))
+        raise ValueError(str(e))
+
+    try:
+        results = get_batch_results(job_id)
+        if results is None:
+            raise ValueError("Failed to get results from batch")
+    except Exception as e:
+        log.error("workspace.material.build_sources.error", error=str(e))
+        raise ValueError(str(e))
+
+    payloads: List[LearningMaterialSourceORM] = []
+    for res in results:
+        key = res.get("key", "")  # <workspace_id>/<yyyy>/<mm>/<dd>_<hbdscan_label>_<note_id>
+        pattern = r"^([0-9a-f-]{36})_(\d{4}/\d{2}/\d{2})_(-?\d+)(?:_([0-9a-f-]{36}))?$"
+        match = re.match(pattern, key)
+
+        if not match:
+            log.warning("workspace.material.build_sources.invalid_key", key=key)
+            continue
+
+        workspace_id, cdate, clabel, note_id = match.groups()
+
+        # map raw chunks
+        documents = document_groups[clabel]
+        if clabel == '-1' and note_id:
+            documents = [c for c in documents if c["note_id"] == note_id]
+
+        result = res.get("result", {})
+        summary = result.get("summary", None) if isinstance(result, dict) else None
+        attributes = res.get("metadata", {})
+
+        payload: LearningMaterialSourceORM = LearningMaterialSourceORM(
+            attributes=attributes,
+            content=summary,
+            chunks=documents,
+            cluster_label=clabel,
+            workspace_id=workspace_id,
+            clustered_date=date_value,
+        )
+        payloads.append(payload)
+
+    if payloads:
+        try:
+            depot = LearningMaterialDepot(db_pool)
+            depot.insert_sources(payloads)
+        except Exception as e:
+            log.error("workspace.material.build_sources.error", error=str(e))
+            raise ValueError(str(e))
+
+    log.info(
+        "workspace.material.build_sources.batch_results",
+        results_count=len(results)
+    )
+
     return metadata
 
 

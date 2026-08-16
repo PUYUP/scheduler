@@ -290,6 +290,27 @@ class LearningMaterialNoteORM(Base):
     )
 
 
+class LearningMaterialSourceORM(Base):
+    __tablename__ = "learning_material_sources"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    cluster_label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    clustered_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    chunks: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+
 class LearningMaterialChunkORM(Base):
     __tablename__ = "learning_material_chunks"
     

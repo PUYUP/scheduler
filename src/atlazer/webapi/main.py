@@ -11,6 +11,7 @@ from atlazer.celery_app.main import db_pool
 from atlazer.celery_app.tasks.webapi import generate_embeddings
 from atlazer.celery_app.tasks.matcher import single_user
 from atlazer.celery_app.tasks.challenge import chunk_answer
+from atlazer.celery_app.tasks.workspace.material import build_sources
 from atlazer.celery_app.tasks.workspace.context import chunking as chunking_context, save_summaries
 from atlazer.celery_app.tasks.workspace.notes import chunking as chunking_notes, save_enriched_notes
 from atlazer.celery_app.tasks.evaluation import save_evaluation
@@ -233,9 +234,9 @@ async def gemini_batch_webhook(request: Request):
             return TaskExecutionResponse(task_id=job.id)
 
         # material content enrichments
-        if action == "material_docs_summary_generation":
+        if action == "material_build_sources":
             log.info(
-                "webapi.gemini-batch-webhook.material_docs_summary_generation.start",
+                "webapi.gemini-batch-webhook.build_sources.start",
                 user_metadata=user_metadata
             )
 
@@ -245,7 +246,12 @@ async def gemini_batch_webhook(request: Request):
                 **user_metadata,
             }
 
-            log.info("webapi.gemini-batch-webhook.material_docs_summary_generation.success", task_id=job.id)
+            job = build_sources.apply_async(
+                kwargs={"metadata": metadata},
+                queue="workspace"
+            )
+
+            log.info("webapi.gemini-batch-webhook.build_sources.success", task_id=job.id)
             return TaskExecutionResponse(task_id=job.id)
 
     return {"ok": True}
