@@ -254,6 +254,22 @@ async def gemini_batch_webhook(request: Request):
             log.info("webapi.gemini-batch-webhook.build_sources.success", task_id=job.id)
             return TaskExecutionResponse(task_id=job.id)
 
+        # material builder
+        if action == 'material_builder':
+            log.info(
+                "webapi.gemini-batch-webhook.material_builder.start",
+                user_metadata=user_metadata
+            )
+
+            metadata = {
+                "job_id": batch_id,
+                "output_file_uri": data.get("output_file_uri"),
+                **user_metadata,
+            }
+
+            # log.info("webapi.gemini-batch-webhook.material_builder.success", task_id=job.id)
+            return TaskExecutionResponse(task_id='job.id')
+
     return {"ok": True}
 
 

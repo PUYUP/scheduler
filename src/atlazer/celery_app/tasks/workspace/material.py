@@ -9,7 +9,7 @@ from datetime import datetime, date
 from typing import Dict, Any, List
 from pathlib import Path
 from collections import defaultdict
-from celery import group
+from celery import group, signature
 
 from atlazer.utils.text_cleaner import orm_to_dict
 from atlazer.utils.gemini_batch import upload_chunk_file, process_jsonl_file, get_batch_results
@@ -288,7 +288,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         payload = _build_json(f"{workspace_id}_{dkey}_{key}", combined_content, language_code)
         payloads.append(payload)
 
-    key = f"materials/{workspace_id}/{dkey}"
+    key = f"sources/{workspace_id}/{dkey}"
     target_dir = Path(settings.gemini_batch_dir)
     target_file = target_dir / f"{key}.jsonl"
     target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -383,7 +383,6 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("workspace.material.build_sources.start")
 
     now = datetime.now()
-    language_code = metadata.get("language_code", "en")
     processing_date = metadata.get("processing_date", now.strftime("%Y-%m-%d"))
     key = metadata.get("key", "")  # notes/<workspace_id>/<yyyy>/<mm>/<dd>
     date_value = datetime.strptime(processing_date, "%Y-%m-%d").date()
@@ -480,11 +479,20 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     # build material send again to google gemini API to create 
     # final document
-    
-    build_material.apply_async(
-        args=[metadata],
-        queue="workspace",
-    )
+
+    (
+        build_material.s(metadata).set(queue="workspace")
+        | signature(
+            "atlazer.celery_app.tasks.workspace.material.generate_material_jsonl",
+            queue="workspace",
+            immutable=False,
+        )
+        | signature(
+            "atlazer.celery_app.tasks.workspace.material.process_material_jsonl",
+            queue="workspace",
+            immutable=False,
+        )
+    ).apply_async()
 
     return metadata
 
@@ -509,7 +517,7 @@ def build_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     workspace_id = metadata.get("workspace_id")
     processing_date = metadata.get("processing_date")
-    language_code = metadata.get("language_code", "en")
+    contents: List[str] = []
 
     if not workspace_id or not processing_date:
         raise ValueError("Missing workspace_id or processing_date")
@@ -517,6 +525,10 @@ def build_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     try:
         depot = LearningMaterialDepot(db_pool)
         sources = depot.get_sources(workspace_id, processing_date)
+
+        for source in sources:
+            if source.content:
+                contents.append(source.content)
 
         log.info(
             "workspace.material.build_material.sources_count",
@@ -526,6 +538,115 @@ def build_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         log.error("workspace.material.build_material.error", error=str(e))
         raise ValueError(str(e))
 
+    metadata["contents"] = contents
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 8 of 10 — generate jsonl for material
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.material.generate_material_jsonl",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def generate_material_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("atlazer.celery_app.tasks.workspace.material.generate_material_jsonl.start")
+
+    workspace_id = metadata.get("workspace_id")
+    language_code = metadata.get("language_code", "en")
+    processing_date = metadata.get("processing_date", "")
+    contents = metadata.get("contents", [])
+
+    payloads: List[Any] = []
+    dkey = processing_date.replace("-", "/")
+    ukey = f"{workspace_id}_{dkey}"
+
+    if not workspace_id or not language_code:
+        raise ValueError("Missing required ids in metadata")
+
+    payloads = [_build_material_json(ukey, contents, language_code)]
+
+    key = f"materials/{workspace_id}/{dkey}"
+    target_dir = Path(settings.gemini_batch_dir)
+    target_file = target_dir / f"{key}.jsonl"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(target_file, "w", encoding="utf-8") as f:
+        for payload in payloads:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    # upload file
+    file_name = upload_chunk_file(str(target_file), display_name=key)
+    if file_name is None:
+        raise ValueError(f"Failed to upload file {target_file}")
+
+    log.info(
+        "atlazer.celery_app.tasks.workspace.material.generate_material_jsonl.done",
+        target_file=str(target_file),
+        payload_count=len(payloads),
+        file_name=file_name,
+    )
+
+    metadata["display_name"] = key
+    metadata["file_name"] = file_name
+    metadata["target_dir"] = str(target_dir)
+    metadata["target_file"] = str(target_file)
+
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 9 of 10 — process material jsonl file
+# ─────────────────────────────────────────────────────────────────────────────#
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.material.process_material_jsonl",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def process_material_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.material.process_material_jsonl.start")
+
+    target_file = metadata.get("target_file")
+    if target_file is None:
+        raise ValueError("Failed to get target file from metadata")
+
+    file_name = metadata.get("file_name")
+    if file_name is None:
+        raise ValueError("Failed to get file name from metadata")
+
+    # process to gemini AI
+    user_metadata = {
+        "language_code": metadata.get("language_code", "en"),
+        "processing_date": metadata.get("processing_date"),
+        "workspace_id": metadata.get("workspace_id"),
+        "action": "material_builder",
+    }
+
+    job_name = process_jsonl_file(
+        file_name,
+        model=settings.gemini_model,
+        user_metadata=user_metadata
+    )
+
+    if job_name is None:
+        raise ValueError(f"Failed to create job for file {target_file}")
+
+    log.info("workspace.material.process_material_jsonl.done", job_name=job_name)
+
+    metadata["job_name"] = job_name
     return metadata
 
 
@@ -601,3 +722,125 @@ def _build_json(key: str, content: str, language_code: str = "en") -> dict:
             }
         }
     }
+
+
+def _build_material_json(key: str, contents: List[str], language_code: str = "en") -> dict:
+    prompt = f"""You are a Research Context Enrichment System.
+        Your task is to analyze a collection of student notes that may be distributed across many chunks. Each chunk can contain multiple unrelated or partially related notes.
+        Do NOT treat each chunk as an independent research context.
+        Your job is to read and understand the entire collection of notes, discover relationships between them, categorize them into meaningful themes, and transform the collective knowledge into structured research contexts.
+        The final output MUST be written in the target language specified below.
+        TARGET LANGUAGE:
+        {language_code}
+        Follow this process:
+        1. READ ALL CHUNKS
+        Read and understand the complete input before generating any output.
+        Do not process each chunk independently.
+        Consider information across all chunks, even when related ideas appear far apart.
+        2. IDENTIFY NOTE UNITS
+        Conceptually identify individual ideas, observations, questions, claims, facts, opinions, and learning points contained within the notes.
+        3. CATEGORIZE
+        Group related ideas based on their semantic meaning, topic, concept, problem, phenomenon, or research area.
+        Do not group notes only because they contain similar keywords. Focus on their underlying meaning.
+        4. CONNECT SCATTERED IDEAS
+        Look for relationships between notes that appear in different chunks.
+        Identify when multiple notes collectively describe the same concept, problem, phenomenon, or research question.
+        5. SYNTHESIZE
+        Transform related notes into coherent research contexts.
+        A research context should represent a meaningful area of inquiry, not merely a summary of several notes.
+        Each research context should explain:
+        - What the student is learning or thinking about
+        - The main concepts involved
+        - The problem, phenomenon, or question being explored
+        - How different notes contribute to the context
+        - Potential directions for further research
+        6. IDENTIFY RESEARCH POTENTIAL
+        For each context, identify concepts or questions that could benefit from academic literature.
+        Prefer contexts that have clear research potential over trivial or purely factual notes.
+        7. PRESERVE TRACEABILITY
+        Each generated research context must be traceable back to the original notes.
+        Do not invent facts, claims, or experiences that are not supported by the notes.
+        You may infer relationships between notes, but do not introduce unsupported information.
+        8. TRANSLATE AND LOCALIZE
+        After synthesizing the research contexts, write the entire final document in {language_code}.
+        If the original notes are written in a different language:
+        - Translate the synthesized content naturally into {language_code}.
+        - Preserve the original meaning and nuance.
+        - Do not translate word-for-word when doing so would produce unnatural language.
+        - Use terminology appropriate for an academic or research context.
+        - Keep established scientific and technical terms in their commonly accepted form when appropriate.
+        - Do not translate proper nouns, product names, paper titles, or technical terms when translation would reduce their accuracy.
+        - Do not add information merely to make the translation longer.
+        The categorization and synthesis should be based on the original meaning of the notes, not on superficial differences caused by language.
+        9. GENERATE A STRUCTURED RESEARCH CONTEXT DOCUMENT
+        Organize the final result as a coherent research-context document suitable for conversion into PDF.
+        The document should contain:
+        # Title
+        A concise title representing the overall themes discovered from the notes.
+        # Overview
+        A concise synthesis of the major ideas and themes found across all student notes.
+        # Research Contexts
+        For each identified context:
+        ## Context Title
+        A specific and meaningful title.
+        ## Summary
+        A concise explanation of the research context.
+        ## Key Ideas
+        The important ideas discovered from the student's notes.
+        ## Related Concepts
+        Important concepts, topics, or terminology associated with the context.
+        ## Questions / Problems
+        Questions, uncertainties, problems, or curiosities that emerge from the notes.
+        ## Research Direction
+        Potential areas that could be investigated through academic literature.
+        ## Supporting Notes
+        The original ideas or observations from the student's notes that support this research context.
+        IMPORTANT RULES:
+        - Read ALL chunks before synthesizing.
+        - Do not create one context per chunk.
+        - Do not simply summarize the notes sequentially.
+        - Merge related ideas even when they occur in different chunks.
+        - Separate unrelated topics into different contexts.
+        - Avoid creating too many contexts.
+        - Prefer a smaller number of meaningful, well-connected contexts.
+        - Preserve the student's original meaning.
+        - Do not fabricate information.
+        - Do not introduce external knowledge unless explicitly requested.
+        - Research contexts should be specific enough to support semantic retrieval of academic papers.
+        - The final output must be entirely in {language_code}.
+        - The final document should represent the student's collective learning and curiosity, not a generic textbook summary.
+        OUTPUT:
+        Generate the structured Research Context Document described above in {language_code}."""
+    
+    return {
+        "key": key, 
+        "request": {
+            "system_instruction": {
+                "parts": [
+                    {
+                        "text": prompt
+                    }
+                ]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": c} for c in contents],
+                }
+            ], 
+            "generation_config": {
+                "temperature": 0.7,
+                "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["summary"]
+                }
+            }
+        }
+    }
+        
