@@ -558,6 +558,7 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     # process to gemini AI
     user_metadata = {
+        "language_code": metadata.get("language_code", "en"),
         "key": metadata.get("display_name"),
         "processing_date": metadata.get("processing_date"),
         "workspace_id": metadata.get("workspace_id"),

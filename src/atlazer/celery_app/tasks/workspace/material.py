@@ -759,7 +759,7 @@ def upload_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         attachment_depot = AttachmentDepot(db_pool)
         file_orm = FileORM(
             file_type=file_info.file_type,
-            disk="gcs",
+            disk="gcs/atlafiles",
             path=file_info.path,
             original_filename=file_info.original_filename,
             mime_type=file_info.mime_type,
@@ -1021,12 +1021,13 @@ def _upload_pdf_to_gcs(
     original_filename: str,
 ) -> UploadedFileInfo:
     """
-    Upload buffer PDF langsung ke Google Cloud Storage, sebagai public file.
-    Return metadata lengkap file yang berhasil di-upload.
+    Upload buffer PDF langsung ke Google Cloud Storage.
+    Bucket harus sudah di-set public via IAM (allUsers:objectViewer)
+    di level bucket — TIDAK pakai per-object ACL karena uniform
+    bucket-level access aktif.
     """
     content_type = "application/pdf"
 
-    # Hitung size dari buffer tanpa consume pointer secara permanen
     pdf_buffer.seek(0, io.SEEK_END)
     size_bytes = pdf_buffer.tell()
     pdf_buffer.seek(0)
@@ -1041,8 +1042,8 @@ def _upload_pdf_to_gcs(
         rewind=True,
     )
 
-    blob.make_public()
-
+    # TIDAK ADA blob.make_public() — akan selalu error di uniform bucket-level access.
+    # public_url cuma string constructor, tidak butuh API call/ACL sama sekali.
     return UploadedFileInfo(
         file_type="document",
         path=f"gs://{bucket_name}/{destination_blob_name}",

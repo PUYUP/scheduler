@@ -403,7 +403,7 @@ def embed_note(payload: EmbedNoteRequest):
                 immutable=False,
             )
             | signature(
-                "atlazer.celery_app.tasks.workspace.notes.save_documentss",
+                "atlazer.celery_app.tasks.workspace.notes.save_documents",
                 queue="workspace",
                 immutable=False,
             )
