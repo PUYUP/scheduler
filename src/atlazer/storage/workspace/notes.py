@@ -157,6 +157,7 @@ class WorkspaceNoteDepot:
                 "paper_id": chunk.paper_id,
                 "document_chunk_id": chunk.document_chunk_id,
                 "document_content": chunk.document_content,
+                "document_embedding": chunk.document_embedding,
                 "attributes": chunk.attributes,
                 "similarity_score": chunk.similarity_score,
             }
@@ -208,6 +209,7 @@ class WorkspaceNoteDepot:
                 "paper_id": chunk.paper_id,
                 "document_chunk_id": chunk.document_chunk_id,
                 "document_content": chunk.document_content,
+                "document_embedding": chunk.document_embedding,
                 "attributes": chunk.attributes,
                 "similarity_score": chunk.similarity_score,
             }
