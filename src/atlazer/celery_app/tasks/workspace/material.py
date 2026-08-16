@@ -6,7 +6,7 @@ import json
 import re
 import io
 
-from xhtml2pdf import pisa
+from weasyprint import HTML
 from google.cloud import storage
 
 from datetime import datetime, date
@@ -961,17 +961,14 @@ def _build_material_json(key: str, contents: List[str], language_code: str = "en
 
 def _convert_html_to_pdf(html_content: str) -> io.BytesIO:
     """
-    Convert HTML string menjadi PDF, disimpan di memory buffer.
-    Tidak menulis file sementara ke disk lokal.
+    Convert HTML string menjadi PDF menggunakan WeasyPrint.
+    Semua di-hold di memory buffer, tidak ada file sementara di disk lokal.
     """
     pdf_buffer = io.BytesIO()
 
-    pisa_status = pisa.CreatePDF(src=html_content, dest=pdf_buffer)
+    HTML(string=html_content).write_pdf(target=pdf_buffer)
 
-    if pisa_status.err:
-        raise RuntimeError(f"Gagal convert HTML ke PDF (error code: {pisa_status.err})")
-
-    pdf_buffer.seek(0)  # reset pointer supaya bisa dibaca dari awal saat upload
+    pdf_buffer.seek(0)
     return pdf_buffer
 
 

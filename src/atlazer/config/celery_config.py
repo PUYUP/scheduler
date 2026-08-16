@@ -200,6 +200,11 @@ task_routes = {
     "atlazer.celery_app.tasks.workspace.material.generate_jsonl":   {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.material.process_jsonl":    {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.material.build_sources":    {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.material.build_material":   {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.material.generate_material_jsonl":  {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.material.process_material_jsonl":   {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.material.save_material":   {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.material.upload_material": {"queue": "workspace"},
 
     # ── Arxiv Task ──
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.fetch_page":       {"queue": "arxiv"},

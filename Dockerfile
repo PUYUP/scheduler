@@ -4,6 +4,8 @@ FROM python:3.12-slim AS base
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl gcc g++ libgl1 libglib2.0-0 libgomp1 \
         poppler-utils tesseract-ocr \
+        libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
+        libcairo2 libffi-dev shared-mime-info fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # ─── FINAL IMAGE ─────────────────────────────
