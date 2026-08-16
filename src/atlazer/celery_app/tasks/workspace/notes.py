@@ -6,14 +6,13 @@ import structlog
 import json
 import re
 
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, time, timedelta
 from typing import Dict, Any, List
 from pathlib import Path
-from decimal import Decimal
-from uuid import UUID
 from collections import defaultdict
 from celery import group, chord, signature, chain
 
+from atlazer.utils.text_cleaner import orm_to_dict
 from atlazer.utils.gemini_batch import upload_chunk_file, process_jsonl_file, get_batch_results
 from atlazer.utils.notes_clustering import NotesClusteringService
 from atlazer.celery_app.main import app, db_pool
@@ -338,18 +337,19 @@ def save_documents(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         payloads: List[NoteDocumentORM] = []
 
         # payloads enrichment
-        for similarity in similar_chunks:
+        for sim in similar_chunks:
             payload = NoteDocumentORM(
                 workspace_id=workspace_id,
                 user_id=user_id,
-                paper_id=similarity.get("paper_id"),
+                paper_id=sim.get("paper_id"),
                 note_id=note_id,
-                note_chunk_id=similarity.get("chunk_id"),
-                note_content=similarity.get("chunk_content"),
-                document_chunk_id=similarity.get("document_id"),
-                document_content=similarity.get("document_content"),
-                similarity_score=similarity.get("similarity_score"),
-                attributes=similarity.get("attributes")
+                note_chunk_id=sim.get("chunk_id"),
+                note_content=sim.get("chunk_content"),
+                document_chunk_id=sim.get("document_id"),
+                document_content=sim.get("document_content"),
+                document_embedding=sim.get("document_embedding", []),
+                similarity_score=sim.get("similarity_score"),
+                attributes=sim.get("attributes")
             )
             payloads.append(payload)
 
@@ -424,8 +424,8 @@ def deduplicate_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 duplicate[key] = group
 
             metadata["dedup_result"] = {
-                "unique": [_orm_to_dict(item, exclude={"embedding"}) for item in unique],
-                "duplicate": {key: [_orm_to_dict(item, exclude={"embedding"}) for item in group] for key, group in duplicate.items()},
+                "unique": [orm_to_dict(item, exclude={"embedding"}) for item in unique],
+                "duplicate": {key: [orm_to_dict(item, exclude={"embedding"}) for item in group] for key, group in duplicate.items()},
             }
 
             # prepare payloads for updating
@@ -441,6 +441,8 @@ def deduplicate_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 u.cluster_label = "-1"
                 u.clustered_date = clustered_date
                 update_payloads.append(u)
+
+            # update to database
             depot.update_chunks_with_label(update_payloads)
 
     except Exception as exc:
@@ -620,7 +622,7 @@ def save_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         chunk_groups = defaultdict(list)
         for chunk in note_chunks:
             cluster_label = chunk.cluster_label
-            chunk_groups[cluster_label].append(_orm_to_dict(chunk, exclude={"embedding"}))
+            chunk_groups[cluster_label].append(orm_to_dict(chunk, exclude={"embedding"}))
 
         log.info(
             "workspace.notes.save_enriched_notes.chunks_grouped",
@@ -782,7 +784,7 @@ def process_workspaces(self) -> Dict[str, Any]:
         )
 
         for ws in workspaces:
-            processed_workspaces.append(_orm_to_dict(ws))
+            processed_workspaces.append(orm_to_dict(ws))
 
         metadata["workspaces_count"] = len(processed_workspaces)
         if processed_workspaces:
@@ -882,16 +884,33 @@ def chunk_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     if chunks_group:
         # process each chunk independently
-        job = group(
-            embed_enriched_notes.s(
-                metadata={
+        chained_jobs = [
+            chain(
+                embed_enriched_notes.s(
+                    metadata={
+                        "workspace_id": workspace_id,
+                        "processing_date": processing_date,
+                        "chunks": c,
+                    }
+                ).set(queue="workspace")
+            ) for c in chunks_group
+        ]
+
+        # process documents after all chunks are processed
+        callback = signature(
+            "atlazer.celery_app.tasks.workspace.material.documents_deduplication",
+            args=[
+                {
                     "workspace_id": workspace_id,
                     "processing_date": processing_date,
-                    "chunks": c,
+                    "language_code": language_code,
                 }
-            ).set(queue="workspace") for c in chunks_group
+            ],
+            queue="workspace",
+            immutable=True,
         )
-        job.apply_async()
+
+        chord(group(chained_jobs))(callback)
 
     return metadata
 
@@ -959,7 +978,6 @@ def save_material_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     chunks = metadata.get("chunks", [])
     workspace_id = metadata.get('workspace_id')
-    processing_date = metadata.get("processing_date")
 
     if not chunks:
         log.warning(
@@ -1014,42 +1032,26 @@ def save_material_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             depot = WorkspaceNoteDepot(db_pool)
             results = depot.insert_material_chunks(payloads)
 
-            # find relevant papers — satu task per chunk
-            chained_jobs = [
-                chain(
+            # find relevant papers — satu task per chunk, fire and forget
+            for c in results:
+                (
                     signature(
                         "atlazer.celery_app.tasks.workspace.material.find_relevant_papers",
                         args=[
                             {
-                                "workspace_id": str(workspace_uuid),
+                                "workspace_id": workspace_id,
                                 "material_note_id": str(c.material_note_id),
                             }
                         ],
                         queue="workspace",
                         immutable=False,
-                    ),
-                    signature(
+                    )
+                    | signature(
                         "atlazer.celery_app.tasks.workspace.material.save_documents",
                         queue="workspace",
                         immutable=False,
-                    ),
-                )
-                for c in results
-            ]
-
-            callback = signature(
-                "atlazer.celery_app.tasks.workspace.material.documents_deduplication",
-                args=[
-                    {
-                        "workspace_id": str(workspace_uuid),
-                        "clustered_date": processing_date,
-                    }
-                ],
-                queue="workspace",
-                immutable=True,
-            )
-
-            chord(group(chained_jobs))(callback)
+                    )
+                ).apply_async()
 
         except Exception as exc:
             log.error(
@@ -1068,29 +1070,6 @@ def save_material_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 # UTILS
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _orm_to_dict(obj, exclude: set[str] | None = None) -> dict:
-    exclude = exclude or set()
-    result = {}
-    for c in obj.__table__.columns:
-        if c.name in exclude:
-            continue
-        value = getattr(obj, c.name)
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-        elif isinstance(value, np.floating):
-            value = float(value)
-        elif isinstance(value, np.integer):
-            value = int(value)
-        elif isinstance(value, (datetime, date)):
-            value = value.isoformat()
-        elif isinstance(value, UUID):
-            value = str(value)
-        elif isinstance(value, Decimal):
-            value = float(value)
-        result[c.name] = value
-    return result
-
 
 def _build_json(key: str, content: str, language_code: str = "en") -> dict:
     return {

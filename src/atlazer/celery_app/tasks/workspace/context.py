@@ -331,18 +331,19 @@ def save_documents(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         payloads: List[ContextDocumentORM] = []
 
         # payloads enrichment
-        for similarity in similar_chunks:
+        for sim in similar_chunks:
             payload = ContextDocumentORM(
                 workspace_id=workspace_id,
                 user_id=user_id,
-                paper_id=similarity.get("paper_id"),
+                paper_id=sim.get("paper_id"),
                 context_id=context_id,
-                context_chunk_id=similarity.get("chunk_id"),
-                context_content=similarity.get("chunk_content"),
-                document_chunk_id=similarity.get("document_id"),
-                document_content=similarity.get("document_content"),
-                similarity_score=similarity.get("similarity_score"),
-                attributes=similarity.get("attributes")
+                context_chunk_id=sim.get("chunk_id"),
+                context_content=sim.get("chunk_content"),
+                document_chunk_id=sim.get("document_id"),
+                document_content=sim.get("document_content"),
+                document_embedding=sim.get("document_embedding", []),
+                similarity_score=sim.get("similarity_score"),
+                attributes=sim.get("attributes")
             )
             payloads.append(payload)
 

@@ -3,6 +3,7 @@ import structlog
 
 from typing import List
 from datetime import date
+from sqlalchemy import update
 from sqlalchemy.exc import SQLAlchemyError
 from atlazer.models.workspace import (
     LearningMaterialDocumentORM,
@@ -21,7 +22,7 @@ class LearningMaterialDepot:
     def get_documents(
         self,
         workspace_id: str,
-        clustered_date: str
+        processing_date: str
     ) -> List[LearningMaterialDocumentORM]:
         try:
             workspace_uuid = uuid.UUID(workspace_id)
@@ -33,13 +34,13 @@ class LearningMaterialDepot:
             raise ValueError(f"Invalid workspace_id: {workspace_id}")
 
         try:
-            clustered_date_obj = date.fromisoformat(clustered_date)
+            clustered_date_obj = date.fromisoformat(processing_date)
         except ValueError:
             log.error(
                 "workspace.get_learning_material_documents.error_date",
-                clustered_date=clustered_date,
+                clustered_date=processing_date,
             )
-            raise ValueError(f"Invalid clustered_date: {clustered_date}")
+            raise ValueError(f"Invalid clustered_date: {processing_date}")
 
         with self._db_pool.session() as session:
             try:
@@ -58,6 +59,47 @@ class LearningMaterialDepot:
             except SQLAlchemyError as e:
                 log.error(
                     "workspace.get_learning_material_documents.error_select",
+                    error=str(e),
+                )
+                raise e
+
+    def update_documents_with_label(
+        self,
+        values: List[LearningMaterialDocumentORM]
+    ) -> List[LearningMaterialDocumentORM]:
+        if not values:
+            log.info("workspace_document.update_documents_with_label.empty_list")
+            return []
+
+        rows = [
+            {
+                "id": doc.id,
+                "attributes": doc.attributes,
+                "cluster_label": doc.cluster_label,
+                "clustered_date": doc.clustered_date,
+            }
+            for doc in values
+            if doc.id is not None
+        ]
+
+        if not rows:
+            return values
+
+        with self._db_pool.session() as session:
+            try:
+                session.execute(update(LearningMaterialDocumentORM), rows)
+                session.commit()
+
+                log.info(
+                    "workspace_document.update_documents_with_label.finish",
+                    count=len(rows),
+                )
+                return values
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace_document.update_documents_with_label.error",
                     error=str(e),
                 )
                 raise e

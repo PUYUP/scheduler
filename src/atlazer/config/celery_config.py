@@ -196,6 +196,9 @@ task_routes = {
     # ── Workspace material tier ──
     "atlazer.celery_app.tasks.workspace.material.find_relevant_papers": {"queue": "workspace"},
     "atlazer.celery_app.tasks.workspace.material.save_documentss":      {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.material.documents_deduplication": {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.material.generate_jsonl":   {"queue": "workspace"},
+    "atlazer.celery_app.tasks.workspace.material.process_jsonl":    {"queue": "workspace"},
 
     # ── Arxiv Task ──
     "atlazer.celery_app.tasks.ingestion.extractors.arxiv.fetch_page":       {"queue": "arxiv"},

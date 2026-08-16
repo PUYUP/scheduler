@@ -14,6 +14,7 @@ from uuid import UUID
 from collections import defaultdict
 from celery import group, chord
 
+from atlazer.utils.text_cleaner import orm_to_dict
 from atlazer.utils.gemini_batch import upload_chunk_file, process_jsonl_file, get_batch_results
 from atlazer.utils.notes_clustering import NotesClusteringService
 from atlazer.celery_app.main import app, db_pool
@@ -137,6 +138,7 @@ def save_documents(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 material_note_content=sim.get("chunk_content", ""),
                 document_chunk_id=sim.get("document_id"),
                 document_content=sim.get("document_content", ""),
+                document_embedding=sim.get("document_embedding", []),
                 similarity_score=sim.get("similarity_score", 0.0),
                 attributes=sim.get("attributes", {})
             )
@@ -184,11 +186,66 @@ def documents_deduplication(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     try:
         depot = LearningMaterialDepot(db_pool)
         documents = depot.get_documents(workspace_id, processing_date)
+        document_count = len(documents)
 
-        if not documents:
-            log.warning("workspace.material.documents_deduplication.no_documents")
-            raise ValueError("No documents found for the given workspace_id and processing_date")
+        if document_count > 0:
+            # deduplication process
+            log.info(
+                "workspace.material.documents_deduplication.processing",
+                document_count=document_count
+            )
 
+            document_ids: List[str] = []
+            embeddings: List[List[float]] = []
+
+            for doc in documents:
+                if doc.document_embedding is not None:
+                    document_ids.append(str(doc.id))
+                    embeddings.append(doc.document_embedding)
+
+            embeddings_array = np.array(embeddings)
+
+            ncs = NotesClusteringService()
+            result = ncs.find_duplicates(notes_ids=document_ids, embeddings=embeddings_array)
+
+            if result:
+                result_map = {str(item.id): item for item in documents}
+                unique = [item for item in documents if str(item.id) in result["unique"]]
+                duplicate = {}
+                update_payloads: List[LearningMaterialDocumentORM] = []
+                clustered_date_obj = date.fromisoformat(processing_date)
+
+                for key, group_ids in result["duplicate"].items():
+                    key = str(key)
+                    group = []
+                    for id_str in group_ids:
+                        if id_str in result_map:
+                            group.append(result_map[id_str])
+                    duplicate[key] = group
+
+                metadata["dedup_result"] = {
+                    "unique": [orm_to_dict(item, exclude={"embedding"}) for item in unique],
+                    "duplicate": {key: [orm_to_dict(item, exclude={"embedding"}) for item in group] for key, group in duplicate.items()},
+                }
+
+                # prepare payloads for updating
+                for key, group_ids in result["duplicate"].items():
+                    for id_str in group_ids:
+                        if id_str in result_map:
+                            chunk = result_map[id_str]
+                            chunk.cluster_label = str(key)
+                            chunk.clustered_date = clustered_date_obj
+                            update_payloads.append(chunk)
+
+                for u in unique:
+                    u.cluster_label = "-1"
+                    u.clustered_date = clustered_date_obj
+                    update_payloads.append(u)
+
+                # update to database
+                depot.update_documents_with_label(update_payloads)
+
+        metadata["document_count"] = document_count
     except Exception as exc:
         log.error(
             "workspace.material.documents_deduplication.failed",
@@ -198,4 +255,173 @@ def documents_deduplication(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         )
         raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
+    # chain next tasks
+    (
+        generate_jsonl.s(metadata).set(queue="workspace")
+        | process_jsonl.s().set(queue="workspace")
+    ).apply_async()
+
     return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 5 of 6 — generate jsonl
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.material.generate_jsonl",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("atlazer.celery_app.tasks.workspace.material.generate_jsonl.start")
+
+    workspace_id = metadata.get("workspace_id")
+    language_code = metadata.get("language_code", "en")
+    processing_date = metadata.get("processing_date", "")
+
+    dedup_result = metadata.get("dedup_result", {})
+    unique = dedup_result.get("unique", [])
+    duplicate = dedup_result.get("duplicate", {})
+
+    payloads: List[Any] = []
+    dkey = processing_date.replace("-", "/")
+    ukey = f"{workspace_id}_{dkey}_-1"
+
+    if not workspace_id or not language_code:
+        raise ValueError("Missing required ids in metadata")
+
+    for u in unique:
+        payload = _build_json(f"{ukey}_{u['material_note_id']}", u["document_content"], language_code)
+        payloads.append(payload)
+
+    for key, group in duplicate.items():
+        combined_content = "\n\n".join([item["document_content"] for item in group])
+        payload = _build_json(f"{workspace_id}_{dkey}_{key}", combined_content, language_code)
+        payloads.append(payload)
+
+    key = f"materials/{workspace_id}/{dkey}"
+    target_dir = Path(settings.gemini_batch_dir)
+    target_file = target_dir / f"{key}.jsonl"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(target_file, "w", encoding="utf-8") as f:
+        for payload in payloads:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    # upload file
+    file_name = upload_chunk_file(str(target_file), display_name=key)
+    if file_name is None:
+        raise ValueError(f"Failed to upload file {target_file}")
+
+    log.info(
+        "atlazer.celery_app.tasks.workspace.material.generate_jsonl.done",
+        target_file=str(target_file),
+        payload_count=len(payloads),
+        file_name=file_name,
+    )
+
+    metadata["display_name"] = key
+    metadata["file_name"] = file_name
+    metadata["target_dir"] = str(target_dir)
+    metadata["target_file"] = str(target_file)
+
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 6 of 6 — process jsonl file
+# ─────────────────────────────────────────────────────────────────────────────#
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.material.process_jsonl",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.material.process_jsonl.start")
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UTILS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_json(key: str, content: str, language_code: str = "en") -> dict:
+    return {
+        "key": key, 
+        "request": {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": f"You are a research-context enrichment system.\n"
+                                    f"Your task is to transform the provided student notes into structured research contexts that can later be used to retrieve relevant academic papers."
+                        },
+                        {
+                            "text": f"IMPORTANT: \n"
+                                    f"This is an ENRICHMENT task, not a research task."
+                                    f"\n"
+                                    f"You MUST NOT:\n"
+                                    f"- add facts that are not present in the notes"
+                                    f"- introduce information from your own knowledge"
+                                    f"- invent explanations, causes, effects, examples, statistics, theories, authors, papers, or citations"
+                                    f"- assume the student's intention beyond what is reasonably expressed"
+                                    f"- turn speculation into a fact"
+                                    f"- answer questions contained in the notes"
+                                    f"- provide conclusions that are not supported by the notes"
+                                    f"\n\n"
+                                    f"You MAY:\n"
+                                    f"- combine semantically similar statements from the provided notes"
+                                    f"- remove repetition"
+                                    f"- rewrite informal language into clearer academic language"
+                                    f"- identify concepts explicitly mentioned or clearly implied by the notes"
+                                    f"- formulate neutral research-oriented phrases that preserve the original meaning"
+                                    f"- identify uncertainty, disagreement, or questions expressed by the students"
+                        },
+                        {
+                            "text": f"1. Translate and write all the values in the JSON output strictly in the "
+                                    f"language corresponding to this language code/name: '{language_code}'. "
+                                    "Only translate the values, keep the JSON keys strictly as defined in the schema.\n"
+                                    "2. DO NOT use phrases like 'this paper', 'this study', 'the authors', 'this work', 'this document '"
+                                    "or any equivalent meta-phrases in the target language. Write the summary directly as "
+                                    "factual statements or explanations, completely removing any fluff or context indicating "
+                                    "that this is a summary of an academic paper.\n"
+                                    "3. PRESERVE TECHNICAL JARGON & INDUSTRY TERMS: Do not translate standard technical terms, "
+                                    "academic jargon, widely accepted acronyms, or domain-specific nomenclature (for example: "
+                                    "'machine learning', 'zero-shot learning', 'overfitting', 'framework', etc.) if translating "
+                                    "them would make the text sound awkward, forced, or lose its precise scientific meaning "
+                                    "in the target language. Keep these terms in their original English/technical form."
+                                    "4. Do not embed images using Base64, data URIs, or any other encoded image format. If a visual representation is necessary, use inline SVG instead."
+                        },
+                        {
+                            "text": f"SOURCE MATERIAL:\n\n{content}"
+                        },
+                    ]
+                }
+            ], 
+            "generation_config": {
+                "temperature": 0.7,
+                "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["summary"]
+                }
+            }
+        }
+    }

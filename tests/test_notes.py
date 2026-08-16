@@ -9,7 +9,7 @@ from atlazer.celery_app.tasks.workspace.notes import (
     process_workspaces,
     chunk_enriched_notes,
 )
-from atlazer.celery_app.tasks.workspace.material import find_relevant_papers
+from atlazer.celery_app.tasks.workspace.material import find_relevant_papers, documents_deduplication
 
 
 def main():
@@ -74,6 +74,13 @@ def main():
     # print(res["matched_result"]["similar_chunks"])
 
     # save_similarities(metadata=res)
+
+    # xx = documents_deduplication(metadata={
+    #     "workspace_id": workspace_id,
+    #     "processing_date": "2026-08-16"
+    # })
+
+    # print(xx)
 
 
 if __name__ == "__main__":

@@ -14,8 +14,13 @@ Order of operations:
 
 from __future__ import annotations
 
+import numpy as np
 import re
 import unicodedata
+
+from datetime import datetime, date
+from uuid import UUID
+from decimal import Decimal
 
 
 # ── Patterns ──────────────────────────────────────────────────────────────────
@@ -137,3 +142,26 @@ def truncate_to_tokens(text: str, max_tokens: int, chars_per_token: int = 4) -> 
     if last_period > max_chars * 0.8:
         return truncated[: last_period + 1]
     return truncated
+
+
+def orm_to_dict(obj, exclude: set[str] | None = None) -> dict:
+    exclude = exclude or set()
+    result = {}
+    for c in obj.__table__.columns:
+        if c.name in exclude:
+            continue
+        value = getattr(obj, c.name)
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
+        elif isinstance(value, np.floating):
+            value = float(value)
+        elif isinstance(value, np.integer):
+            value = int(value)
+        elif isinstance(value, (datetime, date)):
+            value = value.isoformat()
+        elif isinstance(value, UUID):
+            value = str(value)
+        elif isinstance(value, Decimal):
+            value = float(value)
+        result[c.name] = value
+    return result

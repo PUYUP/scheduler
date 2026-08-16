@@ -138,6 +138,7 @@ class ContextDocumentORM(Base):
     paper_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_chunk_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_content: Mapped[str] = mapped_column(String, nullable=False)
+    document_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
     similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
@@ -263,6 +264,7 @@ class NoteDocumentORM(Base):
     paper_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_chunk_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_content: Mapped[str] = mapped_column(String, nullable=False)
+    document_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
     similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
@@ -369,5 +371,8 @@ class LearningMaterialDocumentORM(Base):
     paper_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_chunk_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     document_content: Mapped[str] = mapped_column(String, nullable=False)
+    document_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024), nullable=True)
     similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    cluster_label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    clustered_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

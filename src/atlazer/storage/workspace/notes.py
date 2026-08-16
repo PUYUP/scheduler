@@ -27,6 +27,7 @@ log = structlog.get_logger()
 # --- 1. Type Hinting Setup ---
 class SimilarChunkDict(TypedDict):
     document_content: str
+    document_chunk_embedding: List[float]
     document_id: Any
     chunk_content: str
     chunk_id: Any
@@ -37,6 +38,7 @@ class SimilarChunkDict(TypedDict):
 class MatchResultDict(TypedDict):
     id: Any
     chunk_content: str
+    chunk_embedding: List[float]
     papers: List[Dict[str, Any]]  # Berisi list of dictionary dari paper
     similar_chunks: List[SimilarChunkDict]
 
@@ -565,6 +567,7 @@ class WorkspaceNoteDepot:
                         results[chunk.id] = {
                             "id": chunk.id,
                             "chunk_content": chunk.content,
+                            "chunk_embedding": chunk.embedding if chunk.embedding is not None else [],
                             "papers": [],
                             "similar_chunks": [],
                         }
@@ -585,6 +588,7 @@ class WorkspaceNoteDepot:
                             DocumentChunkORM.id.label("document_chunk_id"),
                             DocumentChunkORM.paper_id.label("paper_id"),
                             DocumentChunkORM.content.label("document_chunk_content"),
+                            DocumentChunkORM.embedding.label("document_chunk_embedding"),
                             distance_expr.label("distance"),
                         )
                         .order_by(distance_expr.asc())
@@ -654,6 +658,7 @@ class WorkspaceNoteDepot:
                             PaperORM,
                             top_candidates.c.document_chunk_id,
                             top_candidates.c.document_chunk_content,
+                            top_candidates.c.document_chunk_embedding,
                             top_candidates.c.distance,
                             top_papers.c.min_distance,
                             top_papers.c.matched_chunk_count,
@@ -683,6 +688,7 @@ class WorkspaceNoteDepot:
                         paper_orm,
                         document_chunk_id,
                         document_chunk_content,
+                        document_chunk_embedding,
                         distance,
                         min_distance,
                         matched_chunk_count,
@@ -708,6 +714,7 @@ class WorkspaceNoteDepot:
                         similar_chunks.append(
                             {
                                 "document_content": document_chunk_content,
+                                "document_chunk_embedding": document_chunk_embedding,
                                 "document_id": document_chunk_id,
                                 "chunk_content": chunk.content,
                                 "chunk_id": chunk.id,
@@ -721,6 +728,7 @@ class WorkspaceNoteDepot:
                     results[chunk.id] = {
                         "id": chunk.id,
                         "chunk_content": chunk.content,
+                        "chunk_embedding": chunk.embedding if chunk.embedding is not None else [],
                         "papers": papers,
                         "similar_chunks": similar_chunks,
                     }
