@@ -1,31 +1,24 @@
 from __future__ import annotations
 
 import numpy as np
-import uuid
 import structlog
 import json
 import re
 
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date
 from typing import Dict, Any, List
 from pathlib import Path
-from decimal import Decimal
-from uuid import UUID
 from collections import defaultdict
-from celery import group, chord
+from celery import group
 
 from atlazer.utils.text_cleaner import orm_to_dict
 from atlazer.utils.gemini_batch import upload_chunk_file, process_jsonl_file, get_batch_results
 from atlazer.utils.notes_clustering import NotesClusteringService
 from atlazer.celery_app.main import app, db_pool
-from atlazer.utils.stanza_chunker import chunk_content
 from atlazer.config.settings import settings
-from atlazer.utils.embedder import chunks_to_vector
-from atlazer.storage.workspace.notes import WorkspaceNoteDepot, LearningMaterialChunkORM
-from atlazer.storage.workspace.context import WorkspaceContextDepot
+from atlazer.storage.workspace.notes import WorkspaceNoteDepot
 from atlazer.storage.workspace.material import LearningMaterialDepot
 from atlazer.models.workspace import (
-    LearningMaterialNoteORM,
     LearningMaterialDocumentORM,
     LearningMaterialSourceORM,
 )
@@ -255,7 +248,7 @@ def documents_deduplication(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 5 of 6 — generate jsonl
+# Task 4 of 10 — generate jsonl
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -325,7 +318,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 6 of 6 — process jsonl file
+# Task 5 of 10 — process jsonl file
 # ─────────────────────────────────────────────────────────────────────────────#
 
 @app.task(
@@ -372,7 +365,7 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 6 of 6 — build sources
+# Task 6 of 10 — build sources
 # ─────────────────────────────────────────────────────────────────────────────#
 
 @app.task(
@@ -443,12 +436,18 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             log.warning("workspace.material.build_sources.invalid_key", key=key)
             continue
 
-        workspace_id, cdate, clabel, note_id = match.groups()
+        workspace_id, cdate, clabel, material_note_id = match.groups()
 
         # map raw chunks
         documents = document_groups[clabel]
-        if clabel == '-1' and note_id:
-            documents = [c for c in documents if c["note_id"] == note_id]
+        if clabel == '-1' and material_note_id:
+            documents = [c for c in documents if c["material_note_id"] == material_note_id]
+
+        # remove embedding, to large
+        documents = [
+            {k: v for k, v in doc.items() if k != "document_embedding"}
+            for doc in documents
+        ]
 
         result = res.get("result", {})
         summary = result.get("summary", None) if isinstance(result, dict) else None
@@ -481,7 +480,8 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 6 of 6 — build material
+# Task 7 of 10 — build material
+# Combine all learning_sources into single PDF file
 # ─────────────────────────────────────────────────────────────────────────────#
 
 @app.task(
