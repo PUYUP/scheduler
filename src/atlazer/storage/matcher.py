@@ -39,7 +39,7 @@ class MatcherDepot:
         self,
         user_id: str,
         intereset_embedding: List[float],
-        candidate_pool_size: int = 1000,
+        candidate_pool_size: int = 100,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Mencari paper yang paling MIRIP ( closest ) dan paling TIDAK MIRIP
 

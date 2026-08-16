@@ -218,7 +218,7 @@ def find_relevant_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     try:
         depot = WorkspaceContextDepot(db_pool)
         chunks = depot.get_chunks_by_context_id(context_id)
-        matcher = depot.match_context_with_papers(chunks=chunks, candidate_pool_size=1000)
+        matcher = depot.match_context_with_papers(chunks=chunks, candidate_pool_size=100)
 
         # collect all the matched data
         papers = []
