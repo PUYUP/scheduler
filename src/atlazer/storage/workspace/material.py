@@ -9,6 +9,7 @@ from atlazer.models.workspace import (
     LearningMaterialDocumentORM,
     LearningMaterialNoteORM,
     LearningMaterialSourceORM,
+    LearningMaterialORM,
 )
 from atlazer.storage.db import DatabasePool
 
@@ -189,6 +190,40 @@ class LearningMaterialDepot:
             except SQLAlchemyError as e:
                 log.error(
                     "workspace.get_learning_material_sources.error_select",
+                    error=str(e),
+                )
+                raise e
+
+    def insert_material(self, value: LearningMaterialORM) -> None:
+        if not value:
+            log.info("workspace.material.insert_material.empty_value")
+            return
+
+        row = {
+            "workspace_id": value.workspace_id,
+            "content": value.content,
+            "attributes": value.attributes,
+            "generated_date": value.generated_date,
+        }
+
+        with self._db_pool.session() as session:
+            try:
+                session.query(LearningMaterialORM).filter(
+                    LearningMaterialORM.workspace_id == value.workspace_id
+                ).delete(synchronize_session=False)
+
+                session.execute(insert(LearningMaterialORM), row)
+                session.commit()
+
+                log.info(
+                    "workspace.material.insert_material.finish_upsert",
+                    workspace_id=value.workspace_id,
+                )
+
+            except SQLAlchemyError as e:
+                session.rollback()
+                log.error(
+                    "workspace.material.insert_material.error_upsert",
                     error=str(e),
                 )
                 raise e

@@ -269,6 +269,25 @@ class NoteDocumentORM(Base):
     attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
 
+class LearningMaterialORM(Base):
+    __tablename__ = "learning_materials"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid()
+    )
+    workspace_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    generated_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[TIMESTAMP] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+
 class LearningMaterialNoteORM(Base):
     __tablename__ = "learning_material_notes"
 

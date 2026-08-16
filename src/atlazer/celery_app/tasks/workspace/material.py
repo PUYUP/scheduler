@@ -21,6 +21,7 @@ from atlazer.storage.workspace.material import LearningMaterialDepot
 from atlazer.models.workspace import (
     LearningMaterialDocumentORM,
     LearningMaterialSourceORM,
+    LearningMaterialORM,
 )
 
 log = structlog.get_logger()
@@ -651,6 +652,63 @@ def process_material_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Task 10 of 10 — save material
+# ─────────────────────────────────────────────────────────────────────────────#
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.material.save_material",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def save_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.material.save_material.start")
+
+    workspace_id = metadata.get("workspace_id")
+    if workspace_id is None:
+        raise ValueError("Failed to get workspace id from metadata")
+
+    processing_date = metadata.get("processing_date")
+    if processing_date is None:
+        raise ValueError("Failed to get processing date from metadata")
+
+    job_id = metadata.get("job_id")
+    if job_id is None:
+        raise ValueError("Failed to get job id from metadata")
+
+    try:
+        results = get_batch_results(job_id)
+        if results is None:
+            raise ValueError("Failed to get results from batch")
+    except Exception as e:
+        log.error("workspace.material.save_material.error", error=str(e))
+        raise ValueError(str(e))
+
+    for res in results:
+        result = res.get("result", {})
+        summary = result.get("summary", None) if isinstance(result, dict) else None
+
+        payload: LearningMaterialORM = LearningMaterialORM(
+            workspace_id=workspace_id,
+            generated_date=processing_date,
+            content=summary,
+        )
+
+        try:
+            depot = LearningMaterialDepot(db_pool)
+            depot.insert_material(payload)
+        except Exception as e:
+            log.error("workspace.material.save_material.error_init", error=str(e))
+            raise ValueError("Failed to init workspace material depot")
+
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # UTILS
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -729,22 +787,28 @@ def _build_material_json(key: str, contents: List[str], language_code: str = "en
         Your task is to analyze a collection of student notes that may be distributed across many chunks. Each chunk can contain multiple unrelated or partially related notes.
         Do NOT treat each chunk as an independent research context.
         Your job is to read and understand the entire collection of notes, discover relationships between them, categorize them into meaningful themes, and transform the collective knowledge into structured research contexts.
+
         The final output MUST be written in the target language specified below.
-        TARGET LANGUAGE:
-        {language_code}
+        TARGET LANGUAGE: {language_code}
+
         Follow this process:
+
         1. READ ALL CHUNKS
         Read and understand the complete input before generating any output.
         Do not process each chunk independently.
         Consider information across all chunks, even when related ideas appear far apart.
+
         2. IDENTIFY NOTE UNITS
         Conceptually identify individual ideas, observations, questions, claims, facts, opinions, and learning points contained within the notes.
+
         3. CATEGORIZE
         Group related ideas based on their semantic meaning, topic, concept, problem, phenomenon, or research area.
         Do not group notes only because they contain similar keywords. Focus on their underlying meaning.
+
         4. CONNECT SCATTERED IDEAS
         Look for relationships between notes that appear in different chunks.
         Identify when multiple notes collectively describe the same concept, problem, phenomenon, or research question.
+
         5. SYNTHESIZE
         Transform related notes into coherent research contexts.
         A research context should represent a meaningful area of inquiry, not merely a summary of several notes.
@@ -754,13 +818,16 @@ def _build_material_json(key: str, contents: List[str], language_code: str = "en
         - The problem, phenomenon, or question being explored
         - How different notes contribute to the context
         - Potential directions for further research
+
         6. IDENTIFY RESEARCH POTENTIAL
         For each context, identify concepts or questions that could benefit from academic literature.
         Prefer contexts that have clear research potential over trivial or purely factual notes.
+
         7. PRESERVE TRACEABILITY
         Each generated research context must be traceable back to the original notes.
         Do not invent facts, claims, or experiences that are not supported by the notes.
         You may infer relationships between notes, but do not introduce unsupported information.
+
         8. TRANSLATE AND LOCALIZE
         After synthesizing the research contexts, write the entire final document in {language_code}.
         If the original notes are written in a different language:
@@ -770,48 +837,42 @@ def _build_material_json(key: str, contents: List[str], language_code: str = "en
         - Use terminology appropriate for an academic or research context.
         - Keep established scientific and technical terms in their commonly accepted form when appropriate.
         - Do not translate proper nouns, product names, paper titles, or technical terms when translation would reduce their accuracy.
-        - Do not add information merely to make the translation longer.
-        The categorization and synthesis should be based on the original meaning of the notes, not on superficial differences caused by language.
-        9. GENERATE A STRUCTURED RESEARCH CONTEXT DOCUMENT
-        Organize the final result as a coherent research-context document suitable for conversion into PDF.
-        The document should contain:
-        # Title
-        A concise title representing the overall themes discovered from the notes.
-        # Overview
-        A concise synthesis of the major ideas and themes found across all student notes.
-        # Research Contexts
-        For each identified context:
-        ## Context Title
-        A specific and meaningful title.
-        ## Summary
-        A concise explanation of the research context.
-        ## Key Ideas
-        The important ideas discovered from the student's notes.
-        ## Related Concepts
-        Important concepts, topics, or terminology associated with the context.
-        ## Questions / Problems
-        Questions, uncertainties, problems, or curiosities that emerge from the notes.
-        ## Research Direction
-        Potential areas that could be investigated through academic literature.
-        ## Supporting Notes
-        The original ideas or observations from the student's notes that support this research context.
+        - The categorization and synthesis should be based on the original meaning of the notes, not on superficial differences caused by language.
+
+        9. GENERATE A STRUCTURED, PDF-READY HTML DOCUMENT
+        Organize the final result as a clean, semantic HTML document that is fully optimized and ready to be exported as a PDF.
+        Do NOT use Markdown. Use appropriate HTML tags (`<h1>`, `<h2>`, `<h3>`, `<p>`, `<ul>`, `<li>`, `<strong>`, etc.).
+        Include an embedded `<style>` block in the `<head>` with basic print-friendly CSS (e.g., clean typography, line-height, and `page-break-inside: avoid;` for research context sections to prevent awkward splits across PDF pages).
+
+        The HTML structure must contain:
+        - <head>: Include title and print-friendly CSS.
+        - <body>: 
+            - <h1> Document Title </h1>: A concise title representing the overall themes.
+            - <h2> Overview </h2>: A concise synthesis of the major ideas and themes found across all student notes.
+            - <div class="research-context"> (For each identified context):
+                - <h2> Context Title </h2>: A specific and meaningful title.
+                - <h3> Summary </h3>: A concise explanation of the research context.
+                - <h3> Key Ideas </h3>: Bulleted list (`<ul>`) of important ideas.
+                - <h3> Related Concepts </h3>: Bulleted list of important concepts/terminology.
+                - <h3> Questions / Problems </h3>: Bulleted list of questions or uncertainties.
+                - <h3> Research Direction </h3>: Potential areas for academic literature investigation.
+                - <h3> Supporting Notes </h3>: Bulleted list of original ideas from the student's notes.
+
         IMPORTANT RULES:
         - Read ALL chunks before synthesizing.
         - Do not create one context per chunk.
-        - Do not simply summarize the notes sequentially.
         - Merge related ideas even when they occur in different chunks.
-        - Separate unrelated topics into different contexts.
-        - Avoid creating too many contexts.
-        - Prefer a smaller number of meaningful, well-connected contexts.
-        - Preserve the student's original meaning.
-        - Do not fabricate information.
-        - Do not introduce external knowledge unless explicitly requested.
+        - Avoid creating too many contexts. Prefer a smaller number of meaningful, well-connected contexts.
+        - Preserve the student's original meaning and do not fabricate information.
         - Research contexts should be specific enough to support semantic retrieval of academic papers.
-        - The final output must be entirely in {language_code}.
+        - The output MUST be a valid HTML document.
+        - Do NOT wrap the output in Markdown code blocks (e.g., do not use ```html). Return ONLY the raw HTML string so it can be parsed or saved directly.
         - The final document should represent the student's collective learning and curiosity, not a generic textbook summary.
+
         OUTPUT:
-        Generate the structured Research Context Document described above in {language_code}."""
-    
+        Generate the completely structured, print-ready HTML document described above in {language_code}.
+        """
+
     return {
         "key": key, 
         "request": {
@@ -825,17 +886,20 @@ def _build_material_json(key: str, contents: List[str], language_code: str = "en
             "contents": [
                 {
                     "role": "user",
-                    "parts": [{"text": c} for c in contents],
+                    "parts": [
+                        {"text": "\n\n---\n\n".join(contents)}
+                    ],
                 }
             ], 
             "generation_config": {
                 "temperature": 0.7,
-                "response_mime_type": "application/json",
+                "response_mime_type": "text/plain",
                 "response_schema": {
                     "type": "object",
                     "properties": {
                         "summary": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "A single, comprehensive summary of all the provided papers chunks."
                         }
                     },
                     "required": ["summary"]
