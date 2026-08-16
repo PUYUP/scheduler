@@ -433,7 +433,7 @@ class WorkspaceContextDepot:
                         paper_orm,
                         document_chunk_id,
                         document_chunk_content,
-                        document_embedding,
+                        document_chunk_embedding,
                         distance,
                         min_distance,
                         matched_chunk_count,
@@ -459,7 +459,7 @@ class WorkspaceContextDepot:
                         similar_chunks.append(
                             {
                                 "document_content": document_chunk_content,
-                                "document_embedding": document_embedding,
+                                "document_embedding": document_chunk_embedding,
                                 "document_id": document_chunk_id,
                                 "chunk_content": chunk.content,
                                 "chunk_id": chunk.id,
