@@ -3,6 +3,10 @@
 Celery + Redis pipeline that ingests ArXiv papers end-to-end:
 **discover → download → parse → chunk → embed → store**.
 
+## Related Repositories
+- [Frontend](https://github.com/PUYUP/curioweb)
+- [Supabase self-hosting modification](https://github.com/PUYUP/atlanize-supabase)
+
 ---
 
 ## Architecture
