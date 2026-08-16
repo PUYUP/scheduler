@@ -251,12 +251,6 @@ def documents_deduplication(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         )
         raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
-    # chain next tasks
-    (
-        generate_jsonl.s(metadata).set(queue="workspace")
-        | process_jsonl.s().set(queue="workspace")
-    ).apply_async()
-
     return metadata
 
 
@@ -482,6 +476,32 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         "workspace.material.build_sources.batch_results",
         results_count=len(results)
     )
+
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 6 of 6 — build material
+# ─────────────────────────────────────────────────────────────────────────────#
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.material.build_material",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def build_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.material.build_material.start")
+
+    try:
+        depot = LearningMaterialDepot(db_pool)
+    except Exception as e:
+        log.error("workspace.material.build_material.error", error=str(e))
+        raise ValueError(str(e))
 
     return metadata
 

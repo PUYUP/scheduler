@@ -891,23 +891,49 @@ def chunk_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                         "workspace_id": workspace_id,
                         "processing_date": processing_date,
                         "chunks": c,
+                        "material_note_id": c[0]["metadata"]["material_note_id"] if c else None,
                     }
-                ).set(queue="workspace")
-            ) for c in chunks_group
+                ).set(queue="workspace"),
+                signature(
+                    "atlazer.celery_app.tasks.workspace.notes.save_material_chunks",
+                    queue="workspace"
+                ),
+                signature(
+                    "atlazer.celery_app.tasks.workspace.material.find_relevant_papers",
+                    queue="workspace"
+                ),
+                signature(
+                    "atlazer.celery_app.tasks.workspace.material.save_documents",
+                    queue="workspace"
+                )
+            ) for c in chunks_group if c
         ]
 
+        if not chained_jobs:
+            return metadata
+
         # process documents after all chunks are processed
-        callback = signature(
-            "atlazer.celery_app.tasks.workspace.material.documents_deduplication",
-            args=[
-                {
-                    "workspace_id": workspace_id,
-                    "processing_date": processing_date,
-                    "language_code": language_code,
-                }
-            ],
-            queue="workspace",
-            immutable=True,
+        callback = chain(
+            signature(
+                "atlazer.celery_app.tasks.workspace.material.documents_deduplication",
+                args=[
+                    {
+                        "workspace_id": workspace_id,
+                        "processing_date": processing_date,
+                        "language_code": language_code,
+                    }
+                ],
+                queue="workspace",
+                immutable=True,
+            ),
+            signature(
+                "atlazer.celery_app.tasks.workspace.material.generate_jsonl",
+                queue="workspace",
+            ),
+            signature(
+                "atlazer.celery_app.tasks.workspace.material.process_jsonl",
+                queue="workspace",
+            ),
         )
 
         chord(group(chained_jobs))(callback)
@@ -950,11 +976,6 @@ def embed_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         raise self.retry(exc=exc, countdown=30 * 2 ** self.request.retries)
 
     metadata["chunks"] = embedded_chunks
-
-    # save embedding enriched notes
-    (
-        save_material_chunks.s(metadata).set(queue="workspace")
-    ).apply_async()
 
     return metadata
 
@@ -1030,28 +1051,7 @@ def save_material_chunks(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     if payloads:
         try:
             depot = WorkspaceNoteDepot(db_pool)
-            results = depot.insert_material_chunks(payloads)
-
-            # find relevant papers — satu task per chunk, fire and forget
-            for c in results:
-                (
-                    signature(
-                        "atlazer.celery_app.tasks.workspace.material.find_relevant_papers",
-                        args=[
-                            {
-                                "workspace_id": workspace_id,
-                                "material_note_id": str(c.material_note_id),
-                            }
-                        ],
-                        queue="workspace",
-                        immutable=False,
-                    )
-                    | signature(
-                        "atlazer.celery_app.tasks.workspace.material.save_documents",
-                        queue="workspace",
-                        immutable=False,
-                    )
-                ).apply_async()
+            depot.insert_material_chunks(payloads)
 
         except Exception as exc:
             log.error(
