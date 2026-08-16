@@ -1,7 +1,7 @@
 import uuid
 import structlog
 
-from typing import List
+from typing import List, Optional, Any
 from datetime import date
 from sqlalchemy import update, tuple_, insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -194,10 +194,10 @@ class LearningMaterialDepot:
                 )
                 raise e
 
-    def insert_material(self, value: LearningMaterialORM) -> None:
+    def insert_material(self, value: LearningMaterialORM) -> Optional[Any]:
         if not value:
             log.info("workspace.material.insert_material.empty_value")
-            return
+            return None
 
         row = {
             "workspace_id": value.workspace_id,
@@ -212,18 +212,51 @@ class LearningMaterialDepot:
                     LearningMaterialORM.workspace_id == value.workspace_id
                 ).delete(synchronize_session=False)
 
-                session.execute(insert(LearningMaterialORM), row)
+                result = session.execute(
+                    insert(LearningMaterialORM).returning(LearningMaterialORM.id),
+                    row,
+                )
+                material_id = result.scalar_one()
                 session.commit()
 
                 log.info(
                     "workspace.material.insert_material.finish_upsert",
                     workspace_id=value.workspace_id,
+                    material_id=material_id,
                 )
+
+                return material_id
 
             except SQLAlchemyError as e:
                 session.rollback()
                 log.error(
                     "workspace.material.insert_material.error_upsert",
+                    error=str(e),
+                )
+                raise e
+
+
+    def get_material_by_id(self, material_id: Any) -> Optional[LearningMaterialORM]:
+        with self._db_pool.session() as session:
+            try:
+                material = (
+                    session.query(LearningMaterialORM)
+                    .filter(LearningMaterialORM.id == material_id)
+                    .one_or_none()
+                )
+
+                if material is None:
+                    log.info(
+                        "workspace.material.get_material_by_id.not_found",
+                        material_id=material_id,
+                    )
+
+                return material
+
+            except SQLAlchemyError as e:
+                log.error(
+                    "workspace.material.get_material_by_id.error",
+                    material_id=material_id,
                     error=str(e),
                 )
                 raise e

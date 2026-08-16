@@ -41,8 +41,8 @@ def main():
     # )
     # print(result)
 
-    # job = process_workspaces.apply_async()
-    # print(job.id)
+    job = process_workspaces.apply_async()
+    print(job.id)
 
     # chunks = chunk_enriched_notes(metadata={
     #     "workspace_id": workspace_id,
@@ -82,13 +82,13 @@ def main():
 
     # print(xx)
 
-    xx = generate_material_jsonl(metadata={
-        "workspace_id": workspace_id,
-        "processing_date": "2026-08-16",
-        "language_code": "en"
-    })
+    # xx = generate_material_jsonl(metadata={
+    #     "workspace_id": workspace_id,
+    #     "processing_date": "2026-08-16",
+    #     "language_code": "en"
+    # })
 
-    print(xx)
+    # print(xx)
 
 
 if __name__ == "__main__":

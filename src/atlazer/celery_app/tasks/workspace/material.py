@@ -4,6 +4,10 @@ import numpy as np
 import structlog
 import json
 import re
+import io
+
+from xhtml2pdf import pisa
+from google.cloud import storage
 
 from datetime import datetime, date
 from typing import Dict, Any, List
@@ -28,7 +32,7 @@ log = structlog.get_logger()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 1 of 10 — find papers
+# Task 1 of 12 — find papers
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -89,7 +93,7 @@ def find_relevant_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 2 of 10 — save save documents
+# Task 2 of 12 — save save documents
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -150,7 +154,7 @@ def save_documents(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 3 of 10 — deduplicate the material-document similarities
+# Task 3 of 12 — deduplicate the material-document similarities
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -249,7 +253,7 @@ def documents_deduplication(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 4 of 10 — generate jsonl
+# Task 4 of 12 — generate jsonl
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -319,7 +323,7 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 5 of 10 — process jsonl file
+# Task 5 of 12 — process jsonl file
 # ─────────────────────────────────────────────────────────────────────────────#
 
 @app.task(
@@ -367,7 +371,7 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 6 of 10 — build sources
+# Task 6 of 12 — build sources
 # ─────────────────────────────────────────────────────────────────────────────#
 
 @app.task(
@@ -499,7 +503,7 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 7 of 10 — build material
+# Task 7 of 12 — build material
 # Combine all learning_sources into single PDF file
 # ─────────────────────────────────────────────────────────────────────────────#
 
@@ -544,7 +548,7 @@ def build_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 8 of 10 — generate jsonl for material
+# Task 8 of 12 — generate jsonl for material
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.task(
@@ -604,7 +608,7 @@ def generate_material_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 9 of 10 — process material jsonl file
+# Task 9 of 12 — process material jsonl file
 # ─────────────────────────────────────────────────────────────────────────────#
 
 @app.task(
@@ -652,7 +656,7 @@ def process_material_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 10 of 10 — save material
+# Task 10 of 12 — save material
 # ─────────────────────────────────────────────────────────────────────────────#
 
 @app.task(
@@ -700,11 +704,57 @@ def save_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             depot = LearningMaterialDepot(db_pool)
-            depot.insert_material(payload)
+            material_id = depot.insert_material(payload)
+            metadata["material_id"] = str(material_id)
         except Exception as e:
             log.error("workspace.material.save_material.error_init", error=str(e))
             raise ValueError("Failed to init workspace material depot")
 
+    return metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 11 of 12 — convert and upload material as pdf
+# ─────────────────────────────────────────────────────────────────────────────#
+
+@app.task(
+    name="atlazer.celery_app.tasks.workspace.material.upload_material",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    queue="workspace",
+    time_limit=1800,
+    soft_time_limit=1700,
+    ignore_result=False,
+)
+def upload_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    log.info("workspace.material.upload_material.start")
+
+    material_id = metadata.get("material_id")
+    workspace_id = metadata.get("workspace_id")
+    
+    if material_id is None:
+        raise ValueError("Failed to get material id from metadata")
+
+    if workspace_id is None:
+        raise ValueError("Failed to get workspace id from metadata")
+
+    try:
+        depot = LearningMaterialDepot(db_pool)
+        material = depot.get_material_by_id(material_id)
+        if material is None or material.generated_date is None:
+            raise ValueError("Material not found or generated_date is None")
+
+        pdf_data = _convert_and_upload_material(
+            workspace_id=workspace_id,
+            material_id=material_id,
+            html_content=material.content,
+            processing_date=material.generated_date.strftime("%Y-%m-%d"),
+        )
+    except Exception as e:
+        log.error("workspace.material.upload_material.error_init", error=str(e))
+        raise ValueError("Failed to init workspace material depot")
+    
     return metadata
 
 
@@ -907,4 +957,56 @@ def _build_material_json(key: str, contents: List[str], language_code: str = "en
             }
         }
     }
-        
+
+
+def _convert_html_to_pdf(html_content: str) -> io.BytesIO:
+    """
+    Convert HTML string menjadi PDF, disimpan di memory buffer.
+    Tidak menulis file sementara ke disk lokal.
+    """
+    pdf_buffer = io.BytesIO()
+
+    pisa_status = pisa.CreatePDF(src=html_content, dest=pdf_buffer)
+
+    if pisa_status.err:
+        raise RuntimeError(f"Gagal convert HTML ke PDF (error code: {pisa_status.err})")
+
+    pdf_buffer.seek(0)  # reset pointer supaya bisa dibaca dari awal saat upload
+    return pdf_buffer
+
+
+def _upload_pdf_to_gcs(
+    pdf_buffer: io.BytesIO,
+    bucket_name: str,
+    destination_blob_name: str,
+) -> str:
+    """
+    Upload buffer PDF langsung ke Google Cloud Storage.
+    Return gs:// URI dari file yang berhasil di-upload.
+    """
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+
+    blob.upload_from_file(
+        pdf_buffer,
+        content_type="application/pdf",
+        rewind=True,
+    )
+
+    return f"gs://{bucket_name}/{destination_blob_name}"
+
+
+def _convert_and_upload_material(
+    workspace_id: str,
+    material_id: str,
+    processing_date: str,
+    html_content: str,
+    bucket_name: str = "atlafiles",
+) -> str:
+    pdf_buffer = _convert_html_to_pdf(html_content)
+    try:
+        destination_blob_name = f"workspaces/{workspace_id}/materials/{processing_date}/{material_id}.pdf"
+        return _upload_pdf_to_gcs(pdf_buffer, bucket_name, destination_blob_name)
+    finally:
+        pdf_buffer.close()
