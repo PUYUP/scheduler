@@ -152,3 +152,43 @@ class LearningMaterialDepot:
                     error=str(e),
                 )
                 raise e
+
+    def get_sources(
+        self,
+        workspace_id: str,
+        processing_date: str
+    ) -> List[LearningMaterialSourceORM]:
+        try:
+            workspace_uuid = uuid.UUID(workspace_id)
+        except ValueError:
+            log.error(
+                "workspace.get_learning_material_sources.error_uuid",
+                workspace_id=workspace_id,
+            )
+            raise ValueError(f"Invalid workspace_id: {workspace_id}")
+
+        try:
+            clustered_date_obj = date.fromisoformat(processing_date)
+        except ValueError:
+            log.error(
+                "workspace.get_learning_material_sources.error_date",
+                clustered_date=processing_date,
+            )
+            raise ValueError(f"Invalid clustered_date: {processing_date}")
+
+        with self._db_pool.session() as session:
+            try:
+                return (
+                    session.query(LearningMaterialSourceORM)
+                    .filter(
+                        LearningMaterialSourceORM.workspace_id == workspace_uuid,
+                        LearningMaterialSourceORM.clustered_date == clustered_date_obj,
+                    )
+                    .all()
+                )
+            except SQLAlchemyError as e:
+                log.error(
+                    "workspace.get_learning_material_sources.error_select",
+                    error=str(e),
+                )
+                raise e

@@ -890,6 +890,7 @@ def chunk_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                     metadata={
                         "workspace_id": workspace_id,
                         "processing_date": processing_date,
+                        "language_code": language_code,
                         "chunks": c,
                         "material_note_id": c[0]["metadata"]["material_note_id"] if c else None,
                     }

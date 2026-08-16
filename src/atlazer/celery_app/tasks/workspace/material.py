@@ -344,6 +344,7 @@ def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     # process to gemini AI
     user_metadata = {
+        "language_code": metadata.get("language_code", "en"),
         "processing_date": metadata.get("processing_date"),
         "workspace_id": metadata.get("workspace_id"),
         "action": "material_build_sources",
@@ -382,6 +383,7 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("workspace.material.build_sources.start")
 
     now = datetime.now()
+    language_code = metadata.get("language_code", "en")
     processing_date = metadata.get("processing_date", now.strftime("%Y-%m-%d"))
     key = metadata.get("key", "")  # notes/<workspace_id>/<yyyy>/<mm>/<dd>
     date_value = datetime.strptime(processing_date, "%Y-%m-%d").date()
@@ -476,6 +478,14 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         results_count=len(results)
     )
 
+    # build material send again to google gemini API to create 
+    # final document
+    
+    build_material.apply_async(
+        args=[metadata],
+        queue="workspace",
+    )
+
     return metadata
 
 
@@ -497,8 +507,21 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 def build_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("workspace.material.build_material.start")
 
+    workspace_id = metadata.get("workspace_id")
+    processing_date = metadata.get("processing_date")
+    language_code = metadata.get("language_code", "en")
+
+    if not workspace_id or not processing_date:
+        raise ValueError("Missing workspace_id or processing_date")
+
     try:
         depot = LearningMaterialDepot(db_pool)
+        sources = depot.get_sources(workspace_id, processing_date)
+
+        log.info(
+            "workspace.material.build_material.sources_count",
+            sources_count=len(sources)
+        )
     except Exception as e:
         log.error("workspace.material.build_material.error", error=str(e))
         raise ValueError(str(e))
