@@ -12,6 +12,7 @@ x-celery-common: &celery-common
     HF_HUB_OFFLINE: "0"
     TRANSFORMERS_OFFLINE: "0"
     HF_HOME: "/home/atlazer/.cache/huggingface"
+    GOOGLE_APPLICATION_CREDENTIALS: "/app/creds/gcp-service-account.json"
   volumes:
     - downloads:/app/downloads
     - gemini_batch:/app/gemini_batch
@@ -19,6 +20,7 @@ x-celery-common: &celery-common
     - hf_home:/home/atlazer/.cache/huggingface
     - onnx_cache:/app/data/onnx_cache
     - stanza_cache:/home/atlazer/.cache/resources
+    - ./secrets/gcp-service-account.json:/app/creds/gcp-service-account.json:ro
   depends_on:
     redis:
       condition: service_healthy

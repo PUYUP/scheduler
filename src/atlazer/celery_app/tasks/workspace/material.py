@@ -8,6 +8,7 @@ import io
 
 from weasyprint import HTML
 from google.cloud import storage
+from dataclasses import dataclass
 
 from datetime import datetime, date
 from typing import Dict, Any, List
@@ -20,6 +21,7 @@ from atlazer.utils.gemini_batch import upload_chunk_file, process_jsonl_file, ge
 from atlazer.utils.notes_clustering import NotesClusteringService
 from atlazer.celery_app.main import app, db_pool
 from atlazer.config.settings import settings
+from atlazer.storage.attachment import AttachmentDepot
 from atlazer.storage.workspace.notes import WorkspaceNoteDepot
 from atlazer.storage.workspace.material import LearningMaterialDepot
 from atlazer.models.workspace import (
@@ -27,6 +29,7 @@ from atlazer.models.workspace import (
     LearningMaterialSourceORM,
     LearningMaterialORM,
 )
+from atlazer.models.attachment import FileORM, AttachmentORM
 
 log = structlog.get_logger()
 
@@ -732,7 +735,7 @@ def upload_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     material_id = metadata.get("material_id")
     workspace_id = metadata.get("workspace_id")
-    
+
     if material_id is None:
         raise ValueError("Failed to get material id from metadata")
 
@@ -745,12 +748,40 @@ def upload_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         if material is None or material.generated_date is None:
             raise ValueError("Material not found or generated_date is None")
 
-        pdf_data = _convert_and_upload_material(
+        file_info = _convert_and_upload_material(
             workspace_id=workspace_id,
             material_id=material_id,
             html_content=material.content,
             processing_date=material.generated_date.strftime("%Y-%m-%d"),
         )
+
+        # save as attachment
+        attachment_depot = AttachmentDepot(db_pool)
+        file_orm = FileORM(
+            file_type=file_info.file_type,
+            disk="gcs",
+            path=file_info.path,
+            original_filename=file_info.original_filename,
+            mime_type=file_info.mime_type,
+            extension=file_info.extension,
+            size_bytes=file_info.size_bytes,
+            media_link=file_info.media_link,
+        )
+
+        file_id = attachment_depot.insert_file(value=file_orm)
+
+        # link to attachment
+        attachment_orm = AttachmentORM(
+            file_id=file_id,
+            entity_type="learning_material",
+            entity_id=material_id,
+            purpose="material",
+        )
+
+        attachment_id = attachment_depot.insert_attachment(value=attachment_orm)
+
+        metadata["attachment_id"] = str(attachment_id)
+        metadata["file_id"] = str(file_id)
     except Exception as e:
         log.error("workspace.material.upload_material.error_init", error=str(e))
         raise ValueError("Failed to init workspace material depot")
@@ -761,6 +792,17 @@ def upload_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 # UTILS
 # ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class UploadedFileInfo:
+    file_type: str
+    path: str              # gs:// URI
+    original_filename: str
+    mime_type: str
+    extension: str
+    size_bytes: int
+    media_link: str        # https://storage.googleapis.com/... (public)
+
 
 def _build_json(key: str, content: str, language_code: str = "en") -> dict:
     return {
@@ -976,22 +1018,40 @@ def _upload_pdf_to_gcs(
     pdf_buffer: io.BytesIO,
     bucket_name: str,
     destination_blob_name: str,
-) -> str:
+    original_filename: str,
+) -> UploadedFileInfo:
     """
-    Upload buffer PDF langsung ke Google Cloud Storage.
-    Return gs:// URI dari file yang berhasil di-upload.
+    Upload buffer PDF langsung ke Google Cloud Storage, sebagai public file.
+    Return metadata lengkap file yang berhasil di-upload.
     """
+    content_type = "application/pdf"
+
+    # Hitung size dari buffer tanpa consume pointer secara permanen
+    pdf_buffer.seek(0, io.SEEK_END)
+    size_bytes = pdf_buffer.tell()
+    pdf_buffer.seek(0)
+
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name)
 
     blob.upload_from_file(
         pdf_buffer,
-        content_type="application/pdf",
+        content_type=content_type,
         rewind=True,
     )
 
-    return f"gs://{bucket_name}/{destination_blob_name}"
+    blob.make_public()
+
+    return UploadedFileInfo(
+        file_type="document",
+        path=f"gs://{bucket_name}/{destination_blob_name}",
+        original_filename=original_filename,
+        mime_type=content_type,
+        extension="pdf",
+        size_bytes=size_bytes,
+        media_link=blob.public_url,
+    )
 
 
 def _convert_and_upload_material(
@@ -1000,10 +1060,16 @@ def _convert_and_upload_material(
     processing_date: str,
     html_content: str,
     bucket_name: str = "atlafiles",
-) -> str:
+) -> UploadedFileInfo:
     pdf_buffer = _convert_html_to_pdf(html_content)
     try:
         destination_blob_name = f"workspaces/{workspace_id}/materials/{processing_date}/{material_id}.pdf"
-        return _upload_pdf_to_gcs(pdf_buffer, bucket_name, destination_blob_name)
+        file_info = _upload_pdf_to_gcs(
+            pdf_buffer=pdf_buffer,
+            bucket_name="atlafiles",
+            destination_blob_name=destination_blob_name,
+            original_filename=f"{material_id}.pdf",  # atau nama asli lain kalau ada
+        )
+        return file_info
     finally:
         pdf_buffer.close()
