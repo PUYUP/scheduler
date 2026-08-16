@@ -27,7 +27,7 @@ log = structlog.get_logger()
 # --- 1. Type Hinting Setup ---
 class SimilarChunkDict(TypedDict):
     document_content: str
-    document_chunk_embedding: List[float]
+    document_embedding: List[float]
     document_id: Any
     chunk_content: str
     chunk_id: Any
@@ -714,7 +714,7 @@ class WorkspaceNoteDepot:
                         similar_chunks.append(
                             {
                                 "document_content": document_chunk_content,
-                                "document_chunk_embedding": document_chunk_embedding,
+                                "document_embedding": document_chunk_embedding,
                                 "document_id": document_chunk_id,
                                 "chunk_content": chunk.content,
                                 "chunk_id": chunk.id,

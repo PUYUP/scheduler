@@ -232,6 +232,22 @@ async def gemini_batch_webhook(request: Request):
             log.info("webapi.gemini-batch-webhook.notes_content_enrichment.success", task_id=job.id)
             return TaskExecutionResponse(task_id=job.id)
 
+        # material content enrichments
+        if action == "material_docs_summary_generation":
+            log.info(
+                "webapi.gemini-batch-webhook.material_docs_summary_generation.start",
+                user_metadata=user_metadata
+            )
+
+            metadata = {
+                "job_id": batch_id,
+                "output_file_uri": data.get("output_file_uri"),
+                **user_metadata,
+            }
+
+            log.info("webapi.gemini-batch-webhook.material_docs_summary_generation.success", task_id=job.id)
+            return TaskExecutionResponse(task_id=job.id)
+
     return {"ok": True}
 
 

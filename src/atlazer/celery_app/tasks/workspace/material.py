@@ -350,6 +350,34 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 )
 def process_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     log.info("workspace.material.process_jsonl.start")
+
+    target_file = metadata.get("target_file")
+    if target_file is None:
+        raise ValueError("Failed to get target file from metadata")
+
+    file_name = metadata.get("file_name")
+    if file_name is None:
+        raise ValueError("Failed to get file name from metadata")
+
+    # process to gemini AI
+    user_metadata = {
+        "processing_date": metadata.get("processing_date"),
+        "workspace_id": metadata.get("workspace_id"),
+        "action": "material_docs_summary_generation",
+    }
+
+    job_name = process_jsonl_file(
+        file_name,
+        model=settings.gemini_model,
+        user_metadata=user_metadata
+    )
+
+    if job_name is None:
+        raise ValueError(f"Failed to create job for file {target_file}")
+
+    log.info("workspace.context.process_jsonl.done", job_name=job_name)
+
+    metadata["job_name"] = job_name
     return metadata
 
 
