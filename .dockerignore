@@ -30,6 +30,7 @@ logs/
 downloads/
 gemini_batch/
 data/
+secrets/
 
 # Docker files (no need to copy into image)
 Dockerfile
