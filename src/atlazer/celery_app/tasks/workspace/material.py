@@ -61,7 +61,7 @@ def find_relevant_papers(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
     try:
         depot = WorkspaceNoteDepot(db_pool)
         chunks = depot.get_enriched_chunks(workspace_id=workspace_id, material_note_id=material_note_id)
-        matcher = depot.match_note_with_papers(chunks=chunks)
+        matcher = depot.match_note_with_papers(chunks=chunks, min_similarity=0.5)
 
         # collect all the matched data
         papers = []

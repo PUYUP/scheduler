@@ -547,6 +547,7 @@ class WorkspaceNoteDepot:
         chunks: Sequence[NoteChunkORM | LearningMaterialChunkORM],
         top_k: int = 15,
         candidate_pool_size: Optional[int] = None,
+        min_similarity: float = 0.0,
     ) -> Dict[Any, MatchResultDict]:
         """Mencari paper yang paling relevan untuk setiap chunk dari note.
 
@@ -585,15 +586,24 @@ class WorkspaceNoteDepot:
                     # -------------------------------------------------------------
                     # 1. CTE: Ambil kandidat chunk terdekat (Memaksa penggunaan Vector Index)
                     # -------------------------------------------------------------
-                    top_candidates = (
-                        select(
-                            DocumentChunkORM.id.label("document_chunk_id"),
-                            DocumentChunkORM.paper_id.label("paper_id"),
-                            DocumentChunkORM.content.label("document_chunk_content"),
-                            DocumentChunkORM.embedding.label("document_chunk_embedding"),
-                            distance_expr.label("distance"),
+                    # Base query untuk top candidates
+                    top_candidates_query = select(
+                        DocumentChunkORM.id.label("document_chunk_id"),
+                        DocumentChunkORM.paper_id.label("paper_id"),
+                        DocumentChunkORM.content.label("document_chunk_content"),
+                        DocumentChunkORM.embedding.label("document_chunk_embedding"),
+                        distance_expr.label("distance"),
+                    )
+
+                    # Terapkan filter berdasarkan argumen min_similarity
+                    if min_similarity > -1.0:
+                        max_distance = 1.0 - min_similarity
+                        top_candidates_query = top_candidates_query.where(
+                            distance_expr <= max_distance
                         )
-                        .order_by(distance_expr.asc())
+
+                    top_candidates = (
+                        top_candidates_query.order_by(distance_expr.asc())
                         .limit(pool_size)
                         .cte("top_candidates")
                     )
