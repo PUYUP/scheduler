@@ -858,7 +858,8 @@ def _build_json(key: str, content: str, language_code: str = "en") -> dict:
                 }
             ], 
             "generation_config": {
-                "temperature": 0.7,
+                "temperature": 0.15,
+                "max_output_tokens": 2048,
                 "response_mime_type": "application/json",
                 "response_schema": {
                     "type": "object",
@@ -984,7 +985,8 @@ def _build_material_json(key: str, contents: List[str], language_code: str = "en
                 }
             ], 
             "generation_config": {
-                "temperature": 0.7,
+                "temperature": 0.15,
+                "max_output_tokens": 2048,
                 "response_mime_type": "text/plain",
                 "response_schema": {
                     "type": "object",
