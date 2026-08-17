@@ -93,8 +93,8 @@ def _build_inline_request(
         ],
         "generation_config": {
             "response_mime_type": "application/json",
-            "temperature": 0.15, 
-            "max_output_tokens": 2048,
+            "temperature": 0.1, 
+            "max_output_tokens": 4096,
             "top_p": 0.85,
             "response_schema": {
                 "type": "OBJECT",

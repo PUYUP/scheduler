@@ -484,8 +484,8 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 ], 
                 "generation_config": {
-                    "temperature": 0.15,
-                    "max_output_tokens": 2048,
+                    "temperature": 0.1,
+                    "max_output_tokens": 4096,
                     "response_mime_type": "application/json",
                     "response_schema": {
                         "type": "object",

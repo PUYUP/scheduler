@@ -161,9 +161,9 @@ def generate_jsonl(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
                 }
             ],
             "generation_config": {
-                "temperature": 0.15, 
+                "temperature": 0.1, 
+                "max_output_tokens": 4096,
                 "top_p": 0.85,
-                "max_output_tokens": 2048,
                 "response_mime_type": "application/json",
                 "response_schema": _resolve_pydantic_schema(CognitiveAssessment),
             }
