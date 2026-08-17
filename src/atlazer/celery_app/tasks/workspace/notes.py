@@ -664,7 +664,7 @@ def save_enriched_notes(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
             chunks = [c for c in chunks if c["note_id"] == note_id]
 
         result = res.get("result", {})
-        summary = result.get("summary", None) if isinstance(result, dict) else None
+        summary = result.get("summary", "") if isinstance(result, dict) else ""
         attributes = res.get("metadata", {})
 
         payload: LearningMaterialNoteORM = LearningMaterialNoteORM(

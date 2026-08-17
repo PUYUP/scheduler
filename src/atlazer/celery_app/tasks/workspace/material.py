@@ -459,7 +459,7 @@ def build_sources(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         ]
 
         result = res.get("result", {})
-        summary = result.get("summary", None) if isinstance(result, dict) else None
+        summary = result.get("summary", "") if isinstance(result, dict) else ""
         attributes = res.get("metadata", {})
 
         payload: LearningMaterialSourceORM = LearningMaterialSourceORM(
@@ -697,7 +697,7 @@ def save_material(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
 
     for res in results:
         result = res.get("result", {})
-        summary = result.get("summary", None) if isinstance(result, dict) else None
+        summary = result.get("summary", "") if isinstance(result, dict) else ""
 
         payload: LearningMaterialORM = LearningMaterialORM(
             workspace_id=workspace_id,

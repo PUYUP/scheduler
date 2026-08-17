@@ -621,7 +621,7 @@ def save_summaries(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         if key:
             paper_id = key.split("_")[-1]
             result = res.get("result", {})
-            summary = result.get("summary", None) if isinstance(result, dict) else None
+            summary = result.get("summary", "") if isinstance(result, dict) else ""
             attributes = res.get("metadata", {})
 
             payload: ContextPaperSummaryORM = ContextPaperSummaryORM(
